@@ -7,7 +7,9 @@ app's LocalWhisperProvider talks to either engine unchanged:
     POST /inference  -> multipart: file (16 kHz mono WAV), language, prompt,
                         temperature, response_format  ->  {"text": "..."}
                         (verbose_json adds "segments": text, start, end,
-                        avg_logprob, no_speech_prob, compression_ratio)
+                        avg_logprob, no_speech_prob, compression_ratio, plus
+                        "language" and, when language was "auto", the fr/en
+                        "language_probabilities")
 
 Only the standard library plus faster-whisper's own dependencies are used.
 Binds to 127.0.0.1 only. Engine logic (CPU/CUDA selection with a dummy-run
@@ -38,6 +40,24 @@ NO_SPEECH_PROB_MAX = 0.6
 # they decide when a window counts as silence (no_speech AND low logprob).
 DECODER_LOG_PROB_THRESHOLD = -1.25
 DECODER_COMPRESSION_RATIO_THRESHOLD = COMPRESSION_RATIO_MAX
+# Bilingual (language "auto") mode: Whisper's own auto-detection can pick a third
+# language for a short Latin-script clip, and misfired on English speech. The
+# preacher speaks French and English only, so detection is restricted to these.
+ALLOWED_LANGUAGES = ("fr", "en")
+
+
+def pick_allowed_language(all_language_probs) -> tuple[str, dict[str, float]] | None:
+    """Better of fr/en from faster-whisper's [(code, probability), ...]; None when neither is listed.
+
+    Also returns {"fr": p, "en": p} so the provider can judge how sure the pick is.
+    """
+    probs = {code: 0.0 for code in ALLOWED_LANGUAGES}
+    for code, probability in all_language_probs:
+        if code in probs:
+            probs[code] = float(probability)
+    if sum(probs.values()) <= 0.0:
+        return None
+    return max(ALLOWED_LANGUAGES, key=lambda code: probs[code]), probs
 
 
 def is_hallucinated(text: str, max_repeats: int = 3) -> bool:
@@ -121,10 +141,32 @@ class Engine:
         list(self.model.transcribe(np.zeros(16000, dtype=np.float32), beam_size=1)[0])
         self.ready = True
 
+    def detect_allowed_language(self, audio):
+        """(language, {"fr": p, "en": p}) or None. faster-whisper 1.2.1:
+        WhisperModel.detect_language(audio=...) -> (language, probability, [(code, probability), ...]).
+        One encoder pass on the first 30 s. Any failure returns None: the caller then keeps the previous
+        behaviour (Whisper's own auto-detection inside transcribe)."""
+        try:
+            _language, _probability, all_probs = self.model.detect_language(audio=audio)
+            return pick_allowed_language(all_probs)
+        except Exception as error:
+            print(f"language detection failed: {error!r}", file=sys.stderr, flush=True)
+            return None
+
     def transcribe(self, audio, language: str | None, prompt: str | None, temperature: float) -> dict:
-        """Returns {"text": ..., "segments": [...]} for the segments kept; segments carry their scores."""
+        """Returns {"text": ..., "segments": [...], "language": ...} for the segments kept; segments carry their scores.
+
+        With language None (auto) the choice is restricted to French/English and the reply carries
+        "language_probabilities" for the provider's sticky language lock.
+        """
+        extra: dict = {}
         with self.lock:
-            segments, _info = self.model.transcribe(
+            if language is None:
+                detected = self.detect_allowed_language(audio)
+                if detected is not None:
+                    language, probabilities = detected
+                    extra["language_probabilities"] = probabilities
+            segments, info = self.model.transcribe(
                 audio,
                 language=language,
                 initial_prompt=prompt or None,
@@ -148,9 +190,10 @@ class Engine:
                     continue
                 kept.append(segment_json(segment))
         text = " ".join(part["text"] for part in kept if part["text"])
+        extra["language"] = language or getattr(info, "language", None)
         if is_hallucinated(text):
-            return {"text": "", "segments": []}
-        return {"text": text, "segments": kept}
+            return {"text": "", "segments": [], **extra}
+        return {"text": text, "segments": kept, **extra}
 
 
 def make_handler(engine: Engine):

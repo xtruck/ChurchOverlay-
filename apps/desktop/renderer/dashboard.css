@@ -832,7 +832,7 @@ header.topbar {
 
 /* Heard: what the ASR is hearing, continuously. */
 .cell-heard { padding: var(--space-3) var(--space-4); }
-.heard-row { display: flex; align-items: baseline; gap: var(--space-3); min-width: 0; }
+.heard-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-3); min-width: 0; }
 .heard-label {
   display: inline-flex;
   align-items: center;
@@ -845,6 +845,21 @@ header.topbar {
   color: var(--text-faint);
 }
 .heard-label .icon { width: 15px; height: 15px; align-self: center; }
+/* EN/FR badge next to the heard text (preacher vs interpreter). */
+.lang-badge {
+  flex: none;
+  align-self: center;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm, 4px);
+  border: 1px solid currentColor;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-muted, #8a8f98);
+}
+.lang-badge[hidden] { display: none; }
+.transcript-translation { flex-basis: 100%; font-size: 13px; font-style: italic; color: var(--text-muted, #8a8f98); }
+.transcript-translation[hidden] { display: none; }
 #transcript {
   font-size: var(--fs-16);
   line-height: 1.45;
@@ -978,7 +993,7 @@ header.topbar {
 .drawer > summary::-webkit-details-marker { display: none; }
 .drawer-chevron { width: 16px; height: 16px; transition: transform var(--dur-state) var(--ease); }
 .drawer[open] > summary .drawer-chevron { transform: rotate(90deg); }
-.drawer-body { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: var(--space-3); padding: 0 var(--space-3) var(--space-3); max-height: 320px; }
+.drawer-body { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-3); padding: 0 var(--space-3) var(--space-3); max-height: 320px; }
 .drawer-body > .card { background: var(--bg); max-height: 300px; padding: var(--space-3); }
 .media-header { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin-bottom: var(--space-3); }
 .media-header .card-title { margin: 0 auto 0 0; }
@@ -990,12 +1005,27 @@ header.topbar {
 .log-line.event-sent .log-text { color: var(--accent); }
 .log-line.event-error .log-text { color: var(--on-air-text); }
 
+.cell-copilot { display: flex; flex-direction: column; }
+.copilot-body { overflow-y: auto; flex: 1; min-height: 0; display: grid; gap: var(--space-3); }
+.copilot-section-title { color: var(--text-faint); font-size: var(--fs-12); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: var(--space-1); }
+.copilot-verse { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-1) var(--space-2); align-items: start; padding: var(--space-2) 0; border-bottom: 1px solid var(--border); }
+.copilot-verse:last-child { border-bottom: 0; }
+.copilot-verse-ref { font-weight: 600; font-size: var(--fs-13); }
+.copilot-verse-text { grid-column: 1; color: var(--text-muted); font-size: var(--fs-12); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.copilot-verse .btn-small { grid-row: 1 / span 2; grid-column: 2; }
+.copilot-caption { font-size: var(--fs-13); font-weight: 600; margin-bottom: var(--space-1); }
+.copilot-slide { margin: 0 0 var(--space-2); padding-left: 1.1em; font-size: var(--fs-13); color: var(--text-muted); }
+.ai-feature-row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) 0; border-top: 1px solid var(--border); }
+.ai-feature-text { min-width: 0; }
+.ai-feature-text .settings-hint { margin-bottom: 0; }
+.ai-feature-name { font-weight: 600; font-size: var(--fs-13); margin-bottom: var(--space-1); }
 .sermon-notes-disclaimer { color: var(--text-faint); font-size: var(--fs-12); margin-bottom: var(--space-2); }
 .sermon-notes-feed { overflow-y: auto; flex: 1; min-height: 0; }
 .sermon-notes-entry { padding: var(--space-2) 0; border-bottom: 1px solid var(--border); }
 .sermon-notes-entry:last-child { border-bottom: 0; }
 .sermon-notes-time { color: var(--text-faint); font-size: var(--fs-12); font-family: var(--font-mono); }
 .sermon-notes-text { font-size: var(--fs-13); white-space: pre-wrap; }
+.cell-notes { overflow-y: auto; }
 .notes-summary-btn { margin-top: var(--space-3); align-self: flex-start; }
 .service-summary-result { margin-top: var(--space-3); padding: var(--space-3); border-radius: var(--radius-control); background: var(--surface-2); white-space: pre-wrap; font-size: var(--fs-13); }
 

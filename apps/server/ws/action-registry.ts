@@ -164,6 +164,34 @@ function isTranscriptPartialPayload(payload: unknown): payload is TranscriptResu
 // transcript internally, but the raw text it acted on was never
 // broadcast anywhere, so the operator could see the mic level meter
 // moving with zero way to judge transcription accuracy or latency.
+/** ARCHITECTURE.md section 121: display-only FR<->EN translation of a final transcript. */
+function isTranslationPayload(payload: unknown): payload is Record<string, unknown> {
+  if (!isPlainObject(payload)) return false
+  return (
+    isNonEmptyString(payload.id) &&
+    (payload.from === "fr" || payload.from === "en") &&
+    (payload.to === "fr" || payload.to === "en") &&
+    isNonEmptyString(payload.text)
+  )
+}
+
+/** ARCHITECTURE.md section 125: operator-only copilot suggestions; bounded so a bug cannot flood a dashboard. */
+function isCopilotSuggestionsPayload(payload: unknown): payload is Record<string, unknown> {
+  if (!isPlainObject(payload) || !isNonEmptyString(payload.id)) return false
+  if (!Array.isArray(payload.relatedVerses) || payload.relatedVerses.length > 3) return false
+  if (!payload.relatedVerses.every((verse) => isBareVersePayload(verse))) return false
+  if (payload.keyPoint === null) return true
+  const point = payload.keyPoint
+  return (
+    isPlainObject(point) &&
+    typeof point.caption === "string" &&
+    point.caption.length <= 140 &&
+    Array.isArray(point.slide) &&
+    point.slide.length <= 4 &&
+    point.slide.every((line) => typeof line === "string" && line.length <= 70)
+  )
+}
+
 function isTranscriptFinalPayload(payload: unknown): payload is TranscriptResult {
   if (!isPlainObject(payload)) return false
   return (
@@ -501,6 +529,16 @@ export const ACTION_REGISTRY: Readonly<Record<WsCommandType | WsEventType, Actio
     kind: "event",
     allowedSenders: [],
     validatePayload: isTranscriptFinalPayload,
+  },
+  "translation:final": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isTranslationPayload,
+  },
+  "copilot:suggestions": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isCopilotSuggestionsPayload,
   },
   "verse:show": {
     kind: "event",

@@ -53,6 +53,8 @@ export type WsEventType =
   | "poster:clear"
   | "layout:update"
   | "detector:near-miss"
+  | "translation:final"
+  | "copilot:suggestions"
   | "branding:update"
   | "overlay:style"
   | "mic:health"

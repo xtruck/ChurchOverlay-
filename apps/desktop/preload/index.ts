@@ -50,8 +50,8 @@ import { contextBridge, ipcRenderer, webUtils } from "electron"
 contextBridge.exposeInMainWorld("churchOverlay", {
   getOperatorConnectionInfo: () => ipcRenderer.invoke("get-operator-connection-info"),
   getStartupStatus: () => ipcRenderer.invoke("get-startup-status"),
-  completeSetup: (groqApiKey: string, deepgramApiKey: string, displayMode: string, uiLanguage: string, allowPhoneRemote: boolean, audioProfile?: string, organizationName?: string, accentColor?: string) =>
-    ipcRenderer.invoke("complete-setup", { groqApiKey, deepgramApiKey, displayMode, uiLanguage, allowPhoneRemote, audioProfile, organizationName, accentColor }),
+  completeSetup: (groqApiKey: string, deepgramApiKey: string, displayMode: string, uiLanguage: string, allowPhoneRemote: boolean, audioProfile?: string, organizationName?: string, accentColor?: string, anthropicApiKey?: string) =>
+    ipcRenderer.invoke("complete-setup", { groqApiKey, deepgramApiKey, displayMode, uiLanguage, allowPhoneRemote, audioProfile, organizationName, accentColor, anthropicApiKey }),
   importMediaFile: () => ipcRenderer.invoke("import-media-file"),
   confirmMediaImport: (title: string) => ipcRenderer.invoke("confirm-media-import", title),
   cancelMediaImport: () => ipcRenderer.invoke("cancel-media-import"),
@@ -78,9 +78,12 @@ contextBridge.exposeInMainWorld("churchOverlay", {
   exportRehearsal: () => ipcRenderer.invoke("export-rehearsal"),
   exportDiagnostics: () => ipcRenderer.invoke("export-diagnostics"),
   generateServiceSummary: (sermonNotesText: string) => ipcRenderer.invoke("generate-service-summary", sermonNotesText),
+  generateServiceExtras: (sermonNotesText: string) => ipcRenderer.invoke("generate-service-extras", sermonNotesText),
+  exportServiceExtras: () => ipcRenderer.invoke("export-service-extras"),
   getSessionHistory: () => ipcRenderer.invoke("get-session-history"),
   getPipelineLatency: () => ipcRenderer.invoke("get-pipeline-latency"),
   setEnableSermonNotes: (enabled: boolean) => ipcRenderer.invoke("set-enable-sermon-notes", enabled),
+  setAiFeature: (feature: string, enabled: boolean) => ipcRenderer.invoke("set-ai-feature", { feature, enabled }),
   setNdiEnabled: (enabled: boolean) => ipcRenderer.invoke("set-ndi-enabled", enabled),
   getNdiStatus: () => ipcRenderer.invoke("get-ndi-status"),
   setAllowPhoneRemote: (enabled: boolean) => ipcRenderer.invoke("set-allow-phone-remote", enabled),

@@ -45,6 +45,8 @@ export interface SecretCodec {
 export type AppConfig = {
   readonly groqApiKey: string
   readonly deepgramApiKey?: string
+  /** Optional Anthropic key for the AI helpers; absent means the helpers stay off. */
+  readonly anthropicApiKey?: string
   readonly microphoneId: string | null
   readonly operatorToken: string
   readonly viewerToken: string
@@ -79,6 +81,14 @@ export type AppConfig = {
    */
   readonly verseLayout: VerseLayout
   readonly ndiEnabled?: boolean
+  /**
+   * ARCHITECTURE.md sections 123-125: live toggles of the optional Anthropic
+   * features. Opt-in, off by default (absent = false); inert without an
+   * Anthropic key.
+   */
+  readonly aiTranscriptCleanup?: boolean
+  readonly aiSemanticDetection?: boolean
+  readonly aiSermonCopilot?: boolean
   readonly audioProfile?: AudioProfile
   /**
    * ARCHITECTURE.md section 92 (AGENTS.md section 4 amendment: "a generic,
@@ -128,6 +138,7 @@ export type AppConfig = {
 type StoredConfig = {
   readonly groqApiKeyEncrypted: string
   readonly deepgramApiKeyEncrypted?: string
+  readonly anthropicApiKeyEncrypted?: string
   readonly microphoneId: string | null
   readonly operatorTokenEncrypted: string
   readonly viewerTokenEncrypted: string
@@ -143,6 +154,9 @@ type StoredConfig = {
   /** Optional in storage: absent in configs saved before ARCHITECTURE.md section 82 existed. */
   readonly verseLayout?: string
   readonly ndiEnabled?: boolean
+  readonly aiTranscriptCleanup?: boolean
+  readonly aiSemanticDetection?: boolean
+  readonly aiSermonCopilot?: boolean
   readonly audioProfile?: string
   readonly organizationName?: string
   readonly accentColor?: string
@@ -233,6 +247,7 @@ export class ConfigStore {
     const stored: StoredConfig = {
       groqApiKeyEncrypted: this.codec.encrypt(config.groqApiKey).toString("base64"),
       ...(config.deepgramApiKey ? { deepgramApiKeyEncrypted: this.codec.encrypt(config.deepgramApiKey).toString("base64") } : {}),
+      ...(config.anthropicApiKey ? { anthropicApiKeyEncrypted: this.codec.encrypt(config.anthropicApiKey).toString("base64") } : {}),
       microphoneId: config.microphoneId,
       operatorTokenEncrypted: this.codec.encrypt(config.operatorToken).toString("base64"),
       viewerTokenEncrypted: this.codec.encrypt(config.viewerToken).toString("base64"),
@@ -243,6 +258,9 @@ export class ConfigStore {
       enableSermonNotes: config.enableSermonNotes,
       verseLayout: config.verseLayout,
       ...(config.ndiEnabled === undefined ? {} : { ndiEnabled: config.ndiEnabled }),
+      ...(config.aiTranscriptCleanup === undefined ? {} : { aiTranscriptCleanup: config.aiTranscriptCleanup }),
+      ...(config.aiSemanticDetection === undefined ? {} : { aiSemanticDetection: config.aiSemanticDetection }),
+      ...(config.aiSermonCopilot === undefined ? {} : { aiSermonCopilot: config.aiSermonCopilot }),
       ...(config.audioProfile === undefined ? {} : { audioProfile: config.audioProfile }),
       ...(config.organizationName === undefined ? {} : { organizationName: config.organizationName }),
       ...(config.accentColor === undefined ? {} : { accentColor: config.accentColor }),
@@ -283,6 +301,7 @@ export class ConfigStore {
     const {
       groqApiKeyEncrypted,
       deepgramApiKeyEncrypted,
+      anthropicApiKeyEncrypted,
       microphoneId,
       operatorTokenEncrypted,
       viewerTokenEncrypted,
@@ -293,6 +312,9 @@ export class ConfigStore {
       enableSermonNotes,
       verseLayout,
       ndiEnabled,
+      aiTranscriptCleanup,
+      aiSemanticDetection,
+      aiSermonCopilot,
       audioProfile,
       organizationName,
       accentColor,
@@ -343,6 +365,15 @@ export class ConfigStore {
     if (ndiEnabled !== undefined && typeof ndiEnabled !== "boolean") {
       throw new Error(`ConfigStore: ${this.filePath} has an invalid ndiEnabled`)
     }
+    for (const [name, value] of [
+      ["aiTranscriptCleanup", aiTranscriptCleanup],
+      ["aiSemanticDetection", aiSemanticDetection],
+      ["aiSermonCopilot", aiSermonCopilot],
+    ] as const) {
+      if (value !== undefined && typeof value !== "boolean") {
+        throw new Error(`ConfigStore: ${this.filePath} has an invalid ${name}`)
+      }
+    }
     if (
       audioProfile !== undefined &&
       (typeof audioProfile !== "string" || !["responsive", "balanced", "robust"].includes(audioProfile))
@@ -382,6 +413,9 @@ export class ConfigStore {
       ...(typeof deepgramApiKeyEncrypted === "string"
         ? { deepgramApiKey: this.codec.decrypt(Buffer.from(deepgramApiKeyEncrypted, "base64")) }
         : {}),
+      ...(typeof anthropicApiKeyEncrypted === "string"
+        ? { anthropicApiKey: this.codec.decrypt(Buffer.from(anthropicApiKeyEncrypted, "base64")) }
+        : {}),
       microphoneId,
       operatorToken: this.codec.decrypt(Buffer.from(operatorTokenEncrypted, "base64")),
       viewerToken: this.codec.decrypt(Buffer.from(viewerTokenEncrypted, "base64")),
@@ -403,6 +437,10 @@ export class ConfigStore {
       // upgrading, not just fresh ones.
       verseLayout: (verseLayout as VerseLayout | undefined) ?? "fullscreen",
       ...(ndiEnabled === undefined ? {} : { ndiEnabled }),
+      // Absent (saved before sections 123-125) stays absent and means off: the opt-in default applies to upgrades too.
+      ...(aiTranscriptCleanup === undefined ? {} : { aiTranscriptCleanup: aiTranscriptCleanup as boolean }),
+      ...(aiSemanticDetection === undefined ? {} : { aiSemanticDetection: aiSemanticDetection as boolean }),
+      ...(aiSermonCopilot === undefined ? {} : { aiSermonCopilot: aiSermonCopilot as boolean }),
       ...(audioProfile === undefined ? {} : { audioProfile: audioProfile as AudioProfile }),
       ...(organizationName === undefined ? {} : { organizationName }),
       ...(accentColor === undefined ? {} : { accentColor }),

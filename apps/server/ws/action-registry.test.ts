@@ -44,6 +44,8 @@ test("ACTION_REGISTRY: contains all registered actions including Phase 2 and inn
       "layout:set",
       "layout:update",
       "detector:near-miss",
+      "translation:final",
+      "copilot:suggestions",
       "branding:update",
       "overlay:style",
       "mic:auto-gain",
@@ -974,4 +976,34 @@ test("overlay:style is a server-only event: no inbound sender, and only a fully-
   assert.equal(ACTION_REGISTRY["overlay:style"].kind, "event")
   assert.equal(ACTION_REGISTRY["overlay:style"].validatePayload(style), true)
   assert.equal(ACTION_REGISTRY["overlay:style"].validatePayload({ ...style, card: "nope" }), false)
+})
+
+// ARCHITECTURE.md section 125: operator-only copilot suggestions.
+test("ACTION_REGISTRY['copilot:suggestions'].validatePayload: accepts a bounded suggestion set, rejects anything malformed or oversized", () => {
+  const validate = ACTION_REGISTRY["copilot:suggestions"].validatePayload
+  const verse = { reference: { book: "john", chapter: 3, verse: 16 }, text: "For God so loved...", translation: "kjv", source: "bible-api.com" }
+  assert.equal(validate({ id: "s1", relatedVerses: [verse], keyPoint: { caption: "Grace", slide: ["a", "b"] } }), true)
+  assert.equal(validate({ id: "s1", relatedVerses: [], keyPoint: null }), true)
+  const bad: unknown[] = [
+    null,
+    {},
+    { id: "", relatedVerses: [], keyPoint: null },
+    { id: "s1", relatedVerses: "x", keyPoint: null },
+    { id: "s1", relatedVerses: [verse, verse, verse, verse], keyPoint: null },
+    { id: "s1", relatedVerses: [{ text: "no reference" }], keyPoint: null },
+    { id: "s1", relatedVerses: [], keyPoint: { caption: "x".repeat(141), slide: [] } },
+    { id: "s1", relatedVerses: [], keyPoint: { caption: "ok", slide: ["a", "b", "c", "d", "e"] } },
+    { id: "s1", relatedVerses: [], keyPoint: { caption: "ok", slide: ["x".repeat(71)] } },
+    { id: "s1", relatedVerses: [], keyPoint: { caption: "ok", slide: [5] } },
+    { id: "s1", relatedVerses: [] },
+  ]
+  for (const payload of bad) {
+    assert.equal(validate(payload), false, `payload ${JSON.stringify(payload)} must be rejected`)
+  }
+})
+
+test("validateWsMessage: rejects any inbound sender for copilot:suggestions, a server-only event", () => {
+  const message = { id: "01ABC", type: "copilot:suggestions", timestamp: 1700000000000, payload: { id: "s1", relatedVerses: [], keyPoint: null } }
+  assert.equal(validateWsMessage(message, "operator").ok, false)
+  assert.equal(validateWsMessage(message, "viewer").ok, false)
 })

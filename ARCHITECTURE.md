@@ -6185,3 +6185,155 @@ drop logs `local-whisper.segment-dropped` (reason and scores, not the text) with
 dropped the engine's `text` is used unchanged; when something is, the text is rebuilt from the kept segments. A
 response without a readable `segments` array, or a segment missing a score, disables that rule: a clean no-op, never
 an error.
+
+## 119. Cloud ASR Durability and Bilingual Streaming
+
+**Auto-return to the streaming primary.** With Deepgram primary (`trigger: "primary-error"`), `FailoverAsrProvider` now retries the primary on its own after a failover (`autoReturn` option, wired in `apps/desktop/main/index.ts`). Attempts happen only inside `onUtteranceEnd`, after the utterance end was forwarded to (and flushed by) the live secondary, so no speech is cut; there are no timers, and `stop()` cancels by settling any in-flight attempt and refusing new ones. The attempt is the existing `returnToPrimary()` with its rollback: a failure leaves the secondary running, is not an operator error, is reported through `onAttempt` (logged as `asr.auto-return.ok|failed`), and doubles the wait (30 s, 60 s, 120 s, 240 s, cap 300 s). A primary that dies again within one cap-window of a return keeps doubling instead of flapping; after a longer stable period the wait resets to 30 s. While a return is mid-flight `sendAudio` waits rather than writing into the stopped secondary. `onAutoReturned` lets AppCore clear the "failover" status (the manual `asr:return-primary` path already did).
+The `"sustained-rate-limit"` trigger (Groq primary) is deliberately **not** auto-returned: section 86 states the operator must return explicitly with no automatic oscillation, and a 429 storm is exactly when bouncing back would worsen it.
+
+**Groq 429.** `Retry-After` (seconds; the HTTP-date form and junk are ignored) now takes precedence over the body hint and pauses sending for that long (capped at 60 s); audio keeps buffering under the existing `MAX_THROTTLED_BUFFER_MS` bound. Previously the hint was only attached to the error and the next flush re-sent immediately.
+
+**Bilingual streaming (verified against developers.deepgram.com).** Nova-3 `language=multi` code-switches English, Spanish, French, German, Hindi, Russian, Portuguese, Japanese, Italian and Dutch (Nova-2 only Spanish + English); Deepgram recommends `endpointing=100` for it, and `keyterm` works with multilingual streaming (500-token cap, already respected). `deepgramLanguageFor("bilingual")` is therefore `"multi"`; `DeepgramProvider` upgrades Nova-2 to Nova-3 for a multi connection and uses `endpointing=100` unless an explicit value was given; planned books are boosted under both their French and English names. Single-language modes are unchanged. Not measured on real audio: French quality under `multi` versus `fr` should be compared on a recording of the target church.
+
+**Groq limits (verified against console.groq.com).** whisper-large-v3(-turbo): 20 RPM, 2,000 RPD, 7,200 audio-seconds/hour, 28,800/day; a request is billed at least 10 s. If the hourly limit counts billed seconds, the 18 requests/min bucket with short utterance-aligned requests could reach 10,800 s/hour while Groq is the active provider. The docs do not say whether billed or actual seconds are counted, so no audio-seconds counter was added: the limit only matters while Groq carries the audio (batch-first or after a Deepgram failover), where a 429 already degrades to buffering plus `Retry-After`. Open item if Groq becomes a long-running primary.
+
+
+## 118. Local Engine: Bilingual Language Lock and Cost-Neutral Speedups
+
+(Numbered 118 because 116 and 117 are taken. Applies to both offline engines behind `LocalWhisperProvider`; the chain
+stays Deepgram -> Groq -> local, no `AsrProvider`, WS or detection change.)
+
+**Bilingual prompt.** In auto/bilingual mode (`language` undefined or `"auto"`) `buildPrompt()` used the French base
+prompt, biasing Whisper away from English. It now carries the French and English base prompts and each planned book
+under both display names ("Jean, John"), inside the same 700-character, trim-from-the-front rule. Once a language is
+locked (below) the prompt is that language's own. Explicit `fr`/`en` modes are unchanged.
+
+**Language lock** (`language-lock.ts`). Section 113 recorded that auto-detection misfired on English. In bilingual mode
+the clip is sent with `language=auto` only when a detection is due; the choice is then restricted to French/English by
+the engine's own probabilities (never a third language) and kept: later clips are sent with the explicit language.
+Detection repeats after `LANGUAGE_REDETECT_EVERY_CLIPS` (2) clips, when the last decoded clip's mean `avg_logprob` is
+below -0.8, when the pick's share of fr+en was below 0.7 or unknown, never on a clip under 2 s (it reuses the lock), and
+always on the first clip. If the engine decoded the detection clip in another language than the pick, that clip is
+decoded once more explicitly (logged `local-whisper.language-locked` on a change). Unlike a sidecar-only design, the
+lock lives in the provider so one implementation serves both engines; the only engine-side parts are
+(a) faster-whisper sidecar: when `language` is auto it calls `WhisperModel.detect_language(audio=...)` (signature
+`-> (language, probability, [(code, probability), ...])`, read from the pinned faster-whisper 1.2.1 wheel), keeps fr/en,
+and returns `language` and `language_probabilities`; any failure falls back to the previous behaviour. (b)
+whisper.cpp v1.8.0 has no restricted-language option (checked in `examples/server/server.cpp`); its `verbose_json` reply
+carries `language` (full name) and `language_probabilities`, which the provider uses.
+
+**Cost-neutral speedups.** (1) whisper.cpp v1.8.0 runs an extra `whisper_lang_auto_detect` (one more encoder pass) for
+every `verbose_json` reply unless the request says `no_language_probabilities=true`; section 117 switched to
+`verbose_json`, so this pass was being paid on every clip. Now only detection clips omit the field (reasoned from
+source, not measured). Auto-detect clips are also rarer than before (one in five, not all). (2) The engine child runs at
+`PRIORITY_BELOW_NORMAL` via `os.setPriority` (maps to BELOW_NORMAL_PRIORITY_CLASS on Windows) so it can never starve OBS
+or NDI; best effort, a refusal is logged (`local-whisper.priority-failed`). Flash attention is already the v1.8.0
+server default.
+
+**Not changed, on purpose.** Thread count (`cpus-1`, 2..8): physical-core count is not available from Node and no engine
+was installed to measure; `beam_size=1`, VAD parameters and the temperature fallback (a quality guard section 117's
+thresholds feed) are kept; no extra "empty clip" skip, because the silence gate owns that (AGENTS.md 11). Known: the
+postprocess term table rewrites "Jesus" to "Jésus" in transcript text even for English; detection is unaffected.
+
+**Limits.** Sticky locking trades CPU for responsiveness: a preacher alternating languages every sentence (consecutive
+interpretation) can lose the first clip after each switch until the low-confidence rule fires. Real-time factor and
+accuracy were **not measured** (no local engine installed on the development machine).
+
+## 120. Interpreter Echo Guard (English preacher, French interpreter)
+
+**Why.** With consecutive interpretation the same verse is detected twice, in two languages: the preacher says "John 3:16", the interpreter repeats "Jean 3:16" seconds later. The second detection re-showed the verse and restarted its auto-clear timer.
+
+**What.** `InterpreterEchoGuard` (`server/core/interpreter-echo-guard.ts`, pure, clock-injectable) is consulted in `AppCore.deliverDetectedVerses()` for **live detection only**; manual overrides, voice navigation and rundown scenes never pass through it. The first (fast) detection always wins. A repeat of the same book/chapter/verse is suppressed when (a) the transcript language (small stopword and book-name vote, `guessSpokenLanguage`) differs from the first one and arrives inside the echo window (initially 30 s, then twice the slowest of the last five observed interpreter delays, clamped to 15–45 s; a gap above 30 s is a deliberate return and is never learned), or (b) it arrives within 8 s in the same language (overlapping chunks). The language vote counts book names double, ignores words shared by both languages ("a", "on", "in") and needs a lead of at least two votes; anything weaker is "unknown", which never counts as an echo: ambiguity can only show a verse, never hide one. The guard forgets everything when the operator takes control (manual show, manual clear, navigation, rundown), so an intentional return to a verse is never hidden. A suppressed echo is logged (`verse.echo-suppressed`) and does not refresh the original record. Review-mode pending verses are covered by the same check.
+
+**Limits.** A preacher who deliberately returns to the same verse within the window after clearing it will not see it re-detected (use the manual override). The language vote is heuristic and has no audio-level speaker separation.
+
+**Corroboration (review mode).** When the interpreter independently says the reference that is waiting for approval, the server re-sends `verse:pending` with `corroboratedBy: "interpreter"` and the dashboard says two voices agree. It never confirms by itself: approving stays the operator's decision, and the field is not part of the later `verse:show`.
+
+**Language badges.** `transcript:partial|final` payloads carry a display-only `language` (`en`/`fr`/`unknown`, same vote as the guard); the "Heard" strip shows an EN/FR badge so the operator sees whose voice was transcribed. Nothing downstream reads it.
+
+**Ideas not built (need their own scope decision).** Two-microphone or stereo lanes (preacher vs interpreter) for true speaker separation; an LLM-assisted near-miss interpreter that only ever proposes a pending suggestion through the existing guard.
+
+## 121. Optional AI Helpers (Anthropic Claude): Reference Repair, Bilingual Notes, Translation
+
+**Scope.** Approved by the owner in chat as the first, deliberately narrow slice of the "AI copilot" (section 59 / ROADMAP item 8). Everything is **optional and inert without an Anthropic API key** (setup screen, stored encrypted like the other keys). The model is only ever a helper behind the small `TextCompleter` interface (`server/ai/claude-client.ts`, a thin fetch adapter to the Messages API, default `claude-haiku-4-5`, 6–20 s timeouts, `CallBudget` per-minute caps, errors scrubbed by `scrubSecrets`). It is never a live agent, never receives audio, and never gets a new Bible lookup path.
+
+- **Reference repair.** For a sentence the deterministic detector flagged as a near-miss (section 91), `ReferenceRepairer` asks the model which single reference the speaker announced. The answer is only a **candidate**: it goes back through `RegexDetector`, `KnownValidVerseIndex` and `VerseSource` like any spoken reference (section 15: an LLM-proposed reference is never trusted) and always lands as a **pending suggestion** (`origin: "ai"`), never on screen by itself, with the same cooldown as quotation suggestions. 6 calls/min.
+- **Bilingual notes.** `ClaudeSermonNotes` implements the existing `summarize()` surface of the section 65.7 notes channel and replaces the Groq generator when a key is set: French first, English after, cited verses listed. Still a read-only observer of final transcripts.
+- **Translation.** Each sufficiently long final transcript whose language is known (section 120 vote) is translated FR<->EN and broadcast as the display-only `translation:final` event (`{id, from, to, text}`, server-only sender). The operator's "Heard" strip shows it under the heard text; nothing downstream reads it and it never reaches the congregation overlay. 20 calls/min.
+
+**Privacy/cost.** With a key set, transcript text (not audio) is sent to Anthropic; the setup screen says so. Calls are capped per minute and fail soft: a timeout or 429 simply means no suggestion/translation for that sentence.
+
+**Not done / open.** Only the operator dashboard displays translations (stage/live pages do not yet). Not exercised against the live API in this session (tests use a fake completer): validate the prompts on a recorded service. A congregation-facing subtitle overlay stays out of scope.
+
+## 122. Quote-Matcher Index Built in Time Slices
+
+**Measured first (AGENTS.md section 34).** Of the startup/per-request paths, only the quotation index build was a real event-loop stall: `new QuoteMatcher(LSG)` indexes 31,170 verses in 0.7–1.1 s of synchronous work (tokenizing ~250 ms, run hashing and `Map` inserts the rest). It already ran off the startup path (section 98), but it still froze the Electron main process (audio, WS, dashboard) for that long once at launch and the same when a rebuild was needed. Everything else measured was already cheap: the regex detector takes ~54 us per line, `match()` ~0.01 ms, the bundled Bible parses in ~48 ms asynchronously, and no synchronous filesystem calls exist outside tests.
+
+**What.** `QuoteMatcher.buildAsync()` fills the same index in ~15 ms slices, yielding with `setImmediate`. The constructor is unchanged for callers and tests. `lazyQuoteMatcher()` in `desktop/main/index.ts` uses it, and keeps its pending flag until the build finishes so two builds never overlap. Until ready, `match()` returns nothing, as before.
+
+**Result.** Longest event-loop stall during the build: ~700–1000 ms down to ~36 ms; total build time about the same (~0.8 s). A test asserts the async index equals the synchronous one and that timers keep firing during the build. Detection output and invariants (partials never trigger detection, quote matches stay pending suggestions) are untouched.
+
+## 123. AI Transcript Cleanup (Phase 2, owner-approved scope change)
+
+**Scope change (AGENTS.md section 4, ROADMAP item 17).** Approved by the owner in chat together with sections 124-126 (four additional AI features on top of section 121). Shared rules for all four: optional and **inert without an Anthropic key**; one `TextCompleter` (`server/ai/claude-client.ts`) and one `CallBudget`, no second client; transcript **text only** (no audio); errors scrubbed with `scrubSecrets` (the client already does it, and the AppCore log lines go through the logger); every queue, cache and in-flight set bounded; the model is never trusted directly (section 15); partial transcripts never reach any of them (`passesTranscriptGate`); each feature has its own live toggle, **default OFF**, persisted in `ConfigStore` (`aiTranscriptCleanup`, `aiSemanticDetection`, `aiSermonCopilot`, absent in older files = false) and switched through the one `set-ai-feature` IPC handler / `AppCoreHandle.setAiFeature()`. Tests use fake completers only; the prompts have not been validated against the live API.
+
+**Why.** Cloud ASR still garbles the words that matter most for detection: book names ("Corentin"), spelled-out numbers, accents ("Esaïe"/"Isaie"), and French/English mixing. The deterministic corrector (section 87) and near-miss repair (section 121) cover known shapes; a model can fix open-ended ones.
+
+**What.** `TranscriptCleaner` (`server/ai/transcript-cleaner.ts`) asks the model to correct recognition errors in one final sentence (book names, numbers, accents, FR/EN) without adding, removing or translating anything. Only a final transcript that already looks reference-related (a chapter/verse keyword, a catalog book name, or a digit) is sent; that keeps the cost and the traffic proportional to what matters. The answer is sanity-checked (single line, 0.5x-1.6x of the original word count, not identical) before it is used.
+
+**Latency (section 70, 5 s budget).** The raw-text detection path is **not touched and not delayed**: it runs first, exactly as before. The cleanup runs beside it with its own hard timeout (3 s, enforced both by the client's abort and by a `Promise.race` in the cleaner, so a hanging completer cannot leak), at most 2 in flight, and `CallBudget` 20 calls/min. On timeout, error, budget exhaustion or an unusable answer the system simply keeps the raw result (logged `ai.cleanup-*`). The design choice versus "clean, then detect": serial cleanup would put 0.5-1 s of model latency in front of **every** detection; the parallel form costs nothing on the existing path.
+
+**Validation (section 13/14 intact).** The corrected text is only a **candidate**: it is run through the same `RegexDetector`, `KnownValidVerseIndex` and `VerseSource` (via `resolveVerse`: cache, circuit breaker, response validation). A reference already found in the raw text is skipped. A reference found **only** because of the correction is never auto-shown, even in auto mode: it becomes a pending suggestion (`verse:pending`, `origin: "ai"`, `suggestedBy: "cleanup"`), with the same 60 s per-verse cooldown as quotation suggestions, and it does not replace a detected verse that is already waiting for approval in review mode (20 s protection). The original transcript is what is broadcast, logged and exported; the cleaned text is never broadcast, never used for navigation commands, media cues, glossary or notes.
+
+**Tests.** `transcript-cleaner.test.ts` (prompt, output checks, timeout fallback, budget), AppCore integration (a garbled book name becomes a pending `ai` suggestion that is validated and never shown; a non-existent reference is rejected; a model timeout falls back to raw with the raw path unaffected; flag off / no key means zero calls; partials never call), `config-store.test.ts` (round trip, absent = off, corruption), `ai-features` names/defaults. The `set-ai-feature` IPC glue in `desktop/main/index.ts` and the dashboard card are thin and were not exercised in a running Electron app.
+
+**Not done / open.** Prompt quality and real latency on a recorded service are not measured. The cleaned text is not shown to the operator (could be a debugging view later).
+
+## 124. AI Semantic Verse Suggestions (Phase 2, owner-approved scope change)
+
+**Scope change (ROADMAP item 18).** This moves the formerly Deferred "Semantic / paraphrase-aware verse detection" (section 3, ROADMAP) into Phase 2 as an **optional, key-gated, suggestion-only** proposer. It is not vector search, not a new Bible database and not a replacement for `RegexDetector`: the deterministic path is unchanged and always runs first. The shared rules of section 123 apply (default OFF, no key = inert, text only, bounded, fakes in tests).
+
+**Seam.** `VerseDetector.detect()` is synchronous and AGENTS.md section 12 forbids API calls in a detector, so the proposer cannot be a `VerseDetector`. It is the asynchronous "reference interpreter" the ROADMAP always described, a sibling of `ReferenceRepairer`: `SemanticVerseProposer` (`server/ai/semantic-verse-proposer.ts`) returns at most one CANDIDATE reference, and `AppCore` runs it through the exact path every other proposal takes.
+
+**What.** For a paraphrased or loosely quoted passage ("God so loved the world that he gave his only son") where nothing was cited, the model is asked, over a rolling window of the last ~45 s / 120 words of final transcript, which single verse is being quoted or paraphrased. It must answer `{"book","chapter","verse","confidence"}` with `high | medium | low`, or `{"none":true}`. Only `high` is used.
+
+**Where it is allowed to run (all must hold).** The feature is on, a key is present, the transcript is final (`passesTranscriptGate`), the sentence has at least 6 words, it carried **no validated explicit reference** (the regex path owns those), the verbatim `QuoteMatcher` found nothing in the same window (that deterministic suggestion wins), at least 10 s since the previous semantic call, nothing else in flight, and `CallBudget` of 4 calls/min allows it.
+
+**Validation (never trusted).** The proposal is rendered as "Book chapter:verse", re-read by `RegexDetector`, checked by `KnownValidVerseIndex.exists()`, then fetched through `resolveVerse` (cache, circuit breaker, response validation) from the `VerseSource`. A proposal failing any step is dropped and logged (`ai.semantic-rejected`).
+
+**Output is ALWAYS a pending suggestion.** `verse:pending` with `origin: "ai"`, `suggestedBy: "semantic"`; it is never `verse:show`, in auto mode as well as review mode. The dashboard labels it as a meaning-based guess. It shares the 60 s per-verse cooldown map with quotation, repair and cleanup suggestions (a verse is not suggested twice by two helpers, and one already on screen is skipped), and, like section 123, it never replaces a detected verse that is waiting for approval.
+
+**Tests.** `semantic-verse-proposer.test.ts` (prompt, strict JSON parsing, confidence gate, bounds); AppCore: a paraphrase becomes a pending `semantic` suggestion and is not shown; a non-existent proposal is rejected; a sentence with an explicit reference does not call the model; a verbatim quotation (quote matcher) does not call the model; off by default / no key; partials never call; interval and budget limits; cooldown.
+
+**Not done / open.** Accuracy on real sermons and the 10 s / 4-per-minute limits are untuned (no live API in this session). A model that is confidently wrong yields a wrong *suggestion*, which the operator must still approve.
+
+## 125. Live Sermon Copilot: Operator-Only Suggestions (Phase 2, owner-approved scope change)
+
+**Scope change (ROADMAP item 19; builds on the deliberately narrow section 121 and the one-shot section 93).** Optional, default OFF, key-gated, with the shared rules of section 123. It is **not** a chat agent, takes no free-form operator prompt, performs no actions, and has no Bible lookup path of its own.
+
+**What.** About every 45 s (`copilotIntervalMs`), if at least 200 characters of new final transcript arrived, `SermonCopilot` (`server/ai/sermon-copilot.ts`) is given (1) the last ~2 min / 450 words of **validated final transcript** (finals that passed the transcript gate and the hallucination guard; the original ASR text, not the cleaned text of section 123) and (2) the references already shown this session (`SessionRecorder`, which only ever holds verified verses). It answers one JSON object: up to 3 `relatedVerses` (book/chapter/verse) and a `keyPoint` (`caption`, at most 140 characters, and up to 4 `slide` lines of at most 70 characters), in the language of the sermon. One call per cycle, 3 calls/min budget, one in flight, never overlapping.
+
+**Validation.** Related verses are CANDIDATES: each is read back through `RegexDetector`, checked by `KnownValidVerseIndex`, skipped when already shown this session, and fetched with `resolveVerse` from the `VerseSource` (cache, circuit breaker, response validation). The caption and slide lines are plain AI text: length-bounded, control characters stripped, rendered with `textContent` only, labelled as AI-generated. Nothing is parsed out of them.
+
+**Operator-only.** The result is the server-only event `copilot:suggestions` (`{ id, relatedVerses: Verse[], keyPoint | null }`, registered with no allowed sender). It is sent with the new `ChurchOverlayWsServer.broadcastToOperators()`, so viewer-role clients (overlay, stage, live pages) never receive it, and the overlay has no code to display it. The dashboard card (in the tools drawer next to the sermon notes, EN/FR) lists the verses with a **Show** button, which sends the ordinary `verse:override` (validated and looked up again like any typed reference, section 50), and the key point with a **Copy** button. A suggestion is never put on screen without an operator action.
+
+**Tests.** `sermon-copilot.test.ts` (prompt, strict parsing, bounds, hostile fields); AppCore (suggestions reach the operator socket but not the viewer socket; related verses are validated and fetched, a fake/unknown one is dropped, an already-shown one is skipped; no `verse:show`/`verse:pending` is ever produced; off by default / no key / no new text / budget / overlap); `action-registry.test.ts` (new event: payload validation, no inbound sender); `server.test.ts` (`broadcastToOperators`).
+
+**Not done / open.** Prompt quality and suggestion usefulness are unmeasured (no live API). The dashboard keeps only the latest suggestion set; there is no history and no re-sync on reconnect.
+
+## 126. Post-Service Extras: Quote Cards, French + English Recap, Notes Export (Phase 2, owner-approved scope change)
+
+**Scope change (ROADMAP item 20; extends section 93).** The one-shot, operator-triggered service summary gets three additions behind one new button in the Sermon Notes card. Same rules as section 93 and section 123: no live agent, nothing during the service, no new Bible lookup, nothing displayed on the overlay, no running toggle (an explicit button press is the opt-in, like the summary). Unlike the section 93 summary, which keeps using the Groq key, the extras need the **Anthropic key** (shared `ClaudeClient` / `TextCompleter`, `CallBudget` of 3/min and one request at a time in the main process); without it the button returns a clear error and nothing is sent.
+
+**Inputs (only already-validated data).** `buildServiceExtrasInput()` (`server/ai/service-extras.ts`, pure) formats exactly two things: the verses actually shown this session (`SessionRecorder` entries, each already passed `KnownValidVerseIndex` and the verse source), numbered and bounded (last 60, 300 characters each), and the sermon-notes text the operator's dashboard already accumulated (last 6000 characters). No raw transcript, no audio.
+
+**Outputs, each checked in code.**
+- **French + English recap.** One call returns `recapFr` and `recapEn` (2-4 sentences each, at most 1200 characters, control characters stripped). Both are required; an answer missing either is an error shown to the operator, never papered over.
+- **Quote cards.** The model only *selects*: it returns the numbers of up to 3 listed verses (indexes are range-checked and de-duplicated, so a card can only be a verse that was really shown, with its verified text and reference) and up to 2 sentences copied word for word from the notes (kept only if they are an exact substring of the notes after whitespace/case normalization, at most 160 characters; a paraphrase or invention is dropped). Verse cards reuse the existing card renderer (section 65.8); note cards carry a "Sermon note (AI)" label instead of a reference, so an AI-written line is never presented as Scripture.
+- **Notes export.** `buildServiceNotesMarkdown()` (pure) writes `service-notes.md` (recap in both languages, the verses shown with times and verified text, the notes, the list of cards, an AI-generated disclaimer) plus `quote-card-ai-N.png` for each selected card into a folder the operator picks, through the same main-process dialog pattern as `export-session`. Nothing is written without the folder choice.
+
+**Flow.** `generate-service-extras` (IPC, main process only) builds the input from `getSessionEntries()` plus the notes text the renderer sends, calls the generator, keeps the validated result in memory for the export, and returns `{ extras }` or `{ error }`; `export-service-extras` writes the files. Errors are returned, scrubbed with `scrubSecrets` (AGENTS.md section 46).
+
+**Tests.** `service-extras.test.ts`: input building and bounds; strict parsing (missing recap, out-of-range / duplicate / non-integer card indexes, invented or paraphrased note quotes, hostile text); generator with a fake completer; Markdown output for both languages, with and without cards. The Electron dialog / PNG glue in `desktop/main/index.ts` is thin and not unit-tested (it needs a running Electron).
+
+**Not done / open.** Prompt quality, real card legibility with long notes lines, and the dialog glue were not exercised against the live API or a running Electron app in this session.

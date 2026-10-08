@@ -103,3 +103,40 @@ test("watchSystemResume: resume events are debounced and reach the CURRENT engin
   assert.deepEqual(calls, ["b"])
   assert.equal(source.listenerCount("resume"), 0)
 })
+
+// ---- Section 118: engine runs below normal priority so it never starves OBS ----
+import { constants as osConstants } from "node:os"
+
+test("WhisperServerProcess: the engine child is lowered to below-normal priority at spawn", async () => {
+  const calls: Array<[number, number]> = []
+  const spawnImpl = (() => Object.assign(new FakeChild(), { pid: 4321 })) as unknown as typeof spawn
+  const server = new WhisperServerProcess({
+    serverPath: "C:/engine/whisper-server.exe",
+    modelPath: "C:/models/m.bin",
+    spawnImpl,
+    fetchImpl: (() => Promise.resolve(new Response('{"status":"ok"}', { status: 200 }))) as typeof fetch,
+    setPriorityImpl: (pid, priority) => void calls.push([pid, priority]),
+  })
+  await server.ensureStarted()
+  await server.stop()
+  assert.deepEqual(calls, [[4321, osConstants.priority.PRIORITY_BELOW_NORMAL]])
+})
+
+test("WhisperServerProcess: a refused priority change is logged, not fatal", async () => {
+  const spawnImpl = (() => Object.assign(new FakeChild(), { pid: 99 })) as unknown as typeof spawn
+  const lines: string[] = []
+  const { Logger } = await import("../../../packages/shared/logger")
+  const server = new WhisperServerProcess({
+    serverPath: "C:/engine/whisper-server.exe",
+    modelPath: "C:/models/m.bin",
+    spawnImpl,
+    fetchImpl: (() => Promise.resolve(new Response('{"status":"ok"}', { status: 200 }))) as typeof fetch,
+    setPriorityImpl: () => {
+      throw new Error("EPERM")
+    },
+    logger: new Logger({ minLevel: "debug", write: (line) => lines.push(line) }),
+  })
+  await server.ensureStarted()
+  await server.stop()
+  assert.ok(lines.some((line) => line.includes("local-whisper.priority-failed") && line.includes("EPERM")))
+})

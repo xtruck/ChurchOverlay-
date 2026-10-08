@@ -23,6 +23,7 @@ class FakeSecretCodec implements SecretCodec {
 const SAMPLE_CONFIG: AppConfig = {
   groqApiKey: "gsk_super_secret_value",
   deepgramApiKey: "deepgram_secret_value",
+  anthropicApiKey: "sk-ant-secret-value",
   microphoneId: "default-mic",
   operatorToken: "operator-token-value",
   viewerToken: "viewer-token-value",
@@ -130,6 +131,25 @@ test("ConfigStore: leaves no temp file behind after a successful save", async ()
 
 // The actual security property this class exists for: secrets must not
 // be recoverable by just reading the file on disk.
+test("ConfigStore: the optional anthropicApiKey round-trips, is encrypted at rest, and is absent when never set", async () => {
+  await withTempDir(async (dir) => {
+    const path = join(dir, "config.json")
+    const store = new ConfigStore(path, new FakeSecretCodec())
+    await store.save(SAMPLE_CONFIG)
+    assert.equal((await store.load())?.anthropicApiKey, SAMPLE_CONFIG.anthropicApiKey)
+    const raw = await readFile(path, "utf8")
+    assert.equal(raw.includes(SAMPLE_CONFIG.anthropicApiKey as string), false)
+    assert.equal(raw.includes("anthropicApiKeyEncrypted"), true)
+
+    const { anthropicApiKey: _omit, ...withoutKey } = SAMPLE_CONFIG
+    await store.save(withoutKey)
+    const reloaded = await store.load()
+    assert.equal(reloaded?.anthropicApiKey, undefined)
+    assert.equal("anthropicApiKey" in (reloaded ?? {}), false)
+    assert.equal((await readFile(path, "utf8")).includes("anthropicApiKeyEncrypted"), false)
+  })
+})
+
 test("ConfigStore: secrets are genuinely encrypted at rest — the raw file never contains the plaintext", async () => {
   await withTempDir(async (dir) => {
     const path = join(dir, "config.json")
@@ -564,5 +584,44 @@ test("ConfigStore: an unknown localAsrEngine is rejected on load, not silently d
     raw.localAsrEngine = "mystery"
     await writeFile(file, JSON.stringify(raw))
     await assert.rejects(store.load(), /invalid localAsrEngine/)
+  })
+})
+
+// ARCHITECTURE.md sections 123-125: the three AI feature toggles are optional,
+// off when absent (old files), preserved when present, and corruption is loud.
+test("ConfigStore: AI feature toggles round-trip, and an older file loads with none of them set (= off)", async () => {
+  await withTempDir(async (dir) => {
+    const path = join(dir, "config.json")
+    const codec = new FakeSecretCodec()
+    const store = new ConfigStore(path, codec)
+    await store.save({ ...SAMPLE_CONFIG, aiTranscriptCleanup: true, aiSemanticDetection: false, aiSermonCopilot: true })
+    const loaded = await store.load()
+    assert.equal(loaded?.aiTranscriptCleanup, true)
+    assert.equal(loaded?.aiSemanticDetection, false)
+    assert.equal(loaded?.aiSermonCopilot, true)
+
+    await store.save(SAMPLE_CONFIG)
+    const older = await store.load()
+    assert.equal(older?.aiTranscriptCleanup, undefined)
+    assert.equal(older?.aiSemanticDetection, undefined)
+    assert.equal(older?.aiSermonCopilot, undefined)
+  })
+})
+
+test("ConfigStore: load() throws on a non-boolean AI feature toggle", async () => {
+  await withTempDir(async (dir) => {
+    const path = join(dir, "config.json")
+    const codec = new FakeSecretCodec()
+    const baseStored = {
+      groqApiKeyEncrypted: codec.encrypt(SAMPLE_CONFIG.groqApiKey).toString("base64"),
+      microphoneId: SAMPLE_CONFIG.microphoneId,
+      operatorTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.operatorToken).toString("base64"),
+      viewerTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.viewerToken).toString("base64"),
+    }
+    const { writeFile } = await import("node:fs/promises")
+    for (const name of ["aiTranscriptCleanup", "aiSemanticDetection", "aiSermonCopilot"]) {
+      await writeFile(path, JSON.stringify({ ...baseStored, [name]: "yes" }), "utf8")
+      await assert.rejects(() => new ConfigStore(path, codec).load(), new RegExp(`invalid ${name}`))
+    }
   })
 })

@@ -5,6 +5,14 @@ import { generateUlid } from "../../../packages/shared/ulid"
 import { biblicalVocabularyFor, plannedBookTerms } from "./biblical-vocabulary"
 
 const DEFAULT_MODEL = "nova-2"
+/**
+ * `language=multi` (code-switching, English + French among others) is a
+ * Nova-3 feature; Nova-2 only code-switches Spanish + English. Checked against
+ * developers.deepgram.com (multilingual code-switching, keyterm, languages).
+ */
+const MULTI_MODEL = "nova-3"
+/** Deepgram recommends endpointing=100 for code-switching. */
+const MULTI_ENDPOINTING_MS = 100
 const DEFAULT_URL = "wss://api.deepgram.com/v1/listen"
 /**
  * Deepgram closes a streaming socket that receives neither audio nor a
@@ -65,6 +73,7 @@ export class DeepgramProvider implements AsrProvider {
   private readonly WebSocketImpl: typeof WebSocket
   private readonly keepAliveIntervalMs: number
   private readonly endpointingMs: number
+  private readonly endpointingExplicit: boolean
   private readonly connectTimeoutMs: number
   private readonly biblicalVocabulary: boolean
   private language: string | undefined
@@ -88,6 +97,7 @@ export class DeepgramProvider implements AsrProvider {
     this.WebSocketImpl = options.WebSocketImpl ?? WebSocket
     this.keepAliveIntervalMs = options.keepAliveIntervalMs ?? DEFAULT_KEEPALIVE_MS
     this.endpointingMs = options.endpointingMs ?? DEFAULT_ENDPOINTING_MS
+    this.endpointingExplicit = options.endpointingMs !== undefined
     this.connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS
     this.biblicalVocabulary = options.biblicalVocabulary ?? true
   }
@@ -123,18 +133,21 @@ export class DeepgramProvider implements AsrProvider {
 
   /** The exact streaming URL start() opens. Contains no secret — the key travels in a header. */
   buildUrl(): string {
+    const multi = this.language === "multi"
+    const model = multi && !this.model.startsWith("nova-3") ? MULTI_MODEL : this.model
+    const endpointingMs = multi && !this.endpointingExplicit ? MULTI_ENDPOINTING_MS : this.endpointingMs
     const query = new URLSearchParams({
-      model: this.model,
+      model,
       encoding: "linear16",
       sample_rate: "16000",
       channels: "1",
       interim_results: "true",
       smart_format: "true",
-      endpointing: String(this.endpointingMs),
+      endpointing: String(endpointingMs),
     })
     if (this.language) query.set("language", this.language)
     // nova-3 replaced weighted `keywords` with plain `keyterm` prompting.
-    const nova3 = this.model.startsWith("nova-3")
+    const nova3 = model.startsWith("nova-3")
     const appendTerm = (term: string) => query.append(nova3 ? "keyterm" : "keywords", nova3 ? term : `${term}:2`)
     if (this.biblicalVocabulary) {
       for (const term of biblicalVocabularyFor(this.language)) appendTerm(term)

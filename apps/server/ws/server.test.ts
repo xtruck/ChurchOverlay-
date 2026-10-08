@@ -573,3 +573,34 @@ test("ChurchOverlayWsServer: connections beyond the cap are refused and reported
     await server.close()
   }
 })
+
+test("ChurchOverlayWsServer: broadcastToOperators() reaches operator-role clients only, never a viewer", async () => {
+  const server = await startServer()
+  try {
+    const operatorSocket = await connect(server.port, TOKENS.operatorToken)
+    const viewerSocket = await connect(server.port, TOKENS.viewerToken)
+    const viewerReceived: string[] = []
+    viewerSocket.on("message", (data) => viewerReceived.push(data.toString()))
+    const operatorReceived = waitForMessage(operatorSocket)
+
+    const event: WsMessage = {
+      id: "01COP",
+      type: "copilot:suggestions",
+      timestamp: Date.now(),
+      payload: { id: "s1", relatedVerses: [], keyPoint: { caption: "Grace", slide: [] } },
+    }
+    server.broadcastToOperators(event)
+
+    assert.deepEqual(JSON.parse(await operatorReceived), event)
+    // a normal broadcast afterwards still reaches the viewer, so silence above was not a dead socket
+    const viewerAfter = waitForMessage(viewerSocket)
+    server.broadcast({ id: "01AFTER", type: "status:update", timestamp: Date.now(), payload: {} })
+    assert.equal((JSON.parse(await viewerAfter) as WsMessage).id, "01AFTER")
+    assert.deepEqual(viewerReceived.map((raw) => (JSON.parse(raw) as WsMessage).id), ["01AFTER"])
+
+    operatorSocket.close()
+    viewerSocket.close()
+  } finally {
+    await server.close()
+  }
+})

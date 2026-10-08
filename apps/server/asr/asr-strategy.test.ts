@@ -32,9 +32,9 @@ test("planAsr: batch-first keeps Groq primary", () => {
   })
 })
 
-test("deepgramLanguageFor: bilingual listens in French, never Deepgram's English default", () => {
+test("deepgramLanguageFor: bilingual code-switches (multi), never Deepgram's English default", () => {
   assert.equal(deepgramLanguageFor("french"), "fr")
-  assert.equal(deepgramLanguageFor("bilingual"), "fr")
+  assert.equal(deepgramLanguageFor("bilingual"), "multi")
   assert.equal(deepgramLanguageFor("english"), "en")
 })
 

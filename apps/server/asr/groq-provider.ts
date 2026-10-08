@@ -50,6 +50,8 @@ export const DEFAULT_RATE_LIMIT_REQUESTS = 18
 export const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000
 export const MAX_THROTTLED_BUFFER_MS = 15_000
 export const SUSTAINED_429_THRESHOLD = 3
+/** Longest pause a Retry-After hint may impose (one rate-limit window). */
+export const MAX_RETRY_AFTER_MS = 60_000
 export const RATE_LIMIT_RETRY_BASE_MS = 2000
 // Production audit (2026-09): the fetch() call in transcribe() had no
 // timeout at all. A single stalled connection (rare but real over a
@@ -164,6 +166,8 @@ export class GroqProvider implements AsrProvider {
   // TASK 3: utterance-aligned chunking state
   private lastTranscriptText = ""
   private lastFlushTime = 0
+  private transcribeChain: Promise<void> = Promise.resolve()
+  private pendingTranscriptions = 0
 
   // TASK 1: rate-limit (leaky-bucket) state
   private requestsInWindow = 0
@@ -449,6 +453,24 @@ export class GroqProvider implements AsrProvider {
       return
     }
 
+    // Requests run strictly one at a time, in the order they were detached
+    // from the buffer. Without this a slow response (retry, 429 backoff) let
+    // the next chunk fire in parallel, so transcripts could reach the
+    // detector out of order and the seam dedup compared against the wrong
+    // previous text. Queue depth stays bounded by the rate limiter above.
+    // When nothing is in flight the request is dispatched synchronously.
+    const run = this.pendingTranscriptions === 0
+      ? this.transcribeAndEmit(samples)
+      : this.transcribeChain.then(() => this.transcribeAndEmit(samples))
+    this.pendingTranscriptions += 1
+    const tracked = run.finally(() => {
+      this.pendingTranscriptions -= 1
+    })
+    this.transcribeChain = tracked.catch(() => {})
+    await tracked
+  }
+
+  private async transcribeAndEmit(samples: Int16Array): Promise<void> {
     try {
       const text = await this.transcribe(samples)
       if (text.trim().length === 0) {
@@ -629,10 +651,17 @@ export class GroqProvider implements AsrProvider {
       const errorMessage = extractGroqErrorMessage(errorBody) ?? `Groq request failed with status ${response.status}`
       // TASK 2: detect 429 and parse retry-after delay
       if (response.status === 429) {
-        const retryAfter = extractGroqRetryAfter(errorBody)
+        // The standard Retry-After header (seconds) wins over the body hint.
+        const retryAfter = parseRetryAfterHeader(response.headers.get("retry-after")) ?? extractGroqRetryAfter(errorBody)
         const retryAfterMs = retryAfter ?? RATE_LIMIT_RETRY_BASE_MS
         this.consecutive429s++
         this.last429Time = this.now()
+        // Honor an explicit server hint: stop sending (audio keeps buffering,
+        // bounded by MAX_THROTTLED_BUFFER_MS) until it elapses instead of
+        // hammering a provider that just said when to come back.
+        if (retryAfter !== undefined) {
+          this.throttledUntil = Math.max(this.throttledUntil, this.now() + Math.min(retryAfter, MAX_RETRY_AFTER_MS))
+        }
         // Emit sustained event if threshold exceeded
         if (this.consecutive429s >= SUSTAINED_429_THRESHOLD && this.rateLimitedSustainedCallback) {
           this.rateLimitedSustainedCallback()
@@ -768,6 +797,13 @@ function extractGroqErrorMessage(body: unknown): string | undefined {
   const error = body.error
   if (!isPlainObject(error)) return undefined
   return typeof error.message === "string" ? error.message : undefined
+}
+
+/** Retry-After in whole/fractional seconds; HTTP-date form and junk are ignored. */
+function parseRetryAfterHeader(value: string | null): number | undefined {
+  if (value === null || !/^\d+(\.\d+)?$/.test(value.trim())) return undefined
+  const seconds = Number(value)
+  return seconds > 0 ? Math.round(seconds * 1000) : undefined
 }
 
 /** Extract the "retry-after" delay from a Groq 429 error body, if present. */

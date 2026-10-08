@@ -1,7 +1,8 @@
 import type { AsrProvider, AudioFrame, TranscriptResult } from "../../../packages/contracts"
 import type { Logger } from "../../../packages/shared/logger"
 import { generateUlid } from "../../../packages/shared/ulid"
-import { plannedBookTerms } from "./biblical-vocabulary"
+import { plannedBookTerms, plannedBookTermsBilingual } from "./biblical-vocabulary"
+import { LanguageLock, meanLogprob, normalizeLanguage, pickFrEn, type LockedLanguage } from "./language-lock"
 import { normalizeBookName } from "../detector/regex-detector"
 import { echoWords, isPromptEcho } from "./prompt-echo"
 import { filterSegments, parseScoredSegments } from "./segment-quality"
@@ -66,6 +67,8 @@ export function computeLocalTranscriptionTimeoutMs(audioMs: number): number {
 }
 const DEFAULT_PROMPT_FR = "Lecture biblique : Jean chapitre 3 verset 16, Psaume 23, Romains 8, Deutéronome, Philippiens."
 const DEFAULT_PROMPT_EN = "Bible reading: John chapter 3 verse 16, Psalm 23, Romans 8, Deuteronomy, Philippians."
+/** Bilingual (auto) mode: both languages' biblical context, so neither is the one Whisper is biased away from. */
+const DEFAULT_PROMPT_BILINGUAL = `${DEFAULT_PROMPT_FR} ${DEFAULT_PROMPT_EN}`
 /** Whisper only reads the last ~220 tokens of a prompt; this keeps ours well inside that. */
 const MAX_PROMPT_CHARS = 700
 /** How much of the previous sentence is carried into the next prompt. */
@@ -125,6 +128,7 @@ export class LocalWhisperProvider implements AsrProvider {
   private readonly promptOverride?: string
   private readonly timeoutFor: (audioMs: number) => number
   private language: string | undefined
+  private readonly languageLock = new LanguageLock()
   private active = false
   private plannedBookIds: readonly string[] = []
   private currentBook: string | null = null
@@ -151,6 +155,12 @@ export class LocalWhisperProvider implements AsrProvider {
 
   setLanguage(language: string | undefined): void {
     this.language = language
+    this.languageLock.reset()
+  }
+
+  /** Bilingual mode = no explicit language: the app passes undefined (or "auto") for "both". */
+  private get bilingual(): boolean {
+    return this.language === undefined || this.language === "auto"
   }
 
   /** Context for the next prompt: the book on screen biases "Corinthiens"-style names toward the right book. */
@@ -177,8 +187,14 @@ export class LocalWhisperProvider implements AsrProvider {
    * still goes through detection, the index and the Bible source like any other.
    */
   buildPrompt(): string {
-    const base = this.promptOverride ?? (this.language === "en" ? DEFAULT_PROMPT_EN : DEFAULT_PROMPT_FR)
-    const books = plannedBookTerms([...this.plannedBookIds, ...(this.currentBook ? [this.currentBook] : [])], this.language)
+    return this.promptFor(this.bilingual ? (this.languageLock.language ?? "bilingual") : this.language === "en" ? "en" : "fr")
+  }
+
+  private promptFor(mode: LockedLanguage | "bilingual"): string {
+    const base =
+      this.promptOverride ?? (mode === "en" ? DEFAULT_PROMPT_EN : mode === "bilingual" ? DEFAULT_PROMPT_BILINGUAL : DEFAULT_PROMPT_FR)
+    const ids = [...this.plannedBookIds, ...(this.currentBook ? [this.currentBook] : [])]
+    const books = mode === "bilingual" ? plannedBookTermsBilingual(ids) : plannedBookTerms(ids, mode)
     const parts = [base]
     if (books.length > 0) parts.push(books.join(", ") + ".")
     if (this.previousTail) parts.push(this.previousTail)
@@ -195,6 +211,7 @@ export class LocalWhisperProvider implements AsrProvider {
     this.active = true
     this.sequence = 0
     this.correlationId = generateUlid(this.now())
+    this.languageLock.reset()
     await this.server.ensureStarted()
   }
 
@@ -302,8 +319,31 @@ export class LocalWhisperProvider implements AsrProvider {
    * nothing to echo, so real speech that happened to match is not lost.
    */
   private async transcribeGuarded(samples: Int16Array): Promise<string> {
-    const prompt = this.buildPrompt()
-    const first = (await this.transcribe(samples, prompt)).trim()
+    let language: string | undefined = this.bilingual ? undefined : this.language
+    let promptMode: LockedLanguage | "bilingual" = this.language === "en" ? "en" : "fr"
+    let detecting = false
+    if (this.bilingual) {
+      // Bilingual: lock fr/en (language-lock.ts). Detect on the first clip and when the lock is stale; else explicit.
+      const locked = this.languageLock.language
+      detecting = this.languageLock.needsDetection(msOf(samples.length))
+      language = detecting || !locked ? "auto" : locked
+      promptMode = detecting || !locked ? "bilingual" : locked
+    }
+    let prompt = this.promptFor(promptMode)
+    let decoded = await this.transcribe(samples, prompt, language, detecting)
+    if (this.bilingual) {
+      if (detecting) {
+        const corrected = await this.settleLanguage(samples, decoded)
+        if (corrected) {
+          language = corrected.language
+          prompt = corrected.prompt
+          decoded = corrected.decoded
+        }
+        language = this.languageLock.language ?? language // a retry must not re-detect
+      }
+      this.languageLock.noteClip(decoded.meanLogprob, detecting)
+    }
+    const first = decoded.text.trim()
     if (!isPromptEcho(first, prompt)) return first
     this.logger?.warn({
       component: "asr",
@@ -311,7 +351,7 @@ export class LocalWhisperProvider implements AsrProvider {
       correlationId: this.correlationId,
       metadata: { words: echoWords(first).length, action: "retry-without-prompt" },
     })
-    const retry = (await this.transcribe(samples, null)).trim()
+    const retry = (await this.transcribe(samples, null, language, false)).text.trim()
     this.logger?.info({
       component: "asr",
       event: "local-whisper.prompt-echo-retry",
@@ -319,6 +359,34 @@ export class LocalWhisperProvider implements AsrProvider {
       metadata: { words: echoWords(retry).length, empty: retry.length === 0 },
     })
     return retry
+  }
+
+  /**
+   * A detection clip came back: lock French or English (the better of the two
+   * by the engine's own probabilities, never a third language). If the engine
+   * decoded the clip in a different language than the locked one, decode it
+   * once more with the locked language (returned); otherwise null.
+   */
+  private async settleLanguage(
+    samples: Int16Array,
+    decoded: Decoded,
+  ): Promise<{ language: LockedLanguage; prompt: string; decoded: Decoded } | null> {
+    const previous = this.languageLock.language
+    // No usable probabilities: fall back to the language the engine decoded in, when it is fr/en.
+    const pick = decoded.pick ?? (decoded.language ? { language: decoded.language, margin: 0 } : null)
+    if (!pick) return null // nothing to lock; the clip keeps the engine's own choice, and the next clip detects again
+    this.languageLock.settle(pick.language, pick.margin)
+    if (pick.language !== previous) {
+      this.logger?.info({
+        component: "asr",
+        event: "local-whisper.language-locked",
+        correlationId: this.correlationId,
+        metadata: { language: pick.language, previous, margin: round(pick.margin) },
+      })
+    }
+    if (decoded.language === pick.language) return null
+    const prompt = this.promptFor(pick.language)
+    return { language: pick.language, prompt, decoded: await this.transcribe(samples, prompt, pick.language, false) }
   }
 
   /**
@@ -349,7 +417,7 @@ export class LocalWhisperProvider implements AsrProvider {
     return kept.map((segment) => segment.text.trim()).filter(Boolean).join(" ")
   }
 
-  private async transcribe(samples: Int16Array, prompt: string | null): Promise<string> {
+  private async transcribe(samples: Int16Array, prompt: string | null, language: string | undefined, detecting: boolean): Promise<Decoded> {
     await this.server.ensureStarted()
     const baseUrl = this.server.baseUrl
     if (!baseUrl) throw new Error("Local transcription engine is not running")
@@ -358,7 +426,10 @@ export class LocalWhisperProvider implements AsrProvider {
     // verbose_json adds per-segment scores for the hallucination filter; `text` is still there.
     form.append("response_format", "verbose_json")
     form.append("temperature", "0.0")
-    form.append("language", this.language ?? "auto")
+    form.append("language", language ?? "auto")
+    // whisper.cpp v1.8.0 runs a SECOND language-detection encoder pass for every verbose_json reply unless told not
+    // to (examples/server/server.cpp). Only a detection clip needs those probabilities. The sidecar ignores the field.
+    if (!detecting) form.append("no_language_probabilities", "true")
     for (const [name, value] of Object.entries(INFERENCE_DECODER_FIELDS)) form.append(name, value)
     if (prompt) form.append("prompt", prompt)
     const timeoutMs = this.timeoutFor(msOf(samples.length))
@@ -367,9 +438,14 @@ export class LocalWhisperProvider implements AsrProvider {
     try {
       const response = await this.fetchImpl(`${baseUrl}/inference`, { method: "POST", body: form, signal: controller.signal })
       if (!response.ok) throw new Error(`Local transcription failed (${response.status})`)
-      const body = (await response.json()) as { text?: unknown; error?: unknown }
+      const body = (await response.json()) as { text?: unknown; error?: unknown; language?: unknown; language_probabilities?: unknown }
       if (typeof body.text !== "string") throw new Error(`Local transcription returned no text${body.error ? `: ${String(body.error)}` : ""}`)
-      return this.dropUnlikelySegments(body, body.text).replace(/\s+/g, " ")
+      return {
+        text: this.dropUnlikelySegments(body, body.text).replace(/\s+/g, " "),
+        language: normalizeLanguage(body.language),
+        pick: detecting ? pickFrEn(body.language_probabilities) : null,
+        meanLogprob: meanLogprob((parseScoredSegments(body) ?? []).map((segment) => segment.avgLogprob)),
+      }
     } catch (error) {
       if (controller.signal.aborted) {
         this.logger?.warn({ component: "asr", event: "local-whisper.timeout", correlationId: this.correlationId, metadata: { timeoutMs } })
@@ -380,6 +456,17 @@ export class LocalWhisperProvider implements AsrProvider {
       clearTimeout(timer)
     }
   }
+}
+
+/** One engine reply, reduced to what the provider uses. */
+type Decoded = {
+  readonly text: string
+  /** The language the engine decoded in, when it is French or English. */
+  readonly language: LockedLanguage | null
+  /** The better of fr/en by the engine's probabilities (detection clips only). */
+  readonly pick: { readonly language: LockedLanguage; readonly margin: number } | null
+  /** Mean avg_logprob over the reply's segments, before the quality filter; null when unscored. */
+  readonly meanLogprob: number | null
 }
 
 function round(value: number | undefined): number | null {

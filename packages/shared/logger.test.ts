@@ -133,3 +133,30 @@ test("Logger: metadata is omitted entirely when not provided", () => {
   const record = JSON.parse(lines[0] as string)
   assert.equal("metadata" in record, false)
 })
+
+test("scrubSecrets: redacts credentials embedded in free-form text", async () => {
+  const { scrubSecrets } = await import("./logger")
+  const hex = "a".repeat(40)
+  const scrubbed = scrubSecrets(
+    `401 for gsk_abcdefgh12345678 Authorization: Bearer abc.def-ghi, GET https://x.test/v1?api_key=SECRET123&a=1 token ${hex}`
+  )
+  assert.ok(!scrubbed.includes("gsk_abcdefgh12345678"))
+  assert.ok(!scrubbed.includes("abc.def-ghi"))
+  assert.ok(!scrubbed.includes("SECRET123"))
+  assert.ok(!scrubbed.includes(hex))
+  assert.ok(scrubbed.includes("api_key=[REDACTED]&a=1"))
+  assert.ok(scrubbed.includes("401"))
+})
+
+test("scrubSecrets: leaves plain messages intact and bounds very long ones", async () => {
+  const { scrubSecrets } = await import("./logger")
+  assert.equal(scrubSecrets("Rate limit reached, retry in 12s"), "Rate limit reached, retry in 12s")
+  assert.ok(scrubSecrets("x ".repeat(1000)).length <= 301)
+})
+
+test("Logger: the error field is scrubbed of embedded credentials", () => {
+  const { logger, lines } = captureLogger()
+  logger.error({ component: "asr", event: "transcript.failed", error: "bad key gsk_abcdefgh12345678" })
+  const record = JSON.parse(lines[0] as string)
+  assert.ok(!String(record.error).includes("gsk_abcdefgh12345678"))
+})

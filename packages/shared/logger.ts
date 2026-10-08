@@ -34,6 +34,32 @@ const SECRET_KEY_PATTERN = /key|token|secret|password|credential|authoriz/i
 const SECRET_VALUE_PATTERN = /^(gsk_|sk-|Bearer\s)/i
 const REDACTED = "[REDACTED]"
 
+// Credentials can also appear *inside* free-form text (an upstream provider
+// or proxy echoing a key, a URL carrying ?key=...). Unlike metadata values,
+// these are not anchored to the start of the string.
+const INLINE_SECRET_PATTERNS: readonly RegExp[] = [
+  /\b(?:gsk_|sk-)[A-Za-z0-9_-]{8,}/g,
+  /Bearer\s+[A-Za-z0-9._~+/=-]+/gi,
+  /([?&](?:api[_-]?key|key|token|access[_-]?token|authorization)=)[^&\s"']+/gi,
+  /\b[A-Fa-f0-9]{32,}\b/g,
+]
+const MAX_SCRUBBED_LENGTH = 300
+
+/**
+ * Removes credential-looking substrings from free-form text and bounds its
+ * length. Used for error strings that leave the process boundary (logs and
+ * WebSocket broadcasts that viewer pages also receive).
+ */
+export function scrubSecrets(text: string): string {
+  let result = text
+  for (const pattern of INLINE_SECRET_PATTERNS) {
+    result = result.replace(pattern, (match, prefix) =>
+      typeof prefix === "string" && match.startsWith(prefix) ? prefix + REDACTED : REDACTED
+    )
+  }
+  return result.length > MAX_SCRUBBED_LENGTH ? result.slice(0, MAX_SCRUBBED_LENGTH) + "…" : result
+}
+
 /**
  * Structured logger (ARCHITECTURE.md sections 40-41). Emits one JSON line
  * per call with the recommended fields. Callers pass a short, fixed
@@ -81,7 +107,7 @@ export class Logger {
     if (fields.messageId !== undefined) record.messageId = fields.messageId
     if (fields.sequence !== undefined) record.sequence = fields.sequence
     if (fields.durationMs !== undefined) record.durationMs = fields.durationMs
-    if (fields.error !== undefined) record.error = fields.error
+    if (fields.error !== undefined) record.error = scrubSecrets(fields.error)
     if (fields.metadata !== undefined) record.metadata = redactSecrets(fields.metadata)
 
     this.write(JSON.stringify(record))
