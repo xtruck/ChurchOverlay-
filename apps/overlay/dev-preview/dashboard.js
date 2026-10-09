@@ -12,7 +12,8 @@
 // that random UUIDs are an acceptable replacement in the real app.
 (function () {
   const params = new URLSearchParams(window.location.search)
-  const token = params.get("token")
+  // The token is in the URL fragment (#token=..., never sent to a server); ?token= is the older form.
+  const token = new URLSearchParams(window.location.hash.slice(1)).get("token") || params.get("token")
   const wsPort = params.get("wsPort") || window.location.port
 
   const statusEl = document.getElementById("status")

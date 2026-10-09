@@ -45,12 +45,17 @@ export function buildPageUrls(tokens: {
   // Every page needs wsPort explicitly: a page opened from another machine
   // on the LAN (or from a file:// window) cannot infer the WS port from its
   // own URL (ARCHITECTURE.md section 65.6).
-  const wsPort = `&wsPort=${tokens.port}`
+  //
+  // The token rides in the URL FRAGMENT (#token=...), which a browser never
+  // sends to the server, so it stays out of access logs, proxies and the
+  // Referer header. The pages still accept the old ?token= form, so a link
+  // already pasted into OBS keeps working.
+  const wsPort = `?wsPort=${tokens.port}`
   return {
-    overlay: `/overlay/index.html?token=${tokens.viewerToken}${wsPort}`,
-    remote: `/remote/index.html?token=${tokens.operatorToken}${wsPort}`,
-    stage: `/stage/index.html?token=${tokens.viewerToken}${wsPort}`,
-    live: `/live/index.html?token=${tokens.viewerToken}${wsPort}`,
+    overlay: `/overlay/index.html${wsPort}#token=${tokens.viewerToken}`,
+    remote: `/remote/index.html${wsPort}#token=${tokens.operatorToken}`,
+    stage: `/stage/index.html${wsPort}#token=${tokens.viewerToken}`,
+    live: `/live/index.html${wsPort}#token=${tokens.viewerToken}`,
   }
 }
 

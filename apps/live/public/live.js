@@ -1,6 +1,7 @@
 (function () {
   const params = new URLSearchParams(window.location.search);
-  const token = params.get("token") || "";
+  // The token is in the URL fragment (#token=..., never sent to a server); ?token= is the older form.
+  const token = new URLSearchParams(window.location.hash.slice(1)).get("token") || params.get("token") || "";
   const wsPort = params.get("wsPort") || window.location.port || "8787";
   const wsHost = window.location.hostname || "127.0.0.1";
   const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";

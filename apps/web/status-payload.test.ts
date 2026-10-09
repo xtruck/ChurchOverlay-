@@ -43,11 +43,18 @@ test("buildPageUrls: every page URL carries wsPort, and points at an index.html 
   const urls = buildPageUrls(TOKENS)
 
   assert.deepEqual(urls, {
-    overlay: "/overlay/index.html?token=viewer-token-value&wsPort=3000",
-    remote: "/remote/index.html?token=operator-token-value&wsPort=3000",
-    stage: "/stage/index.html?token=viewer-token-value&wsPort=3000",
-    live: "/live/index.html?token=viewer-token-value&wsPort=3000",
+    overlay: "/overlay/index.html?wsPort=3000#token=viewer-token-value",
+    remote: "/remote/index.html?wsPort=3000#token=operator-token-value",
+    stage: "/stage/index.html?wsPort=3000#token=viewer-token-value",
+    live: "/live/index.html?wsPort=3000#token=viewer-token-value",
   })
+})
+
+test("buildPageUrls: the token is in the fragment, never in the query string a server would see", () => {
+  for (const url of Object.values(buildPageUrls(TOKENS))) {
+    assert.doesNotMatch(url.split("#")[0] ?? "", /token/, "token must not be in the query string")
+    assert.match(url.split("#")[1] ?? "", /^token=/)
+  }
 })
 
 test("buildStatusPayload: exposes the stage and live viewer URLs alongside the pre-existing overlay/remote ones", () => {
@@ -56,10 +63,10 @@ test("buildStatusPayload: exposes the stage and live viewer URLs alongside the p
   // Congregation Companion had no discoverable, token-bearing link at all.
   const payload = buildStatusPayload(INPUT)
 
-  assert.equal(payload.stageUrl, "/stage/index.html?token=viewer-token-value&wsPort=3000")
-  assert.equal(payload.liveUrl, "/live/index.html?token=viewer-token-value&wsPort=3000")
-  assert.equal(payload.overlayUrl, "/overlay/index.html?token=viewer-token-value&wsPort=3000")
-  assert.equal(payload.remoteUrl, "/remote/index.html?token=operator-token-value&wsPort=3000")
+  assert.equal(payload.stageUrl, "/stage/index.html?wsPort=3000#token=viewer-token-value")
+  assert.equal(payload.liveUrl, "/live/index.html?wsPort=3000#token=viewer-token-value")
+  assert.equal(payload.overlayUrl, "/overlay/index.html?wsPort=3000#token=viewer-token-value")
+  assert.equal(payload.remoteUrl, "/remote/index.html?wsPort=3000#token=operator-token-value")
 })
 
 test("buildStatusPayload: passes the live settings through unchanged and still reports ready", () => {

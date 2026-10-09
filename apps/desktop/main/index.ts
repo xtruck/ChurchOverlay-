@@ -570,7 +570,7 @@ async function startServices(
     if (lanIp) {
       remoteUrl =
         `http://${lanIp}:${remoteStaticServer.port}/index.html` +
-        `?token=${config.operatorToken}&wsPort=${appCoreHandle.wsServer.port}`
+        `?wsPort=${appCoreHandle.wsServer.port}#token=${config.operatorToken}`
     } else {
       logger.warn({ component: "main", event: "remote.no-lan-ip-found" })
     }
@@ -581,7 +581,7 @@ async function startServices(
   // consumers, never a value the operator has to construct by hand.
   const overlayUrl =
     `http://127.0.0.1:${staticServer.port}/index.html` +
-    `?token=${config.viewerToken}&wsPort=${appCoreHandle.wsServer.port}`
+    `?wsPort=${appCoreHandle.wsServer.port}#token=${config.viewerToken}`
   currentOverlayUrl = overlayUrl
   currentRemoteUrl = remoteUrl
   currentAllowPhoneRemote = config.allowPhoneRemote

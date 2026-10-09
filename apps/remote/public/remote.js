@@ -1,7 +1,8 @@
 // Plain browser JS, no build step — Pro Studio Remote 2.0
 ;(function () {
   const params = new URLSearchParams(window.location.search)
-  const token = params.get("token")
+  // The token is in the URL fragment (#token=..., never sent to a server); ?token= is the older form.
+  const token = new URLSearchParams(window.location.hash.slice(1)).get("token") || params.get("token")
   const wsPort = params.get("wsPort")
 
   const STRINGS = {
