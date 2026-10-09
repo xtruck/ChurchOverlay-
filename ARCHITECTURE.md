@@ -6402,6 +6402,42 @@ accuracy were **not measured** (no local engine installed on the development mac
 
 **Tests.** `sermon-prep.test.ts` (French outline in order, English notes and abbreviations, dedup, index rejection counted, prose/times/dates yield nothing, size and count bounds, determinism); `app-core.test.ts` (import queues validated references without any lookup, merges books with a later rundown's, rejected input keeps the previous import, clear removes only the import's books); `i18n.test.ts` covers the new English and French strings. The dashboard card itself is plain browser JS with no harness and was not exercised in a running Electron app.
 
+## 131. Typed-Reference Preview and Verse Stepping (Phase 2, owner request)
+
+**What it does.** While the operator types a reference in the Live view ("jn 3 16"), the dashboard shows the resolved book, reference and verse text under the box, labelled "Preview, not on screen". It waits 250 ms after the last keystroke and shows only the newest answer. `Alt+Left` and `Alt+Right` show the previous or next verse of the last verse shown. The existing `Alt+1`-`9` recall of recent verses gets a visible hint next to the Recent strip.
+
+**Two WebSocket actions, both deliberate (AGENTS.md section 19 keeps the set minimal).** `verse:preview` is a command, operator-only, payload `{ seq, reference }` where `seq` is an integer chosen by the dashboard. `verse:preview-result` is a server-only event, payload `{ seq, reference, verse }` where `verse` is a bare `Verse` or `null`, and a null verse carries a `reason`: `not-found` (the known-valid index rejects the reference) or `unavailable` (the reference is valid but the Bible source failed or its circuit breaker is open). The dashboard shows "No such verse" only for `not-found`, and a separate "unavailable right now" message otherwise. The result is sent with `broadcastToOperators`, so the overlay, stage and live pages, which hold the viewer token, never receive it. Both entries are in `ACTION_REGISTRY`; no client may send `verse:preview-result`.
+
+**Invariants.** A preview goes through the same known-valid index check and `resolveVerse()` (cache, negative cache, circuit breaker) as a real override, so it cannot fetch anything a real verse could not. It never calls `beginDisplayIntent()` or any `broadcast*Verse()`, never updates `currentVersePosition`, the history or the Recent strip, and cannot supersede an in-flight display intent. The preview text is written with `textContent` only. Previous/next is an ordinary `verse:override` of `verse +/- 1`, validated again by the server; stepping past the end of a chapter shows nothing (no rollover to the next chapter), and verse 0 is never sent.
+
+**Not done.** Verse ranges such as `John 3:16-18` are not supported: they would change how verses are stored and shown (cache, history, Recent strip, every viewer).
+
+**Load bound.** Each pause in typing still triggers a Bible lookup, and the preview shares the circuit breaker with real verses by design. To bound that load the server runs ONE preview lookup at a time: while it runs, only the newest waiting request is kept, and older ones are superseded and never answered (the dashboard drops stale answers by `seq` anyway). A typing burst or a buggy operator client therefore costs at most about one source call per source round trip, instead of up to the general 100 commands per second socket limit. Cached references never reach the source.
+
+**Tests.** `action-registry.test.ts` (schema, operator-only, server-only result); `app-core.test.ts` (the answer reaches the operator and nothing reaches a viewer, an index-rejected reference answers with a null verse, a viewer cannot send `verse:preview`). The dashboard code is plain browser JS with no harness: it passes `node --check` but was not exercised in a running Electron app against the real Bible source.
+## 132. Echo Warning and Service Health Report (Phase 2, owner request)
+
+**Echo warning.** When the laptop seems to be hearing its own output, the dashboard shows one non-blocking line, in French or English following the dashboard language, under the transcription health warning. It triggers on either of two signals, implemented by `EchoWatch` (`server/core/echo-warning.ts`, pure bookkeeping, no timers):
+
+- `media-loud`: a video or audio cue is playing (`MediaPlaybackController.currentPayloadForSync()` reports `playing`, kind not `image`) while the mic reading shows speech at a usable level (speech heard, state neither `too-quiet` nor `warming-up`) on every mic:health tick for 5 s in a row.
+- `repeated-sentence`: the same final sentence (lowercased, accents and punctuation removed, at least 4 words) is transcribed twice within 1.5 s.
+
+A warning stays up 8 s after its last trigger, then clears; stopping the mic clears it at once. **It never mutes, drops or changes anything:** the hook in `asr.onTranscript` only calls `observeFinalTranscript()` and carries on, so every transcript is still delivered exactly as before.
+
+**Protocol.** No new WebSocket command or event. `AsrStatusPayload` gets one optional field, `echoWarning?: { reason, since } | null`. Absent means "no change", `null` clears it. `broadcastAsrStatus()` adds it while a warning is active; `syncEchoWarning()` sends the appearing and clearing updates only when the state changes. `isStatusUpdatePayload` validates the field.
+
+**Service health report.** `ServiceHealthLog` (`server/core/service-health.ts`) passively records, bounded and in memory: transcripts dropped by the Spanish/Portuguese check or the foreign-script check (a count plus up to 50 samples of the first 40 characters), mic dropouts (a run of `no-signal` readings is one dropout; stopping the mic closes an open one), and echo warnings. The post-service export (`export-session`) now also writes, in `service-report.json`, a `health` object (verses with times, dropped transcripts, mic dropouts with durations, pipeline latency p50/p95/max, echo warnings), and a short `service-health.txt` in French then English. Nothing is invented: an empty log reports zeros and "no measurement".
+
+**Known limits.**
+- Nobody tested this with a real mixer. The thresholds (5 s, 1.5 s, 8 s hold, 4 words) are reasoned, not measured; expect to tune them after a real service.
+- The server does not learn when a video ends by itself, so the playing state can stay on after the video finishes and cause a false `media-loud` warning until the operator clears or pauses the cue. Partial mitigation: when the cue has an operator-set duration (`autoClearMs`), `isMediaAudible()` stops counting it as playing once its position reaches that duration. A cue without a duration still has the limit, so setting a duration on videos and songs is the way to avoid it.
+- A preacher speaking over a video, singing along with it, or repeating a sentence on purpose can trigger the warning. It is a hint, not a fault.
+- The dashboard line and the export were not exercised in a running Electron app. The dashboard code is plain browser JS with no harness and was only syntax-checked with `node --check`.
+- The export still stops with "Nothing was shown this session yet" when no verse was shown, so a service with no verses produces no health report.
+- The web build's export routes do not include the health report.
+
+**Tests.** `echo-warning.test.ts` (thresholds, streak reset, short phrases, expiry and renewal, reset), `service-health.test.ts` (counts, dropout open/close, bounds, French and English report, empty report), `app-core.test.ts` (a repeated sentence raises `echoWarning` while both transcripts are still delivered; a foreign-script transcript is dropped as before and counted), `action-registry.test.ts` (the `echoWarning` field's schema).
+
 ## 133. Cinematic Verse Cards and Transitions (Phase 2, owner request)
 
 **Why.** The owner asked for premium, cinematic verse cards: more designs, and motion that feels choreographed rather than a fade-and-pop, especially when one verse replaces another mid-sermon.

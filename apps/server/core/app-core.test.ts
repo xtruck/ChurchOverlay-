@@ -490,6 +490,188 @@ test("AppCore: verse:override with a reference that does not exist in the known-
   }
 })
 
+test("AppCore: verse:preview answers the operator only, and never puts anything on the viewer's screen (section 131)", async () => {
+  const johnVerse = makeVerse({ book: "john", chapter: 3, verse: 16 }, "For God so loved the world...")
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({ john: johnVerse }),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const viewerTypes: string[] = []
+    viewerSocket.on("message", (data) => viewerTypes.push(JSON.parse(data.toString()).type))
+    const answer = waitForMessage(operatorSocket)
+
+    operatorSocket.send(
+      JSON.stringify({
+        id: "01P",
+        type: "verse:preview",
+        timestamp: Date.now(),
+        payload: { seq: 7, reference: { book: "john", chapter: 3, verse: 16 } },
+      })
+    )
+
+    const message = await answer
+    assert.equal(message.type, "verse:preview-result")
+    assert.deepEqual(message.payload, { seq: 7, reference: { book: "john", chapter: 3, verse: 16 }, verse: johnVerse })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.deepEqual(viewerTypes, [])
+    operatorSocket.close()
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: verse:preview of a reference outside the known-valid index answers with a null verse", async () => {
+  const johnVerse = makeVerse({ book: "john", chapter: 3, verse: 16 }, "For God so loved the world...")
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({ john: johnVerse }), // resolves ANY john reference
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const answer = waitForMessage(operatorSocket)
+    operatorSocket.send(
+      JSON.stringify({
+        id: "01P",
+        type: "verse:preview",
+        timestamp: Date.now(),
+        payload: { seq: 1, reference: { book: "john", chapter: 99, verse: 1 } },
+      })
+    )
+    const message = await answer
+    assert.equal(message.type, "verse:preview-result")
+    assert.equal((message.payload as { verse: unknown }).verse, null)
+    operatorSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: verse:preview says WHY a verse is missing: not-found for a bad reference, unavailable when the source has nothing (section 131)", async () => {
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}), // knows nothing: every valid reference is "unavailable"
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const reasons: Record<number, unknown> = {}
+    operatorSocket.on("message", (data) => {
+      const message = JSON.parse(data.toString())
+      if (message.type === "verse:preview-result") reasons[message.payload.seq] = message.payload.reason
+    })
+    const send = (seq: number, chapter: number) =>
+      operatorSocket.send(
+        JSON.stringify({ id: "01P" + seq, type: "verse:preview", timestamp: Date.now(), payload: { seq, reference: { book: "john", chapter, verse: 1 } } })
+      )
+    send(1, 99) // no such chapter: the index rejects it
+    await new Promise((resolve) => setTimeout(resolve, 80))
+    send(2, 3) // valid reference, but the source has nothing
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    assert.equal(reasons[1], "not-found")
+    assert.equal(reasons[2], "unavailable")
+    operatorSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: a burst of verse:preview requests runs one lookup at a time and only the newest waiting one is answered (section 131)", async () => {
+  let release: () => void = () => {}
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let calls = 0
+  const gatedSource: VerseSource = {
+    async getVerse(reference: VerseReference): Promise<Verse | null> {
+      calls += 1
+      await gate
+      return makeVerse(reference, "text")
+    },
+  }
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: gatedSource,
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const answered: number[] = []
+    operatorSocket.on("message", (data) => {
+      const message = JSON.parse(data.toString())
+      if (message.type === "verse:preview-result") answered.push(message.payload.seq)
+    })
+    for (const seq of [1, 2, 3, 4]) {
+      operatorSocket.send(
+        JSON.stringify({ id: "01P" + seq, type: "verse:preview", timestamp: Date.now(), payload: { seq, reference: { book: "john", chapter: 3, verse: 15 + seq } } })
+      )
+    }
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    assert.equal(calls, 1) // the other three are waiting behind the first lookup
+    release()
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    assert.deepEqual(answered, [1, 4]) // 2 and 3 were superseded by 4
+    assert.equal(calls, 2)
+    operatorSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: a viewer cannot send verse:preview", async () => {
+  const johnVerse = makeVerse({ book: "john", chapter: 3, verse: 16 }, "For God so loved the world...")
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({ john: johnVerse }),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const operatorTypes: string[] = []
+    operatorSocket.on("message", (data) => operatorTypes.push(JSON.parse(data.toString()).type))
+    viewerSocket.send(
+      JSON.stringify({
+        id: "01P",
+        type: "verse:preview",
+        timestamp: Date.now(),
+        payload: { seq: 1, reference: { book: "john", chapter: 3, verse: 16 } },
+      })
+    )
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.equal(operatorTypes.includes("verse:preview-result"), false)
+    operatorSocket.close()
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
 test("AppCore: verse:override normalizes the typed book name (case, spacing) before it reaches the source", async () => {
   const johnVerse = makeVerse({ book: "john", chapter: 3, verse: 16 }, "For God so loved the world...")
   const app = await startAppCore({
@@ -653,6 +835,75 @@ test("AppCore: a real spoken reference in an ASR transcript automatically reache
     assert.deepEqual(message.payload, { ...johnVerse, trigger: "detected" })
     assert.equal(message.correlationId, "01CORR")
     viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: the same sentence heard twice raises an echo warning on status:update, and every transcript is still delivered (section 132)", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const received: WsMessage[] = []
+    operatorSocket.on("message", (data) => received.push(JSON.parse(data.toString())))
+
+    for (const [n, id] of [[1, "01E1"], [2, "01E2"]] as const) {
+      asr.emitTranscript({
+        id,
+        correlationId: `01CORR${n}`,
+        sequence: n,
+        text: "Car Dieu a tellement aimé le monde entier",
+        state: "final",
+        timestamp: Date.now(),
+      })
+    }
+    await new Promise((resolve) => setTimeout(resolve, 150))
+
+    const warnings = received.filter(
+      (m) => m.type === "status:update" && (m.payload as { echoWarning?: { reason: string } | null }).echoWarning?.reason === "repeated-sentence"
+    )
+    assert.equal(warnings.length, 1)
+    // Observation only: both transcripts reached the dashboard, unchanged.
+    const finals = received.filter((m) => m.type === "transcript:final")
+    assert.equal(finals.length, 2)
+    assert.equal(app.getServiceHealth().echoWarnings.length, 1)
+    operatorSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: a transcript in another script is dropped as before and counted in the service health log (section 132)", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const types: string[] = []
+    operatorSocket.on("message", (data) => types.push(JSON.parse(data.toString()).type))
+    asr.emitTranscript({ id: "01X", correlationId: "01CX", sequence: 1, text: "यह एक परीक्षण है", state: "final", timestamp: Date.now() })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.equal(types.includes("transcript:final"), false)
+    const health = app.getServiceHealth()
+    assert.equal(health.foreignScriptDrops, 1)
+    assert.equal(health.thirdLanguageDrops, 0)
+    operatorSocket.close()
   } finally {
     await app.stop()
   }

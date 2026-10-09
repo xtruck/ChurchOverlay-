@@ -6,6 +6,7 @@ export type WsCommandType =
   | "mic:stop"
   | "verse:clear"
   | "verse:override"
+  | "verse:preview"
   | "media:select"
   | "media:play"
   | "media:pause"
@@ -37,6 +38,7 @@ export type WsEventType =
   | "transcript:partial"
   | "transcript:final"
   | "verse:show"
+  | "verse:preview-result"
   | "verse:clear"
   | "media:show"
   | "media:clear"
@@ -85,6 +87,12 @@ export type AsrStatusPayload = {
    */
   readonly micCalibrating?: boolean
   readonly micThreshold?: number
+  /**
+   * ARCHITECTURE.md section 132: non-blocking hint that the laptop seems to be
+   * hearing its own output. Absent means "no change"; null clears the warning.
+   * Never alters a transcript: it is only shown to the operator.
+   */
+  readonly echoWarning?: { readonly reason: "media-loud" | "repeated-sentence"; readonly since: number } | null
   readonly audioMetrics?: {
     readonly framesReceived: number
     readonly framesRejected: number

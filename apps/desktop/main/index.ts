@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { stat, writeFile } from "node:fs/promises"
 import { startAppCore, type AppCoreHandle } from "../../server/core/app-core"
 import type { SessionEntry } from "../../server/core/session-recorder"
+import { buildServiceHealthReport } from "../../server/core/service-health"
 import { StaticServer } from "../../server/http/static-server"
 import { RegexDetector } from "../../server/detector/regex-detector"
 import { GLOSSARY } from "../../server/glossary/glossary"
@@ -1569,6 +1570,13 @@ ipcMain.handle("export-session", async () => {
   await writeFile(join(targetDir, "transcript.txt"), transcriptLines.join("\n"), "utf8")
   const uniqueReferences = new Set(entries.map((entry) =>
     `${entry.reference.book} ${entry.reference.chapter}:${entry.reference.verse}`))
+  // ARCHITECTURE.md section 132: verses with times, dropped transcripts, mic
+  // dropouts, latency and echo warnings, in the JSON and as a short FR/EN text.
+  const healthReport = buildServiceHealthReport({
+    entries,
+    health: appCoreHandle.getServiceHealth(),
+    latency: appCoreHandle.getPipelineLatency(),
+  })
   const report = {
     generatedAt: new Date().toISOString(),
     shownVerseCount: entries.length,
@@ -1576,8 +1584,10 @@ ipcMain.handle("export-session", async () => {
     startedAt: entries[0]?.timestamp ?? null,
     lastShownAt: entries.at(-1)?.timestamp ?? null,
     references: [...uniqueReferences],
+    health: healthReport.json,
   }
   await writeFile(join(targetDir, "service-report.json"), JSON.stringify(report, null, 2), "utf8")
+  await writeFile(join(targetDir, "service-health.txt"), healthReport.text, "utf8")
 
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i]

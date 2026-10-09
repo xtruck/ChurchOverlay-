@@ -134,6 +134,27 @@ function isBareVersePayload(payload: unknown): payload is Record<string, unknown
   return payload.secondary === undefined || isVerseSecondaryPayload(payload.secondary)
 }
 
+/** ARCHITECTURE.md section 131: operator-only typed-reference preview request. `seq` lets the dashboard drop stale answers. */
+function isVersePreviewPayload(payload: unknown): payload is Record<string, unknown> {
+  return (
+    isPlainObject(payload) &&
+    typeof payload.seq === "number" &&
+    Number.isSafeInteger(payload.seq) &&
+    isVerseReferencePayload(payload.reference)
+  )
+}
+
+/** The answer to a preview: the verse, or null with a reason ("not-found": no such verse; "unavailable": the Bible source did not answer). */
+function isVersePreviewResultPayload(payload: unknown): payload is Record<string, unknown> {
+  return (
+    isPlainObject(payload) &&
+    typeof payload.seq === "number" &&
+    isVerseReferencePayload(payload.reference) &&
+    (payload.verse === null || isBareVersePayload(payload.verse)) &&
+    (payload.reason === undefined || payload.reason === "not-found" || payload.reason === "unavailable")
+  )
+}
+
 function isVersePayload(payload: unknown): payload is VerseShowPayload {
   return isBareVersePayload(payload) && (VERSE_TRIGGERS as readonly unknown[]).includes(payload.trigger)
 }
@@ -236,7 +257,18 @@ function isStatusUpdatePayload(payload: unknown): payload is AsrStatusPayload {
       payload.asrHealth === "failover") &&
     (payload.error === undefined || typeof payload.error === "string") &&
     (payload.micCalibrating === undefined || typeof payload.micCalibrating === "boolean") &&
-    (payload.micThreshold === undefined || isFiniteNumber(payload.micThreshold))
+    (payload.micThreshold === undefined || isFiniteNumber(payload.micThreshold)) &&
+    isEchoWarningField(payload.echoWarning)
+  )
+}
+
+/** ARCHITECTURE.md section 132: optional; null clears the dashboard's echo warning. */
+function isEchoWarningField(value: unknown): boolean {
+  if (value === undefined || value === null) return true
+  return (
+    isPlainObject(value) &&
+    (value.reason === "media-loud" || value.reason === "repeated-sentence") &&
+    isFiniteNumber(value.since)
   )
 }
 
@@ -509,6 +541,16 @@ export const ACTION_REGISTRY: Readonly<Record<WsCommandType | WsEventType, Actio
     kind: "command",
     allowedSenders: ["operator"],
     validatePayload: isVerseReferencePayload,
+  },
+  "verse:preview": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isVersePreviewPayload,
+  },
+  "verse:preview-result": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isVersePreviewResultPayload,
   },
   "verse:confirm-pending": {
     kind: "command",
