@@ -490,6 +490,109 @@ test("AppCore: verse:override with a reference that does not exist in the known-
   }
 })
 
+test("AppCore: verse:preview answers the operator only, and never puts anything on the viewer's screen (section 131)", async () => {
+  const johnVerse = makeVerse({ book: "john", chapter: 3, verse: 16 }, "For God so loved the world...")
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({ john: johnVerse }),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const viewerTypes: string[] = []
+    viewerSocket.on("message", (data) => viewerTypes.push(JSON.parse(data.toString()).type))
+    const answer = waitForMessage(operatorSocket)
+
+    operatorSocket.send(
+      JSON.stringify({
+        id: "01P",
+        type: "verse:preview",
+        timestamp: Date.now(),
+        payload: { seq: 7, reference: { book: "john", chapter: 3, verse: 16 } },
+      })
+    )
+
+    const message = await answer
+    assert.equal(message.type, "verse:preview-result")
+    assert.deepEqual(message.payload, { seq: 7, reference: { book: "john", chapter: 3, verse: 16 }, verse: johnVerse })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.deepEqual(viewerTypes, [])
+    operatorSocket.close()
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: verse:preview of a reference outside the known-valid index answers with a null verse", async () => {
+  const johnVerse = makeVerse({ book: "john", chapter: 3, verse: 16 }, "For God so loved the world...")
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({ john: johnVerse }), // resolves ANY john reference
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const answer = waitForMessage(operatorSocket)
+    operatorSocket.send(
+      JSON.stringify({
+        id: "01P",
+        type: "verse:preview",
+        timestamp: Date.now(),
+        payload: { seq: 1, reference: { book: "john", chapter: 99, verse: 1 } },
+      })
+    )
+    const message = await answer
+    assert.equal(message.type, "verse:preview-result")
+    assert.equal((message.payload as { verse: unknown }).verse, null)
+    operatorSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: a viewer cannot send verse:preview", async () => {
+  const johnVerse = makeVerse({ book: "john", chapter: 3, verse: 16 }, "For God so loved the world...")
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({ john: johnVerse }),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const operatorTypes: string[] = []
+    operatorSocket.on("message", (data) => operatorTypes.push(JSON.parse(data.toString()).type))
+    viewerSocket.send(
+      JSON.stringify({
+        id: "01P",
+        type: "verse:preview",
+        timestamp: Date.now(),
+        payload: { seq: 1, reference: { book: "john", chapter: 3, verse: 16 } },
+      })
+    )
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.equal(operatorTypes.includes("verse:preview-result"), false)
+    operatorSocket.close()
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
 test("AppCore: verse:override normalizes the typed book name (case, spacing) before it reaches the source", async () => {
   const johnVerse = makeVerse({ book: "john", chapter: 3, verse: 16 }, "For God so loved the world...")
   const app = await startAppCore({

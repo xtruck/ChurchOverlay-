@@ -1791,3 +1791,10 @@ header.topbar {
 /* Echo warning (ARCHITECTURE.md section 132): a calm line, never an alert that blocks anything. */
 .echo-warning { margin-top: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid rgba(240, 138, 60, 0.55); background: var(--warn-soft); color: var(--warn-text); border-radius: 8px; font-size: var(--fs-12); }
 .echo-warning[hidden] { display: none; }
+/* Typed-reference preview (ARCHITECTURE.md section 131): clearly NOT what the congregation sees. */
+.reference-preview { margin-top: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px dashed var(--text-faint); border-radius: 8px; min-width: 0; }
+.reference-preview[hidden] { display: none; }
+.reference-preview-label { color: var(--text-faint); font-size: var(--fs-12); text-transform: uppercase; letter-spacing: 0.04em; }
+.reference-preview-ref { font-weight: 600; }
+.reference-preview-text { color: var(--text-faint); max-height: 4.5em; overflow: hidden; }
+.recent-hint { color: var(--text-faint); font-size: var(--fs-12); white-space: nowrap; }

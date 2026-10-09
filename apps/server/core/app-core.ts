@@ -1539,6 +1539,31 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         return
       }
 
+      case "verse:preview": {
+        // ARCHITECTURE.md section 131: a look-ahead for the operator's typing
+        // box. It goes through the SAME known-valid index and resolveVerse()
+        // as a real override, but it never calls beginDisplayIntent() or any
+        // broadcast*Verse(), so what is on the congregation screen cannot change.
+        // The answer goes to operators only, never to overlay/stage/live pages.
+        const { seq, reference: typed } = message.payload as { seq: number; reference: VerseReference }
+        const reference: VerseReference = {
+          ...typed,
+          book: resolveQuickBook(typed.book) ?? typed.book.trim().replace(/\s+/g, " ").toLowerCase(),
+        }
+        let verse: Verse | null = null
+        if (index.exists(reference)) {
+          verse = await resolveVerse(reference, source, cache, circuitBreaker, translationIdFor(source), logger)
+        }
+        wsServer.broadcastToOperators({
+          id: generateUlid(),
+          type: "verse:preview-result",
+          timestamp: Date.now(),
+          correlationId: message.correlationId,
+          payload: { seq, reference: typed, verse },
+        })
+        return
+      }
+
       case "verse:confirm-pending": {
         // ARCHITECTURE.md section 65.3: confirming a pending suggestion
         // still shows it as "detected" (that's what it was), not a new

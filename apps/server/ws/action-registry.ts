@@ -134,6 +134,26 @@ function isBareVersePayload(payload: unknown): payload is Record<string, unknown
   return payload.secondary === undefined || isVerseSecondaryPayload(payload.secondary)
 }
 
+/** ARCHITECTURE.md section 131: operator-only typed-reference preview request. `seq` lets the dashboard drop stale answers. */
+function isVersePreviewPayload(payload: unknown): payload is Record<string, unknown> {
+  return (
+    isPlainObject(payload) &&
+    typeof payload.seq === "number" &&
+    Number.isSafeInteger(payload.seq) &&
+    isVerseReferencePayload(payload.reference)
+  )
+}
+
+/** The answer to a preview: the verse, or null when the reference does not exist or could not be fetched. */
+function isVersePreviewResultPayload(payload: unknown): payload is Record<string, unknown> {
+  return (
+    isPlainObject(payload) &&
+    typeof payload.seq === "number" &&
+    isVerseReferencePayload(payload.reference) &&
+    (payload.verse === null || isBareVersePayload(payload.verse))
+  )
+}
+
 function isVersePayload(payload: unknown): payload is VerseShowPayload {
   return isBareVersePayload(payload) && (VERSE_TRIGGERS as readonly unknown[]).includes(payload.trigger)
 }
@@ -520,6 +540,16 @@ export const ACTION_REGISTRY: Readonly<Record<WsCommandType | WsEventType, Actio
     kind: "command",
     allowedSenders: ["operator"],
     validatePayload: isVerseReferencePayload,
+  },
+  "verse:preview": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isVersePreviewPayload,
+  },
+  "verse:preview-result": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isVersePreviewResultPayload,
   },
   "verse:confirm-pending": {
     kind: "command",
