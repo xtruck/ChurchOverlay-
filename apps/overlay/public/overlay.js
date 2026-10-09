@@ -415,10 +415,16 @@
 
   function syncPlayback(el, playback) {
     if (!playback) return
-    const targetSeconds = computePositionSeconds(playback)
     // Only correct drift beyond ~0.4s — re-seeking on every message would
     // cause visible stutter for a value that is already close enough.
-    if (Math.abs(el.currentTime - targetSeconds) > 0.4) el.currentTime = targetSeconds
+    const seek = () => {
+      const targetSeconds = computePositionSeconds(playback)
+      if (Math.abs(el.currentTime - targetSeconds) > 0.4) el.currentTime = targetSeconds
+    }
+    // A freshly assigned src has no metadata yet and a seek then is dropped
+    // (a late-joining screen would start at 0): wait for it.
+    if (el.readyState < 1) el.addEventListener("loadedmetadata", seek, { once: true })
+    else seek()
     if (playback.state === "playing") {
       // A browser (not OBS) blocks autoplay without a click: say so instead of staying silently mute.
       el.play().catch((err) => console.warn("media playback blocked:", err && err.name))

@@ -212,6 +212,8 @@ async function main() {
       res.status(404).send("Media not found")
       return
     }
+    // Same header the desktop static server sends: the browser must not guess a type for an upload.
+    res.setHeader("X-Content-Type-Options", "nosniff")
     res.sendFile(filePath)
   })
 

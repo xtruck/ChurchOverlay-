@@ -4,6 +4,14 @@ import type { AddressInfo } from "node:net"
 import type { AudioFrame, WsMessage, WsRole } from "../../../packages/contracts"
 import { decodeAudioFrame } from "../../../packages/shared/audio-frame-codec"
 import { validateWsMessage } from "./action-registry"
+import { createHash, timingSafeEqual } from "node:crypto"
+
+/** Constant-time token comparison (hashing first makes the lengths equal), as the HTTP API already does. */
+function tokenEquals(offered: string, expected: string): boolean {
+  const a = createHash("sha256").update(offered).digest()
+  const b = createHash("sha256").update(expected).digest()
+  return timingSafeEqual(a, b)
+}
 
 export type ServerTokens = {
   readonly operatorToken: string
@@ -262,8 +270,12 @@ export class ChurchOverlayWsServer {
   }
 
   private resolveProtocol(protocols: Set<string>): string | false {
-    if (protocols.has(this.tokens.operatorToken)) return this.tokens.operatorToken
-    if (protocols.has(this.tokens.viewerToken)) return this.tokens.viewerToken
+    for (const offered of protocols) {
+      if (tokenEquals(offered, this.tokens.operatorToken)) return this.tokens.operatorToken
+    }
+    for (const offered of protocols) {
+      if (tokenEquals(offered, this.tokens.viewerToken)) return this.tokens.viewerToken
+    }
     return false
   }
 
@@ -305,7 +317,8 @@ export class ChurchOverlayWsServer {
     // a protocol when that hook returns false. Such a socket arrives here
     // with protocol === "" and must never be silently classified as a
     // viewer (AGENTS.md section 18, SECURITY.md item 13).
-    if (socket.protocol !== this.tokens.operatorToken && socket.protocol !== this.tokens.viewerToken) {
+    const isOperator = tokenEquals(socket.protocol, this.tokens.operatorToken)
+    if (!isOperator && !tokenEquals(socket.protocol, this.tokens.viewerToken)) {
       this.onRejected?.("connection presented no registered token", null)
       socket.terminate()
       return
@@ -317,7 +330,7 @@ export class ChurchOverlayWsServer {
       return
     }
 
-    const role: WsRole = socket.protocol === this.tokens.operatorToken ? "operator" : "viewer"
+    const role: WsRole = isOperator ? "operator" : "viewer"
     this.clientRoles.set(socket, role)
     this.aliveClients.add(socket)
 
