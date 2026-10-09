@@ -3,6 +3,7 @@ import { generateUlid } from "../../../packages/shared/ulid"
 import type { Logger } from "../../../packages/shared/logger"
 import { FRENCH_BOOK_ALIASES } from "../detector/regex-detector"
 import { isPlainObject } from "../../../packages/shared/type-guards"
+import { hasForeignScript } from "./script-guard"
 
 const DEFAULT_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
 const DEFAULT_MODEL = "whisper-large-v3-turbo"
@@ -480,7 +481,7 @@ export class GroqProvider implements AsrProvider {
         })
         return
       }
-      if (containsNonLatinScript(text)) {
+      if (hasForeignScript(text)) {
         this.logger?.debug({
           component: "asr",
           event: "transcript.non-latin-script-dropped",
@@ -719,22 +720,10 @@ function looksLikePortugueseOrSpanish(text: string): boolean {
   return matches >= 2
 }
 
-// ARCHITECTURE.md section 73: this app's confirmed languages (French,
-// English) are both written entirely in Latin script (including accented
-// letters) — a legitimate transcript in either can never contain a
-// character from these blocks. Deliberately conservative: any ONE
-// matching character is enough to reject the whole chunk, since a real
-// hallucinated-language response is fluent text, not an isolated stray
-// character. Covers the scripts Whisper has actually been observed
-// hallucinating into (CJK, Japanese kana, Hangul) plus the other major
-// non-Latin scripts, so a future hallucination into a different unwanted
-// language doesn't require rediscovering this fix.
-const NON_LATIN_SCRIPT_PATTERN =
-  /[一-鿿぀-ヿㇰ-ㇿ가-힯Ѐ-ӿ؀-ۿݐ-ݿ֐-׿฀-๿ऀ-ॿ]/
-
-function containsNonLatinScript(text: string): boolean {
-  return NON_LATIN_SCRIPT_PATTERN.test(text)
-}
+// ARCHITECTURE.md section 73 / 129: French and English are written entirely in
+// Latin script, so any chunk with a non-Latin letter is a hallucination and is
+// rejected via the shared hasForeignScript() guard (script-guard.ts), which
+// covers every script rather than a hand-picked list of Unicode blocks.
 
 function concatenateSamples(frames: readonly Int16Array[], totalLength: number): Int16Array {
   const result = new Int16Array(totalLength)

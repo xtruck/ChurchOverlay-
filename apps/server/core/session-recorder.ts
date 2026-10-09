@@ -22,10 +22,14 @@ export type SessionEntry = {
  * state) — a fresh recording starts each time the app starts services,
  * exported on demand via the Electron main process, never persisted here.
  */
+/** A service never shows anywhere near this many verses; the cap only keeps the buffer bounded (AGENTS.md section 36). */
+export const MAX_SESSION_ENTRIES = 5000
+
 export class SessionRecorder {
   private readonly entries: SessionEntry[] = []
 
   record(verse: Verse, timestamp: number): void {
+    if (this.entries.length >= MAX_SESSION_ENTRIES) this.entries.shift()
     this.entries.push({
       reference: verse.reference,
       text: verse.text,

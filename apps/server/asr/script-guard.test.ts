@@ -1,6 +1,23 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { hasForeignScript } from "./script-guard"
+import { hasForeignScript, isLikelyThirdLatinLanguage } from "./script-guard"
+
+test("Spanish and Portuguese are recognised as a third language", () => {
+  assert.equal(isLikelyThirdLatinLanguage("Gracias hermanos, porque Dios es amor"), true)
+  assert.equal(isLikelyThirdLatinLanguage("Obrigado, você não está sozinho"), true)
+  assert.equal(isLikelyThirdLatinLanguage("El señor está aquí hoy"), true) // hard mark + marker word
+  assert.equal(isLikelyThirdLatinLanguage("a pregação de hoje não"), true) // hard mark (ã) in 4 words
+})
+
+test("French and English are never flagged as a third language", () => {
+  assert.equal(isLikelyThirdLatinLanguage("Le Seigneur est notre berger, nous le louons pour toujours"), false)
+  assert.equal(isLikelyThirdLatinLanguage("Jean 3:16 Car Dieu a tant aimé le monde"), false)
+  assert.equal(isLikelyThirdLatinLanguage("Let us read John chapter 3 verse 16"), false)
+  assert.equal(isLikelyThirdLatinLanguage("Que la paix de Dieu soit avec vous, mais aussi avec nous"), false)
+  assert.equal(isLikelyThirdLatinLanguage("pero"), false) // one marker word alone is not enough
+  assert.equal(isLikelyThirdLatinLanguage("señor"), false) // a hard mark alone, too short
+  assert.equal(isLikelyThirdLatinLanguage(""), false)
+})
 
 test("French and English text is kept", () => {
   assert.equal(hasForeignScript("Jean 3:16 — Car Dieu a tant aimé le monde"), false)

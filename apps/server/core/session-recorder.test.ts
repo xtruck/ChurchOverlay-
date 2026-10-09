@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { SessionRecorder } from "./session-recorder"
+import { MAX_SESSION_ENTRIES, SessionRecorder } from "./session-recorder"
 import type { Verse } from "../../../packages/contracts"
 
 function makeVerse(book: string, chapter: number, verse: number, text: string): Verse {
@@ -35,6 +35,15 @@ test("SessionRecorder: multiple record() calls accumulate in order", () => {
   assert.equal(entries.length, 2)
   assert.equal(entries[0]?.reference.book, "john")
   assert.equal(entries[1]?.reference.book, "romans")
+})
+
+test("SessionRecorder: the buffer is bounded and drops the oldest entry first", () => {
+  const recorder = new SessionRecorder()
+  for (let i = 0; i < MAX_SESSION_ENTRIES + 3; i++) recorder.record(makeVerse("john", 3, 16, "t"), i)
+  const entries = recorder.getEntries()
+  assert.equal(entries.length, MAX_SESSION_ENTRIES)
+  assert.equal(entries[0]?.timestamp, 3)
+  assert.equal(entries[entries.length - 1]?.timestamp, MAX_SESSION_ENTRIES + 2)
 })
 
 test("SessionRecorder: getEntries() returns a read-only view, not the same mutable array reference behavior", () => {

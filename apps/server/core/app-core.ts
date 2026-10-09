@@ -50,7 +50,7 @@ import { passesTranscriptGate } from "./transcript-gate"
 import { LatencyTracker, type LatencySnapshot } from "./latency-tracker"
 import { correctTranscription, detectHallucination } from "../asr/transcription-corrector"
 import { postprocessTranscript } from "../asr/postprocess/pipeline"
-import { hasForeignScript } from "../asr/script-guard"
+import { hasForeignScript, isLikelyThirdLatinLanguage } from "../asr/script-guard"
 import { TranscriptAssembler } from "../asr/transcript-assembler"
 import { RollingTranscriptWindow } from "../asr/rolling-transcript-window"
 import { allFamiliesAtVolume, applyVolumeHints, buildVolumeHints } from "../detector/volume-inference"
@@ -1890,20 +1890,38 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     }
   }
 
+  // Off-language transcripts dropped in a row; a warning is logged once when a run reaches this length.
+  const OFF_LANGUAGE_WARN_AFTER = 5
+  let consecutiveOffLanguageDrops = 0
+
   asr.onTranscript((transcript) => {
     // French and English only (ARCHITECTURE.md section 129): an engine that
     // hallucinates Hindi/Urdu/etc. over noise or silence must never reach a
     // detector or the dashboard.
-    if (hasForeignScript(transcript.text)) {
-      logger.debug({
+    //
+    // Spanish/Portuguese share the Latin alphabet, so they get a separate,
+    // conservative word check, applied to final transcripts only, and never
+    // to text that is clearly French or English (a sermon may quote "Señor").
+    const offLanguage = hasForeignScript(transcript.text)
+      ? "foreign-script"
+      : transcript.state === "final" && isLikelyThirdLatinLanguage(transcript.text) && guessSpokenLanguage(transcript.text) === "unknown"
+        ? "third-language"
+        : null
+    if (offLanguage !== null) {
+      consecutiveOffLanguageDrops += 1
+      // Debug for the first few; a run of drops means the mic is live but
+      // nothing is being kept, which the operator must be able to see.
+      const loud = consecutiveOffLanguageDrops === OFF_LANGUAGE_WARN_AFTER
+      logger[loud ? "warn" : "debug"]({
         component: "asr",
-        event: "asr.foreign-script-dropped",
+        event: `asr.${offLanguage}-dropped`,
         correlationId: transcript.correlationId,
         sequence: transcript.sequence,
-        metadata: { textPreview: transcript.text.slice(0, 40) },
+        metadata: { textPreview: transcript.text.slice(0, 40), consecutive: consecutiveOffLanguageDrops },
       })
       return
     }
+    consecutiveOffLanguageDrops = 0
     // TACHE UNIQUE (audit priorité absolue): apply deterministic phonetic
     // correction to the raw ASR text BEFORE any consumer sees it, so the
     // transcript.received log, every detector, and the operator dashboard
@@ -2317,7 +2335,14 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       if (verseAutoClearTimer) clearTimeout(verseAutoClearTimer)
       if (posterAutoClearTimer) clearTimeout(posterAutoClearTimer)
       if (mediaAutoClearTimer) clearTimeout(mediaAutoClearTimer)
-      await asr.stop().catch(() => {})
+      await asr.stop().catch((error: unknown) => {
+        // Shutdown must continue, but a provider that failed to stop may leak a socket or process.
+        logger.warn({
+          component: "app-core",
+          event: "asr.stop-failed",
+          error: error instanceof Error ? error.message : String(error),
+        })
+      })
       await wsServer.close()
       logger.info({ component: "app-core", event: "stopped" })
     },
