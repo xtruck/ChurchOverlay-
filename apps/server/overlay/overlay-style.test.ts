@@ -82,3 +82,35 @@ test("isOverlayStylePayload accepts resolved styles and rejects anything that ne
   assert.equal(isOverlayStylePayload({ ...good, extra: 1 }), false)
   assert.equal(isOverlayStylePayload(null), false)
 })
+
+// ARCHITECTURE.md section 133: six new designs and the transition style.
+test("section 133: the new card designs are accepted and survive normalization and the payload check", () => {
+  for (const card of ["cinema", "manuscript", "stained", "poster", "split", "bold"]) {
+    const s = normalizeOverlayStyleSettings({ card })
+    assert.equal(s.card, card)
+    assert.equal(isOverlayStylePayload(resolveOverlayStyle(s, 1)), true)
+  }
+})
+
+test("section 133: transition defaults to cinematic, accepts the closed list only, and old stored settings load", () => {
+  assert.equal(defaultOverlayStyleSettings().transition, "cinematic")
+  for (const transition of ["cinematic", "gentle", "cut"]) {
+    assert.equal(normalizeOverlayStyleSettings({ transition }).transition, transition)
+  }
+  for (const bad of ["fast", "<b>", 3, null, ""]) {
+    assert.equal(normalizeOverlayStyleSettings({ transition: bad }).transition, "cinematic")
+  }
+  // A settings object stored before section 133 has no transition field at all.
+  const { transition: _t, ...legacy } = defaultOverlayStyleSettings()
+  void _t
+  const loaded = normalizeOverlayStyleSettings({ ...legacy, card: "glass" })
+  assert.equal(loaded.transition, "cinematic")
+  assert.equal(loaded.card, "glass")
+  const good = resolveOverlayStyle(defaultOverlayStyleSettings(), 4)
+  assert.equal(isOverlayStylePayload({ ...good, transition: "gentle" }), true)
+  assert.equal(isOverlayStylePayload({ ...good, transition: "warp" }), false)
+  // A viewer payload must always carry the field (it is part of the normalized settings).
+  const { transition: _t2, ...missing } = good
+  void _t2
+  assert.equal(isOverlayStylePayload(missing), false)
+})

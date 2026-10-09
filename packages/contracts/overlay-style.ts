@@ -3,8 +3,30 @@
  * style system. Types only: no behaviour lives in contracts.
  */
 
-export const OVERLAY_CARD_DESIGNS = ["classic", "banner", "minimal", "elegant", "glass", "ribbon"] as const
+/** Section 133 appended cinema..bold; order is the dashboard picker's order. */
+export const OVERLAY_CARD_DESIGNS = [
+  "classic",
+  "banner",
+  "minimal",
+  "elegant",
+  "glass",
+  "ribbon",
+  "cinema",
+  "manuscript",
+  "stained",
+  "poster",
+  "split",
+  "bold",
+] as const
 export type OverlayCardDesign = (typeof OVERLAY_CARD_DESIGNS)[number]
+
+/**
+ * Section 133: how verse cards move. "cinematic" = each design's own
+ * choreography (the default), "gentle" = a short plain fade, "cut" = no motion.
+ * Mirrored by VerseMotion.TRANSITIONS in apps/overlay/public/verse-motion.js.
+ */
+export const OVERLAY_TRANSITIONS = ["cinematic", "gentle", "cut"] as const
+export type OverlayTransition = (typeof OVERLAY_TRANSITIONS)[number]
 
 export const OVERLAY_BRAND_FONTS = ["serif", "sans", "mono"] as const
 export type OverlayBrandFont = (typeof OVERLAY_BRAND_FONTS)[number]
@@ -56,6 +78,8 @@ export interface OverlayStyleSettings {
   paletteId: string
   customColors?: OverlayColors
   card: OverlayCardDesign
+  /** Section 133. Absent in settings stored before it existed: normalizes to "cinematic". */
+  transition: OverlayTransition
   brand: { name: OverlayBrandName; logo: OverlayBrandLogo }
 }
 

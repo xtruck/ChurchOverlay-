@@ -170,49 +170,43 @@
   // in proportion to the primary's, rather than left fixed, since a long
   // secondary (English) translation can just as easily overflow on its
   // own.
-  const MAX_FONT_PX = 44
-  const MIN_FONT_PX = 14
+  //
+  // ARCHITECTURE.md section 82 / 133: the caps and available area depend on
+  // the layout (fullscreen is read from across a room, so its cap is much
+  // larger) and, since section 133, on the card design too (the cinema
+  // letterbox takes frame height, poster/bold want bigger type). They come
+  // from the pure VerseMotion.fitLimits(), which is unit tested.
+  const Motion = window.VerseMotion
   const SECONDARY_FONT_RATIO = 0.55 // matches the visual hierarchy already set in CSS's own clamp() sizing
   const MIN_SECONDARY_FONT_PX = 10
-  const MAX_HEIGHT_FRACTION = 0.84
-  const MAX_WIDTH_FRACTION = 0.9
-
-  // ARCHITECTURE.md section 82: fitVerseText() sets an inline font-size,
-  // which always wins over the CSS clamp()s on #verse.fullscreen — so
-  // without a separate, much larger cap here, a fullscreen verse would
-  // still render at the same size as lower-third, wasting the entire
-  // point of "seen from across a room." Bigger max, and bigger available
-  // area (the card now fills the whole viewport, not a bottom third).
-  const FULLSCREEN_MAX_FONT_PX = 120
-  const FULLSCREEN_MIN_FONT_PX = 18
-  const FULLSCREEN_MAX_HEIGHT_FRACTION = 0.9
-  const FULLSCREEN_MAX_WIDTH_FRACTION = 0.9
 
   function clearVerseSizing() {
     textEl.style.fontSize = ""
     secondaryTextEl.style.fontSize = ""
-    verseCardEl.style.transform = ""
+    verseCardEl.style.removeProperty("--fit-scale")
   }
 
-  function fitVerseText() {
-    if (!verseEl.classList.contains("visible")) return
-    const isFullscreen = verseEl.classList.contains("fullscreen")
-    const maxWidth = window.innerWidth * (isFullscreen ? FULLSCREEN_MAX_WIDTH_FRACTION : MAX_WIDTH_FRACTION)
-    const maxHeight = window.innerHeight * (isFullscreen ? FULLSCREEN_MAX_HEIGHT_FRACTION : MAX_HEIGHT_FRACTION)
-    const maxFontPx = isFullscreen ? FULLSCREEN_MAX_FONT_PX : MAX_FONT_PX
-    const minFontPx = isFullscreen ? FULLSCREEN_MIN_FONT_PX : MIN_FONT_PX
-    clearVerseSizing()
-    let fontSize = maxFontPx
+  function setFontSize(fontSize) {
     textEl.style.fontSize = fontSize + "px"
+    // Designs that size ornaments from the verse type (poster's quote mark) read this.
+    verseCardEl.style.setProperty("--vc-font", fontSize + "px")
     if (secondaryTextEl.classList.contains("visible")) {
       secondaryTextEl.style.fontSize = Math.max(MIN_SECONDARY_FONT_PX, fontSize * SECONDARY_FONT_RATIO) + "px"
     }
-    while ((verseCardEl.scrollWidth > maxWidth || verseCardEl.scrollHeight > maxHeight) && fontSize > minFontPx) {
+  }
+
+  // The measuring half of the auto-fit. Runs only while no reveal animation is
+  // in flight: transformed words would inflate the card's scroll size.
+  function measureFit() {
+    const limits = Motion.fitLimits(verseEl.classList.contains("fullscreen"), currentCard)
+    const maxWidth = window.innerWidth * limits.maxWidthFraction
+    const maxHeight = window.innerHeight * limits.maxHeightFraction
+    clearVerseSizing()
+    let fontSize = limits.maxFontPx
+    setFontSize(fontSize)
+    while ((verseCardEl.scrollWidth > maxWidth || verseCardEl.scrollHeight > maxHeight) && fontSize > limits.minFontPx) {
       fontSize -= 1
-      textEl.style.fontSize = fontSize + "px"
-      if (secondaryTextEl.classList.contains("visible")) {
-        secondaryTextEl.style.fontSize = Math.max(MIN_SECONDARY_FONT_PX, fontSize * SECONDARY_FONT_RATIO) + "px"
-      }
+      setFontSize(fontSize)
     }
 
     // Extremely long bilingual passages can still exceed the viewport at the
@@ -221,13 +215,88 @@
     const overflowWidth = verseCardEl.scrollWidth / maxWidth
     const overflowHeight = verseCardEl.scrollHeight / maxHeight
     const scale = Math.min(1, 1 / Math.max(overflowWidth, overflowHeight))
-    if (scale < 1) verseCardEl.style.transform = `scale(${scale})`
+    if (scale < 1) verseCardEl.style.setProperty("--fit-scale", String(scale))
   }
 
-  function showVerse(verse) {
-    textEl.textContent = verse.text
+  let refitAfterSettle = false
+  function fitVerseText() {
+    if (!verseEl.classList.contains("visible")) return
+    if (motionPhase !== "idle") {
+      refitAfterSettle = true
+      return
+    }
+    measureFit()
+  }
+
+  // ---------------------------------------------------------------------
+  // ARCHITECTURE.md section 133: verse card choreography. A small explicit
+  // state machine (AGENTS.md section 48) over #verse's classes:
+  //   idle -> entering -> idle                      (enter / fade / resync)
+  //   idle -> swap-out -> swap-in -> idle           (verse replaces verse)
+  // A verse:show during swap-out only replaces the pending verse (latest
+  // wins); a clear cancels everything. Every timer is checked against the
+  // phase it was started for, so a stale timer can never resurrect a verse.
+  // ---------------------------------------------------------------------
+  const MOTION_CLASSES = ["vc-enter", "vc-swap-out", "vc-swap-in", "vc-fade", "vc-fade-out", "vc-cut", "vc-dense"]
+  const GENTLE_OUT_MS = 180
+  const FADE_SETTLE_MS = 320
+  const reducedMotionQuery = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null
+  let motionPhase = "idle"
+  let motionTimer = 0
+  let pendingVerse = null
+  let currentCard = "classic"
+  let currentTransition = "cinematic"
+  // When the current socket opened (performance.now()); see LATE_JOIN_WINDOW_MS.
+  let connectedAt = -Infinity
+  let wordEls = []
+
+  function resetMotion() {
+    clearTimeout(motionTimer)
+    motionTimer = 0
+    pendingVerse = null
+    motionPhase = "idle"
+    verseEl.classList.remove(...MOTION_CLASSES)
+  }
+
+  // Verse text is written ONLY through textContent / text nodes, one span per
+  // reveal unit (AGENTS.md section 20, SECURITY.md: never innerHTML).
+  function renderWords(el, text) {
+    el.textContent = ""
+    const units = Motion.splitRevealUnits(text)
+    const cap = units.length ? Motion.splitDropCap(units[0]) : null
+    const frag = document.createDocumentFragment()
+    if (cap) {
+      // Decorative copy of the initial for the manuscript design (hidden by
+      // CSS elsewhere); the real letter stays in the text as .vc-capsrc.
+      const drop = document.createElement("span")
+      drop.className = "vc-dropcap"
+      drop.setAttribute("aria-hidden", "true")
+      drop.textContent = cap.cap
+      frag.appendChild(drop)
+    }
+    units.forEach((unit, i) => {
+      if (i > 0) frag.appendChild(document.createTextNode(" "))
+      const w = document.createElement("span")
+      w.className = "vc-w"
+      if (i === 0 && cap) {
+        const src = document.createElement("span")
+        src.className = "vc-capsrc"
+        src.textContent = cap.cap
+        w.appendChild(src)
+        if (cap.rest) w.appendChild(document.createTextNode(cap.rest))
+      } else {
+        w.textContent = unit
+      }
+      frag.appendChild(w)
+    })
+    el.appendChild(frag)
+    return Array.from(el.querySelectorAll(".vc-w"))
+  }
+
+  function renderVerseContent(verse) {
     // The page is declared English; say so when the verse is French (screen readers, hyphenation).
     textEl.lang = FRENCH_TRANSLATIONS.has(String(verse.translation || "").toLowerCase()) ? "fr" : "en"
+    wordEls = renderWords(textEl, String(verse.text))
     refEl.textContent = formatVerseReference(verse)
 
     if (verse.secondary) {
@@ -238,17 +307,105 @@
       secondaryTextEl.classList.remove("visible")
       secondaryTextEl.textContent = ""
     }
+  }
 
+  function lineIndexes() {
+    return Motion.groupLines(wordEls.map((w) => w.offsetTop))
+  }
+
+  // Measures the settled layout, then hands every word its start delay.
+  function applyRevealPlan(swap) {
+    let lines = lineIndexes()
+    // A one-line verse gets a raised initial instead of a two-line drop cap.
+    const single = lines.length > 0 && lines[lines.length - 1] === 0
+    if (single !== verseCardEl.classList.contains("vc-single")) {
+      verseCardEl.classList.toggle("vc-single", single)
+      measureFit()
+      lines = lineIndexes()
+    }
+    const plan = Motion.revealPlan(lines, currentCard, { swap })
+    wordEls.forEach((w, i) => w.style.setProperty("--d", String(plan.delays[i])))
+    verseEl.style.setProperty("--vc-word-dur", String(plan.wordDur))
+    verseEl.style.setProperty("--vc-ref-dur", String(plan.refDur))
+    verseEl.style.setProperty("--vc-sec-delay", String(plan.secondaryDelay))
+    verseEl.style.setProperty("--vc-ref-delay", String(plan.refDelay))
+    verseEl.classList.toggle("vc-dense", plan.dense)
+    return plan
+  }
+
+  function settle() {
+    motionTimer = 0
+    verseEl.classList.remove("vc-enter", "vc-swap-in", "vc-fade", "vc-dense")
+    motionPhase = "idle"
+    if (refitAfterSettle) {
+      refitAfterSettle = false
+      measureFit()
+    }
+  }
+
+  // Shows `verse` now, with the choreography `kind` (see pickVerseTransition).
+  function present(verse, kind) {
+    resetMotion()
+    verseCardEl.classList.remove("vc-single")
+    renderVerseContent(verse)
+    // Classes that change the CONTAINER's transition must be in place before
+    // it becomes visible, or the default transition would already be running.
+    if (kind === "cut") verseEl.classList.add("vc-cut")
+    else if (kind !== "enter" && kind !== "swap-in") verseEl.classList.add("vc-fade")
     verseEl.classList.add("visible")
-    // Restart the reveal even if a verse is already on screen: removing the
-    // class and forcing a reflow lets the same keyframes play again.
-    verseCardEl.classList.remove("reveal")
-    void verseCardEl.offsetWidth
-    verseCardEl.classList.add("reveal")
-    requestAnimationFrame(() => fitVerseText())
+    measureFit()
+    if (kind === "cut") return
+    if (kind === "enter" || kind === "swap-in") {
+      const plan = applyRevealPlan(kind === "swap-in")
+      // measureFit()/applyRevealPlan() forced a style flush, so re-adding
+      // the class restarts every keyframe even on the same elements.
+      verseEl.classList.add(kind === "enter" ? "vc-enter" : "vc-swap-in")
+      motionPhase = "entering"
+      motionTimer = setTimeout(settle, plan.settleMs)
+      return
+    }
+    motionPhase = "entering"
+    motionTimer = setTimeout(settle, FADE_SETTLE_MS)
+  }
+
+  function startSwapOut(verse, gentle) {
+    resetMotion()
+    pendingVerse = verse
+    const outMs = gentle ? GENTLE_OUT_MS : Motion.swapOutMs(currentCard)
+    verseEl.style.setProperty("--vc-out-dur", String(outMs))
+    void verseEl.offsetWidth
+    verseEl.classList.add(gentle ? "vc-fade-out" : "vc-swap-out")
+    motionPhase = "swap-out"
+    motionTimer = setTimeout(() => {
+      if (motionPhase !== "swap-out" || !pendingVerse) return
+      const next = pendingVerse
+      present(next, gentle ? "fade-swap" : "swap-in")
+    }, outMs)
+  }
+
+  function chooseTransition(wasVisible) {
+    return Motion.pickVerseTransition({
+      wasVisible,
+      msSinceConnect: performance.now() - connectedAt,
+      reducedMotion: !!(reducedMotionQuery && reducedMotionQuery.matches),
+      motion: currentTransition,
+    })
+  }
+
+  function showVerse(verse) {
+    if (motionPhase === "swap-out") {
+      // The outgoing half is already running: the newest verse simply takes the slot.
+      pendingVerse = verse
+      return
+    }
+    const kind = chooseTransition(verseEl.classList.contains("visible"))
+    if (kind === "swap" || kind === "fade-swap") startSwapOut(verse, kind === "fade-swap")
+    else present(verse, kind)
   }
 
   function clearVerse() {
+    resetMotion()
+    if (currentTransition === "cut") verseEl.classList.add("vc-cut")
     verseEl.classList.remove("visible")
   }
 
@@ -273,7 +430,10 @@
   // it into CSS custom properties / textContent, never innerHTML.
   // branding:update is still received for older servers but no longer drives
   // anything visual: organization name and accent now live in the style.
-  const CARD_CLASSES = ["tpl-banner", "tpl-minimal", "tpl-elegant", "tpl-glass", "tpl-ribbon"]
+  // Every non-classic design (classic is the class-less default look).
+  // Section 133 added cinema, manuscript, stained, poster, split and bold.
+  const CARD_DESIGNS = ["banner", "minimal", "elegant", "glass", "ribbon", "cinema", "manuscript", "stained", "poster", "split", "bold"]
+  const CARD_CLASSES = CARD_DESIGNS.map((d) => "tpl-" + d)
   const BRAND_FONTS = {
     serif: '"Instrument Serif", Georgia, "Times New Roman", serif',
     sans: '"Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif',
@@ -325,8 +485,18 @@
     // so it gets a faint light edge instead. Light text keeps the legibility halo.
     setVar("--ov-shadow", isDark(c.text) ? "0 1px 1px rgba(255, 255, 255, 0.35)" : "0 2px 10px rgba(0, 0, 0, 0.85)")
 
+    setVar("--ov-text2-rgb", rgbTriple(c.textSecondary))
+    setVar("--ov-border-rgb", rgbTriple(c.border))
+
+    // Only names from the closed list ever become a class or attribute value.
+    const card = CARD_DESIGNS.includes(style.card) ? style.card : "classic"
+    const transition = Motion.TRANSITIONS.includes(style.transition) ? style.transition : "cinematic"
+    const lookChanged = card !== currentCard || transition !== currentTransition
+    currentCard = card
+    currentTransition = transition
     verseCardEl.classList.remove(...CARD_CLASSES)
-    if (style.card && style.card !== "classic") verseCardEl.classList.add("tpl-" + style.card)
+    if (card !== "classic") verseCardEl.classList.add("tpl-" + card)
+    verseEl.dataset.card = card
     verseCardEl.classList.toggle("no-card", c.cardOpacity === 0)
 
     const name = style.brand && style.brand.name
@@ -357,6 +527,12 @@
 
     if (designPreview) requestAnimationFrame(reportBrandRects)
 
+    // The design preview replays the entrance whenever the operator picks a
+    // different design or transition, so the choreography can be judged there.
+    if (designPreview && lookChanged) {
+      replayDesignSample()
+      return
+    }
     // Colours and card chrome change the card's box: refit the verse text.
     if (verseEl.classList.contains("visible")) requestAnimationFrame(() => fitVerseText())
   }
@@ -382,12 +558,13 @@
     brandLogoEl.addEventListener("load", reportBrandRects)
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(reportBrandRects)
   }
+  const DESIGN_SAMPLE = { text: "This is how your verse will look.", reference: { book: "reference", chapter: 1, verse: 1 }, translation: "sample" }
   function showDesignSample() {
-    textEl.textContent = "This is how your verse will look."
-    refEl.textContent = "Reference 1:1"
-    secondaryTextEl.classList.remove("visible")
-    verseEl.classList.add("visible")
-    requestAnimationFrame(() => fitVerseText())
+    present(DESIGN_SAMPLE, "cut")
+  }
+  function replayDesignSample() {
+    const kind = chooseTransition(false)
+    present(DESIGN_SAMPLE, kind === "resync" ? "enter" : kind)
   }
 
   let resizeTimer = 0
@@ -665,6 +842,9 @@
       }
       lastStyleRevision = -1
       reconnectAttempts = 0
+      // Section 133: a verse re-sent right after this (connect-time resync,
+      // late-joining OBS source) fades in instead of replaying the full intro.
+      connectedAt = performance.now()
       setStatus("connected", true)
     })
     ws.addEventListener("close", () => {

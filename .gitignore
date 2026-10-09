@@ -15,3 +15,6 @@ live-tests/
 .claude/
 .windsurf/
 .github/copilot-instructions.md
+
+# Dev-only verse card gallery output (scripts/card-gallery.mjs)
+card-gallery/

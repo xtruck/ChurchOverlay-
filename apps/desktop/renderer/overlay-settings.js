@@ -17,6 +17,7 @@
     handles: $("ov-handles"),
     palettes: $("ov-palettes"),
     cards: $("ov-cards"),
+    transitions: $("ov-transitions"),
     customBox: $("ov-custom"),
     customGrid: $("ov-custom-grid"),
     customOpacity: $("ov-custom-opacity"),
@@ -72,7 +73,7 @@
 
   /** Settings the server stores: the received style minus revision/colours (colours only matter for custom). */
   function settingsFrom(s) {
-    const out = { paletteId: s.paletteId, card: s.card, brand: JSON.parse(JSON.stringify(s.brand)) }
+    const out = { paletteId: s.paletteId, card: s.card, transition: s.transition, brand: JSON.parse(JSON.stringify(s.brand)) }
     if (s.paletteId === "custom") out.customColors = { ...s.colors }
     return out
   }
@@ -154,6 +155,18 @@
       els.cards.appendChild(b)
     }
   }
+  // Section 133: how verse cards move (cinematic / gentle / instant).
+  function buildTransitions() {
+    els.transitions.textContent = ""
+    for (const tr of meta.transitions || []) {
+      const b = document.createElement("button")
+      b.type = "button"
+      b.dataset.transition = tr
+      b.textContent = t("overlayTransition." + tr)
+      b.addEventListener("click", () => edit((s) => { s.transition = tr }))
+      els.transitions.appendChild(b)
+    }
+  }
   function buildCustom() {
     els.customGrid.textContent = ""
     for (const role of COLOR_ROLES) {
@@ -185,9 +198,10 @@
 
   function render(rebuildLists) {
     if (!style || !meta) return
-    if (rebuildLists) { buildPalettes(); buildCards(); buildCustom(); buildFonts() }
+    if (rebuildLists) { buildPalettes(); buildCards(); buildTransitions(); buildCustom(); buildFonts() }
     els.palettes.querySelectorAll("[data-palette]").forEach((b) => b.classList.toggle("active", b.dataset.palette === style.paletteId))
     els.cards.querySelectorAll("[data-card]").forEach((b) => b.classList.toggle("active", b.dataset.card === style.card))
+    els.transitions.querySelectorAll("[data-transition]").forEach((b) => b.classList.toggle("active", b.dataset.transition === style.transition))
     const isCustom = style.paletteId === "custom"
     els.customBox.hidden = !isCustom
     if (isCustom) {

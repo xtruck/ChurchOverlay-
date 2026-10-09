@@ -2,6 +2,7 @@ import {
   CUSTOM_PALETTE_ID,
   OVERLAY_BRAND_FONTS,
   OVERLAY_CARD_DESIGNS,
+  OVERLAY_TRANSITIONS,
   type OverlayBrandFont,
   type OverlayBrandLogo,
   type OverlayBrandName,
@@ -10,6 +11,7 @@ import {
   type OverlayPlacement,
   type OverlayStyle,
   type OverlayStyleSettings,
+  type OverlayTransition,
 } from "../../../packages/contracts/overlay-style"
 import { DEFAULT_PALETTE_ID, HEX_COLOR, findPalette } from "./palettes"
 
@@ -33,6 +35,7 @@ export function defaultOverlayStyleSettings(): OverlayStyleSettings {
   return {
     paletteId: DEFAULT_PALETTE_ID,
     card: "classic",
+    transition: "cinematic",
     brand: {
       name: { visible: false, text: "", font: "sans", size: 28, weight: 600, plate: true, ...DEFAULT_NAME_PLACEMENT },
       logo: { visible: false, version: 0, ...DEFAULT_LOGO_PLACEMENT },
@@ -127,6 +130,7 @@ export function normalizeOverlayStyleSettings(input: unknown): OverlayStyleSetti
   const out: OverlayStyleSettings = {
     paletteId,
     card: oneOf<OverlayCardDesign>(r.card, OVERLAY_CARD_DESIGNS, d.card),
+    transition: oneOf<OverlayTransition>(r.transition, OVERLAY_TRANSITIONS, d.transition),
     brand: { name: normalizeName(brand.name, d.brand.name), logo: normalizeLogo(brand.logo, d.brand.logo) },
   }
   if (paletteId === CUSTOM_PALETTE_ID) out.customColors = normalizeColors(r.customColors, DEFAULT_COLORS)

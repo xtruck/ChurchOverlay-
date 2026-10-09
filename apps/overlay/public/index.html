@@ -62,6 +62,20 @@
     --ov-ease-out: cubic-bezier(0.4, 0, 1, 1);
     --ov-enter: 320ms;
     --ov-exit: 200ms;
+    /* Section 133: rgb triples of two more colour roles, for translucent
+       design effects (overlay.js sets them with the rest of the palette). */
+    --ov-text2-rgb: 242, 244, 247;
+    --ov-border-rgb: 42, 45, 51;
+    /* Section 133 verse card motion. Entrances decelerate long and soft
+       (expo-out), exits accelerate briefly, sweeps ease both ways. */
+    --vc-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --vc-ease-in: cubic-bezier(0.5, 0, 0.75, 0);
+    --vc-ease-inout: cubic-bezier(0.65, 0, 0.35, 1);
+    --vc-exit: 420ms;
+    --vc-fade: 260ms;
+    /* Letterbox bar height of the cinema design (2.39:1 would be 12.8vh; a
+       touch less keeps more of the live picture). */
+    --lb-h: 10vh;
   }
   *, *::before, *::after {
     box-sizing: border-box;
@@ -172,13 +186,23 @@
     padding: 0 7%;
     overflow: hidden;
     opacity: 0;
-    transform: translate3d(0, 12px, 0);
-    transition: opacity var(--ov-exit) var(--ov-ease-out), transform var(--ov-exit) var(--ov-ease-out);
+    transform: translate3d(0, 10px, 0);
+    /* Section 133 exit: a brief accelerate-out; the text also softens (below). */
+    transition: opacity var(--vc-exit) var(--vc-ease-in), transform var(--vc-exit) var(--vc-ease-in);
   }
   #verse.visible {
     opacity: 1;
     transform: none;
-    transition: opacity var(--ov-enter) var(--ov-ease), transform var(--ov-enter) var(--ov-ease);
+    /* The container only fades and lifts a little: the card, the words and
+       the reference carry the choreography (see "Section 133" below). */
+    transition: opacity 380ms var(--vc-ease-out), transform 800ms var(--vc-ease-out);
+  }
+  #verse.vc-fade.visible { transition: opacity var(--vc-fade) ease-out, transform var(--vc-fade) ease-out; }
+  #verse.vc-cut, #verse.vc-cut #verse-text, #verse.vc-cut #verse-secondary-text { transition: none; }
+  #verse:not(.visible) #verse-text,
+  #verse:not(.visible) #verse-secondary-text {
+    filter: blur(3px);
+    transition: filter var(--vc-exit) var(--vc-ease-in);
   }
 
   #verse-card {
@@ -194,6 +218,13 @@
     box-sizing: border-box;
     max-height: 100%;
     overflow: hidden;
+    /* Section 133: positioned + its own stacking context, so design layers
+       (::before/::after with z-index -1) paint above the card surface but
+       BELOW the text. The auto-fit's last-resort shrink is a variable here
+       (not an inline transform) so the entrance keyframes can include it. */
+    position: relative;
+    isolation: isolate;
+    transform: scale(var(--fit-scale, 1));
   }
   @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
     /* Progressive enhancement only — see the comment above #status.
@@ -502,31 +533,628 @@
     text-shadow: 0 2px 3px rgba(0, 0, 0, 0.9), 0 0 18px rgba(0, 0, 0, 0.75);
   }
 
-  /*
-    One orchestrated reveal per verse (re-triggered by overlay.js on every
-    new verse, even when one is already showing): the words come into
-    focus, then the reference settles in just after — the eye reads the
-    scripture first, its address second.
-  */
-  /* opacity + transform only (no blur filter: cheaper in OBS's CEF and it
-     never smears glyph edges mid-frame). Whole sequence ends by ~320ms. */
-  @keyframes verse-focus-in {
-    from { opacity: 0; transform: translate3d(0, 8px, 0); }
-    to { opacity: 1; transform: none; }
+  /* ===================================================================
+     Section 133: cinematic verse cards and transitions.
+
+     overlay.js (with the pure verse-motion.js) drives a small state machine
+     on #verse through classes:
+       vc-enter     full intro: card, then words line by line, then reference
+       vc-swap-out  verse-to-verse, outgoing half: the content lifts away
+       vc-swap-in   verse-to-verse, incoming half: the card stays up
+       vc-fade      short fade (late join, "gentle" style, reduced motion)
+       vc-fade-out  outgoing half of a gentle verse-to-verse change
+       vc-cut       no motion at all ("instant" style)
+     and #verse[data-card] names the design. Every verse word is its own
+     .vc-w span (built with textContent), whose start delay --d (ms) is
+     computed per line by verse-motion.js after the auto-fit has run.
+     Every class is removed when the reveal settles, so a verse at rest is
+     plain static text with no animation, filter or extra layer left on it.
+
+     Only opacity, transform and filter are animated (compositor-friendly in
+     OBS's CEF); keyframes are mostly from-only, so each lands exactly on the
+     element's own resting style: text is fully legible the moment it settles.
+     =================================================================== */
+  #verse-text .vc-w { display: inline-block; max-width: 100%; }
+  .vc-dropcap, #verse-ornament { display: none; }
+  #verse-card {
+    --rv-dx: 0em;
+    --rv-dy: 0.3em;
+    --rv-blur: 7px;
+    --rv-scale: 1;
+    --rv-ease: var(--vc-ease-out);
+    --card-dx: 0px;
+    --card-dy: 16px;
+    --card-s: 0.985;
+    --card-dur: 700ms;
+    --card-ease: var(--vc-ease-out);
   }
-  #verse-card.reveal #verse-text,
-  #verse-card.reveal #verse-secondary-text { animation: verse-focus-in 280ms var(--ov-ease) both; }
-  #verse-card.reveal #verse-secondary-text { animation-delay: 40ms; }
-  #verse-card.reveal #verse-ref-row { animation: verse-focus-in 240ms var(--ov-ease) 80ms both; }
+  #verse.vc-dense .vc-w { --rv-blur: 0px; }
+
+  @keyframes vc-word-in {
+    from { opacity: 0; transform: translate3d(var(--rv-dx), var(--rv-dy), 0) scale(var(--rv-scale)); filter: blur(var(--rv-blur)); }
+  }
+  @keyframes vc-rise-in {
+    from { opacity: 0; transform: translate3d(0, 0.45em, 0); filter: blur(6px); }
+  }
+  @keyframes vc-card-in {
+    from { opacity: 0; transform: translate3d(var(--card-dx), var(--card-dy), 0) scale(calc(var(--fit-scale, 1) * var(--card-s))); }
+  }
+  @keyframes vc-card-return {
+    from { opacity: 0.55; transform: scale(calc(var(--fit-scale, 1) * 0.99)); }
+  }
+  @keyframes vc-card-dim {
+    to { opacity: 0.55; transform: scale(calc(var(--fit-scale, 1) * 0.99)); }
+  }
+  @keyframes vc-out {
+    to { opacity: 0; transform: translate3d(0, -0.2em, 0); filter: blur(6px); }
+  }
+  @keyframes vc-fade-in { from { opacity: 0; } }
+  @keyframes vc-fade-out { to { opacity: 0; } }
+  @keyframes vc-rule-grow { from { transform: scaleX(0); opacity: 0; } }
+  @keyframes vc-sweep {
+    from { transform: translate3d(-120%, 0, 0); opacity: 0; }
+    25% { opacity: 1; }
+    70% { opacity: 1; }
+    to { transform: translate3d(320%, 0, 0); opacity: 0; }
+  }
+
+  /* --- incoming --- */
+  #verse.vc-enter #verse-card { animation: vc-card-in var(--card-dur) var(--card-ease) both; }
+  #verse.vc-swap-in #verse-card { animation: vc-card-return 560ms var(--vc-ease-out) both; }
+  #verse.vc-enter .vc-w,
+  #verse.vc-swap-in .vc-w {
+    animation: vc-word-in calc(var(--vc-word-dur, 560) * 1ms) var(--rv-ease) calc(var(--d, 0) * 1ms) both;
+  }
+  #verse.vc-enter #verse-secondary-text,
+  #verse.vc-swap-in #verse-secondary-text {
+    animation: vc-rise-in calc(var(--vc-word-dur, 560) * 1ms) var(--vc-ease-out) calc(var(--vc-sec-delay, 0) * 1ms) both;
+  }
+  #verse.vc-enter #verse-ref-row,
+  #verse.vc-swap-in #verse-ref-row {
+    animation: vc-rise-in calc(var(--vc-ref-dur, 520) * 1ms) var(--vc-ease-out) calc(var(--vc-ref-delay, 0) * 1ms) both;
+  }
+  /* The accent rules draw outward from the reference, just ahead of it. */
+  #verse-ref-row::before { transform-origin: 100% 50%; }
+  #verse-ref-row::after { transform-origin: 0% 50%; }
+  #verse.vc-enter #verse-ref-row::before, #verse.vc-enter #verse-ref-row::after,
+  #verse.vc-swap-in #verse-ref-row::before, #verse.vc-swap-in #verse-ref-row::after {
+    animation: vc-rule-grow 760ms var(--vc-ease-out) calc(var(--vc-ref-delay, 0) * 1ms - 60ms) both;
+  }
+  /* A soft band of light crosses the card once, behind the text (z-index -1
+     inside the card's stacking context). Only on designs with a surface. */
+  #verse:is(.vc-enter, .vc-swap-in) #verse-card:is(:not([class*="tpl-"]), .tpl-banner, .tpl-elegant, .tpl-glass, .tpl-ribbon, .tpl-cinema, .tpl-stained):not(.no-card)::after {
+    content: "";
+    position: absolute;
+    top: -20%;
+    bottom: -20%;
+    left: 0;
+    width: 40%;
+    z-index: -1;
+    pointer-events: none;
+    background: linear-gradient(100deg, transparent 0%, rgba(var(--accent-rgb), 0.09) 38%, rgba(255, 255, 255, 0.09) 50%, rgba(var(--accent-rgb), 0.07) 62%, transparent 100%);
+    animation: vc-sweep 880ms var(--vc-ease-inout) 90ms both;
+  }
+
+  /* --- outgoing (verse to verse) --- */
+  #verse.vc-swap-out #verse-card { animation: vc-card-dim calc(var(--vc-out-dur, 300) * 1ms) var(--vc-ease-in) forwards; }
+  #verse.vc-swap-out #verse-text,
+  #verse.vc-swap-out #verse-secondary-text,
+  #verse.vc-swap-out #verse-ornament,
+  #verse.vc-swap-out #verse-ref-row {
+    animation: vc-out calc(var(--vc-out-dur, 300) * 1ms) var(--vc-ease-in) forwards;
+  }
+  #verse.vc-swap-out #verse-ref-row { animation-duration: calc(var(--vc-out-dur, 300) * 0.8ms); }
+
+  /* --- gentle / late join / reduced motion --- */
+  #verse.vc-fade #verse-text,
+  #verse.vc-fade #verse-secondary-text,
+  #verse.vc-fade #verse-ornament,
+  #verse.vc-fade #verse-ref-row { animation: vc-fade-in var(--vc-fade) ease-out both; }
+  #verse.vc-fade-out #verse-text,
+  #verse.vc-fade-out #verse-secondary-text,
+  #verse.vc-fade-out #verse-ornament,
+  #verse.vc-fade-out #verse-ref-row { animation: vc-fade-out 180ms ease-in forwards; }
+
+  /* ---------------------------------------------------------------
+     New design 1: cinema. A widescreen title: letterbox bars close in
+     from the frame edges, the verse rests on a full-width band of the
+     card colour rising out of the bottom bar, a warm light leak crosses
+     it, and the words drift in sideways like a film title.
+     --------------------------------------------------------------- */
+  #verse-letterbox { position: fixed; inset: 0; z-index: 2; pointer-events: none; display: none; }
+  #verse[data-card="cinema"] + #verse-letterbox { display: block; }
+  .lb-bar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: var(--lb-h);
+    background: rgb(var(--ov-card-rgb));
+    transform: scaleY(0);
+    transition: transform 460ms var(--vc-ease-in) 80ms;
+  }
+  .lb-top { top: 0; transform-origin: 50% 0%; }
+  .lb-bottom { bottom: 0; transform-origin: 50% 100%; }
+  .lb-bar::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent 8%, rgba(var(--accent-rgb), 0.5) 50%, transparent 92%);
+  }
+  .lb-top::after { bottom: 0; }
+  .lb-bottom::after { top: 0; }
+  #verse.visible[data-card="cinema"] + #verse-letterbox .lb-bar { transform: none; transition: transform 900ms var(--vc-ease-out); }
+  #verse.vc-cut + #verse-letterbox .lb-bar { transition: none; }
+  #verse[data-card="cinema"]:not(.fullscreen) { bottom: var(--lb-h); padding: 0; }
+  #verse-card.tpl-cinema {
+    --rv-dx: 0.4em;
+    --rv-dy: 0em;
+    --rv-blur: 10px;
+    --rv-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --card-dy: 0px;
+    --card-s: 1;
+    --card-dur: 900ms;
+    width: 100%;
+    max-width: none;
+    padding: 10vh 12% 3.4vh;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: linear-gradient(0deg, rgba(var(--ov-card-rgb), 0.97) 0%, rgba(var(--ov-card-rgb), 0.82) 38%, rgba(var(--ov-card-rgb), 0.45) 70%, rgba(var(--ov-card-rgb), 0) 100%);
+  }
+  #verse-card.tpl-cinema #verse-text { letter-spacing: 0.006em; line-height: 1.3; max-width: 30em; }
+  #verse-card.tpl-cinema #verse-ref-row { margin-top: 16px; gap: 18px; }
+  #verse-card.tpl-cinema #verse-ref-row::before,
+  #verse-card.tpl-cinema #verse-ref-row::after { width: 64px; opacity: 0.55; }
+  #verse-card.tpl-cinema #verse-reference {
+    font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+    font-style: normal;
+    font-weight: 500;
+    font-size: clamp(12px, 1.15vw, 21px);
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+  }
+  /* The light leak: wider, warmer and slower than the shared sweep. */
+  #verse:is(.vc-enter, .vc-swap-in) #verse-card.tpl-cinema:not(.no-card)::after {
+    width: 55%;
+    background: radial-gradient(50% 60% at 50% 70%, rgba(var(--accent-rgb), 0.26), rgba(var(--accent-rgb), 0.08) 55%, transparent 75%);
+    animation: vc-sweep 1100ms var(--vc-ease-inout) 60ms both;
+  }
+  #verse.fullscreen[data-card="cinema"] { padding: var(--lb-h) 6vw; }
+  #verse.fullscreen #verse-card.tpl-cinema { background: transparent; padding: 2vh 4vw; }
+  #verse.fullscreen #verse-card.tpl-cinema #verse-reference { font-size: clamp(14px, 1.4vw, 28px); }
+
+  /* ---------------------------------------------------------------
+     New design 2: manuscript. An illuminated page: a framed leaf with a
+     hairline inner rule, an accent drop cap, justified text and a
+     diamond ornament above a small-capital reference. Its motion is ink
+     settling: the initial blooms first, then the lines come into focus
+     with no travel at all.
+     --------------------------------------------------------------- */
+  #verse-card.tpl-manuscript {
+    --rv-dy: 0em;
+    --rv-blur: 9px;
+    --rv-ease: cubic-bezier(0.25, 0.6, 0.3, 1);
+    --card-dy: 10px;
+    --card-s: 0.99;
+    --card-dur: 900ms;
+    max-width: 1080px;
+    padding: 38px 62px 28px;
+    border-radius: 6px;
+    border: 1px solid rgba(var(--accent-rgb), 0.55);
+    background:
+      radial-gradient(120% 90% at 50% 0%, rgba(var(--accent-rgb), 0.1), transparent 62%),
+      linear-gradient(180deg, rgba(var(--ov-card-rgb), calc(0.3 + var(--ov-card-a) * 0.7)), rgba(var(--ov-card-rgb), calc(0.36 + var(--ov-card-a) * 0.64)));
+    box-shadow: 0 20px 56px rgba(0, 0, 0, 0.36);
+  }
+  #verse-card.tpl-manuscript::before {
+    content: "";
+    position: absolute;
+    inset: 7px;
+    z-index: -1;
+    border: 1px solid rgba(var(--accent-rgb), 0.3);
+    border-radius: 3px;
+    pointer-events: none;
+  }
+  /* Set ragged-right: without hyphenation (each word is an atomic span),
+     justified lines open wide rivers at fullscreen sizes. */
+  #verse-card.tpl-manuscript #verse-text,
+  #verse-card.tpl-manuscript #verse-secondary-text {
+    align-self: stretch;
+    max-width: none;
+    text-align: left;
+    text-wrap: pretty;
+  }
+  #verse-card.tpl-manuscript #verse-text { line-height: 1.36; }
+  #verse-card.tpl-manuscript #verse-secondary-text { border-top-color: rgba(var(--accent-rgb), 0.3); }
+  #verse-card.tpl-manuscript .vc-dropcap {
+    display: block;
+    float: left;
+    font-family: "Instrument Serif", Georgia, serif;
+    font-size: 3.15em;
+    line-height: 0.78;
+    margin: 0.08em 0.1em 0 -0.02em;
+    color: var(--accent);
+    text-shadow: 0 0 0.4em rgba(var(--accent-rgb), 0.25);
+  }
+  #verse-card.tpl-manuscript.vc-single .vc-dropcap { font-size: 1.9em; line-height: 0.9; margin: -0.12em 0.06em 0 0; }
+  #verse-card.tpl-manuscript .vc-capsrc { display: none; }
+  #verse-card.tpl-manuscript #verse-ornament {
+    display: block;
+    position: relative;
+    width: min(260px, 42%);
+    height: 12px;
+    margin: 22px auto 0;
+    background: linear-gradient(90deg, transparent 0%, rgba(var(--accent-rgb), 0.75) 34%, rgba(var(--accent-rgb), 0.75) 45%, transparent 45%, transparent 55%, rgba(var(--accent-rgb), 0.75) 55%, rgba(var(--accent-rgb), 0.75) 66%, transparent 100%) center / 100% 1px no-repeat;
+  }
+  #verse-card.tpl-manuscript #verse-ornament::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 7px;
+    height: 7px;
+    margin: -3.5px 0 0 -3.5px;
+    transform: rotate(45deg);
+    background: var(--accent);
+  }
+  #verse-card.tpl-manuscript #verse-ref-row { margin-top: 10px; }
+  #verse-card.tpl-manuscript #verse-ref-row::before,
+  #verse-card.tpl-manuscript #verse-ref-row::after { display: none; }
+  #verse-card.tpl-manuscript #verse-reference {
+    font-style: normal;
+    font-size: clamp(13px, 1.3vw, 23px);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+  @keyframes vc-ink {
+    from { opacity: 0; transform: scale(1.14); filter: blur(12px); }
+  }
+  @keyframes vc-ornament-in {
+    from { opacity: 0; transform: scaleX(0.2); }
+  }
+  #verse.vc-enter .tpl-manuscript .vc-dropcap,
+  #verse.vc-swap-in .tpl-manuscript .vc-dropcap { animation: vc-ink 1000ms cubic-bezier(0.25, 0.6, 0.3, 1) 40ms both; }
+  #verse.vc-enter .tpl-manuscript #verse-ornament,
+  #verse.vc-swap-in .tpl-manuscript #verse-ornament {
+    animation: vc-ornament-in 760ms var(--vc-ease-out) calc(var(--vc-ref-delay, 0) * 1ms - 120ms) both;
+  }
+  #verse.fullscreen #verse-card.tpl-manuscript {
+    width: auto;
+    max-width: min(90%, 1560px);
+    padding: clamp(32px, 6vh, 84px) clamp(36px, 6vw, 112px) clamp(24px, 4vh, 60px);
+    border-radius: 8px;
+    border: 1px solid rgba(var(--accent-rgb), 0.55);
+    background:
+      radial-gradient(120% 90% at 50% 0%, rgba(var(--accent-rgb), 0.1), transparent 62%),
+      linear-gradient(180deg, rgba(var(--ov-card-rgb), calc(0.3 + var(--ov-card-a) * 0.7)), rgba(var(--ov-card-rgb), calc(0.36 + var(--ov-card-a) * 0.64)));
+    box-shadow: 0 30px 90px rgba(0, 0, 0, 0.4);
+  }
+  #verse.fullscreen #verse-card.tpl-manuscript::before { inset: 10px; }
+  #verse.fullscreen #verse-card.tpl-manuscript #verse-reference { font-size: clamp(16px, 1.7vw, 34px); }
+  #verse.fullscreen #verse-card.tpl-manuscript #verse-ornament { width: min(380px, 40%); margin-top: clamp(20px, 3.5vh, 44px); }
+
+  /* ---------------------------------------------------------------
+     New design 3: stained glass. A cathedral window: an arched card with a
+     faint leaded lattice, lit from within by a slow, breathing glow of the
+     palette's accent. The glow blooms before the words arrive.
+     --------------------------------------------------------------- */
+  #verse-card.tpl-stained {
+    --rv-dy: 0.25em;
+    --rv-blur: 8px;
+    --card-dy: 24px;
+    --card-s: 0.96;
+    --card-dur: 900ms;
+    max-width: 1060px;
+    padding: 64px 64px 30px;
+    border-radius: 50% 50% 16px 16px / 110px 110px 16px 16px;
+    border: 1px solid rgba(var(--accent-rgb), 0.5);
+    background:
+      repeating-linear-gradient(60deg, rgba(var(--accent-rgb), 0.06) 0 1px, transparent 1px 64px),
+      repeating-linear-gradient(-60deg, rgba(var(--accent-rgb), 0.06) 0 1px, transparent 1px 64px),
+      linear-gradient(180deg, rgba(var(--ov-card-rgb), calc(0.1 + var(--ov-card-a) * 0.8)), rgba(var(--ov-card-rgb), calc(0.2 + var(--ov-card-a) * 0.8)));
+    box-shadow: 0 0 90px rgba(var(--accent-rgb), 0.2), 0 22px 60px rgba(0, 0, 0, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 0 0 4px rgba(var(--accent-rgb), 0.08);
+    -webkit-backdrop-filter: blur(16px) saturate(130%);
+    backdrop-filter: blur(16px) saturate(130%);
+  }
+  #verse-card.tpl-stained::before {
+    content: "";
+    position: absolute;
+    inset: -10% -6%;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(46% 62% at 50% 0%, rgba(var(--accent-rgb), 0.42), transparent 72%),
+      radial-gradient(34% 55% at 12% 30%, rgba(var(--accent-rgb), 0.18), transparent 70%),
+      radial-gradient(34% 55% at 88% 30%, rgba(var(--ov-text2-rgb), 0.08), transparent 70%),
+      radial-gradient(60% 50% at 50% 110%, rgba(var(--ov-border-rgb), 0.35), transparent 70%);
+    animation: vc-breathe 9s ease-in-out infinite alternate;
+  }
+  @keyframes vc-breathe {
+    from { opacity: 0.75; transform: scale(1); }
+    to { opacity: 1; transform: scale(1.06); }
+  }
+  @keyframes vc-bloom {
+    from { opacity: 0; transform: scale(0.6); }
+  }
+  #verse.vc-enter #verse-card.tpl-stained::before { animation: vc-bloom 1200ms var(--vc-ease-out) both, vc-breathe 9s ease-in-out 1200ms infinite alternate; }
+  #verse-card.tpl-stained #verse-text { line-height: 1.38; }
+  #verse-card.tpl-stained #verse-ref-row::before,
+  #verse-card.tpl-stained #verse-ref-row::after { width: 52px; opacity: 0.8; }
+  #verse-card.tpl-stained #verse-ref-row::before { background: linear-gradient(90deg, transparent, var(--accent)); }
+  #verse-card.tpl-stained #verse-ref-row::after { background: linear-gradient(90deg, var(--accent), transparent); }
+  #verse.fullscreen #verse-card.tpl-stained {
+    width: auto;
+    max-width: min(88%, 1500px);
+    padding: clamp(60px, 12vh, 150px) clamp(40px, 6vw, 110px) clamp(28px, 5vh, 70px);
+    border-radius: 50% 50% 20px 20px / 160px 160px 20px 20px;
+    border: 1px solid rgba(var(--accent-rgb), 0.5);
+    background:
+      repeating-linear-gradient(60deg, rgba(var(--accent-rgb), 0.05) 0 1px, transparent 1px 90px),
+      repeating-linear-gradient(-60deg, rgba(var(--accent-rgb), 0.05) 0 1px, transparent 1px 90px),
+      linear-gradient(180deg, rgba(var(--ov-card-rgb), calc(var(--ov-card-a) * 0.6)), rgba(var(--ov-card-rgb), calc(var(--ov-card-a) * 0.8)));
+    box-shadow: 0 0 140px rgba(var(--accent-rgb), 0.18);
+  }
+
+  /* ---------------------------------------------------------------
+     New design 4: poster. Editorial typography: big left-set serif lines
+     under a giant accent quotation mark, the card fading off to the right.
+     In fullscreen the backdrop drifts very slowly (a Ken Burns move of
+     light, not of the text). Lines arrive one by one, no in-line ripple.
+     --------------------------------------------------------------- */
+  #verse[data-card="poster"]:not(.fullscreen) { align-items: flex-start; padding: 0 5%; }
+  #verse-card.tpl-poster {
+    --rv-dy: 0.55em;
+    --rv-blur: 4px;
+    --card-dx: -28px;
+    --card-dy: 0px;
+    --card-s: 1;
+    --card-dur: 800ms;
+    align-items: flex-start;
+    max-width: 1560px;
+    padding: 30px 150px 30px calc(var(--vc-font, 44px) * 2.1 + 40px);
+    border: none;
+    border-radius: 0;
+    /* Solid where the words are, then the card dissolves into the picture. */
+    background: linear-gradient(90deg, rgba(var(--ov-card-rgb), calc(0.25 + var(--ov-card-a) * 0.75)) 0%, rgba(var(--ov-card-rgb), calc(0.2 + var(--ov-card-a) * 0.75)) 82%, rgba(var(--ov-card-rgb), 0) 100%);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.34);
+  }
+  #verse-card.tpl-poster::before {
+    content: "\201C";
+    position: absolute;
+    left: 22px;
+    top: 0.02em;
+    z-index: -1;
+    font-family: "Instrument Serif", Georgia, serif;
+    font-size: calc(var(--vc-font, 44px) * 7.5);
+    line-height: 0.74;
+    color: var(--accent);
+    opacity: 0.9;
+    pointer-events: none;
+  }
+  @keyframes vc-quote-in {
+    from { opacity: 0; transform: translate3d(0, 0.08em, 0) scale(1.3); filter: blur(10px); }
+  }
+  #verse.vc-enter #verse-card.tpl-poster::before,
+  #verse.vc-swap-in #verse-card.tpl-poster::before { animation: vc-quote-in 900ms var(--vc-ease-out) both; }
+  #verse-card.tpl-poster #verse-text,
+  #verse-card.tpl-poster #verse-secondary-text { text-align: left; text-wrap: pretty; max-width: 26em; }
+  #verse-card.tpl-poster #verse-text { line-height: 1.12; letter-spacing: -0.012em; }
+  #verse-card.tpl-poster #verse-secondary-text { border-top: none; padding-top: 0; margin-top: 14px; max-width: 46em; }
+  #verse-card.tpl-poster #verse-ref-row { margin-top: 20px; }
+  #verse-card.tpl-poster #verse-ref-row::before { width: 44px; height: 3px; opacity: 1; }
+  #verse-card.tpl-poster #verse-ref-row::after { display: none; }
+  #verse-card.tpl-poster #verse-reference {
+    font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+    font-style: normal;
+    font-weight: 600;
+    font-size: clamp(13px, 1.3vw, 22px);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
+  #verse.fullscreen[data-card="poster"] { align-items: flex-start; padding: 6vh 7vw; }
+  #verse.fullscreen #verse-card.tpl-poster { width: auto; max-width: 100%; background: transparent; padding-left: calc(var(--vc-font, 100px) * 1.6 + 2vw); padding-right: 2vw; }
+  #verse.fullscreen #verse-card.tpl-poster::before { font-size: calc(var(--vc-font, 100px) * 4.6); }
+  #verse.fullscreen #verse-card.tpl-poster #verse-reference { font-size: clamp(16px, 1.6vw, 30px); }
+  #verse.fullscreen[data-card="poster"]::before {
+    content: "";
+    position: absolute;
+    inset: -15%;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(40% 38% at 22% 30%, rgba(var(--accent-rgb), 0.2), transparent 70%),
+      radial-gradient(46% 42% at 82% 78%, rgba(var(--ov-border-rgb), 0.5), transparent 70%),
+      radial-gradient(30% 30% at 70% 20%, rgba(var(--ov-text2-rgb), 0.06), transparent 70%);
+    animation: vc-drift 28s ease-in-out infinite alternate;
+  }
+  @keyframes vc-drift {
+    from { transform: translate3d(-3%, -2%, 0) scale(1); }
+    to { transform: translate3d(3%, 2%, 0) scale(1.08); }
+  }
+
+  /* ---------------------------------------------------------------
+     New design 5: split. Minimal and modern: the reference stands in its
+     own column, right-aligned against a vertical accent rule, the verse
+     set in clean sans to the right. The rule draws first, then the two
+     columns open away from it.
+     --------------------------------------------------------------- */
+  #verse-card.tpl-split {
+    --rv-dx: -0.45em;
+    --rv-dy: 0em;
+    --rv-blur: 6px;
+    --card-dy: 10px;
+    --card-dur: 700ms;
+    display: grid;
+    grid-template-columns: minmax(0, max-content) 2px minmax(0, 1fr);
+    column-gap: 34px;
+    align-items: center;
+    max-width: 1340px;
+    padding: 30px 52px 30px 44px;
+    border: none;
+    border-radius: 3px;
+    background: rgba(var(--ov-card-rgb), calc(0.15 + var(--ov-card-a) * 0.85));
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.32);
+  }
+  #verse-card.tpl-split #verse-text {
+    grid-column: 3;
+    grid-row: 1;
+    text-align: left;
+    text-wrap: pretty;
+    font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+    font-weight: 500;
+    letter-spacing: -0.008em;
+    line-height: 1.3;
+  }
+  #verse-card.tpl-split #verse-secondary-text { grid-column: 3; grid-row: 2; text-align: left; text-wrap: pretty; border-top: none; padding-top: 0; margin-top: 10px; }
+  #verse-card.tpl-split #verse-ornament {
+    display: block;
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: stretch;
+    width: 2px;
+    background: var(--accent);
+  }
+  #verse-card.tpl-split #verse-ref-row { grid-column: 1; grid-row: 1 / span 2; margin: 0; justify-content: flex-end; }
+  #verse-card.tpl-split #verse-ref-row::before,
+  #verse-card.tpl-split #verse-ref-row::after { display: none; }
+  #verse-card.tpl-split #verse-reference {
+    white-space: normal;
+    max-width: 7.5em;
+    text-align: right;
+    text-wrap: balance;
+    font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+    font-style: normal;
+    font-weight: 600;
+    font-size: clamp(16px, 1.9vw, 34px);
+    line-height: 1.15;
+    letter-spacing: 0.005em;
+  }
+  @keyframes vc-rule-down { from { transform: scaleY(0); } }
+  @keyframes vc-ref-from-rule { from { opacity: 0; transform: translate3d(0.6em, 0, 0); filter: blur(5px); } }
+  #verse.vc-enter .tpl-split #verse-ornament,
+  #verse.vc-swap-in .tpl-split #verse-ornament { animation: vc-rule-down 620ms var(--vc-ease-out) 40ms both; }
+  #verse.vc-enter .tpl-split #verse-ref-row,
+  #verse.vc-swap-in .tpl-split #verse-ref-row { animation-name: vc-ref-from-rule; }
+  #verse.fullscreen #verse-card.tpl-split {
+    width: auto;
+    max-width: 94%;
+    column-gap: clamp(28px, 3vw, 64px);
+    padding: clamp(28px, 5vh, 72px) clamp(32px, 4vw, 84px);
+    border-radius: 3px;
+    background: rgba(var(--ov-card-rgb), calc(var(--ov-card-a) * 0.55));
+  }
+  #verse.fullscreen #verse-card.tpl-split #verse-reference { font-size: clamp(22px, 3vw, 64px); }
+
+  /* ---------------------------------------------------------------
+     New design 6: bold. High energy without noise: heavy left-set sans,
+     an accent bar that wipes across the top edge, and the reference as a
+     solid accent slab. The card lands with a small overshoot; the words
+     pop in quickly; the whole entrance is the shortest of the set.
+     --------------------------------------------------------------- */
+  #verse[data-card="bold"]:not(.fullscreen) { align-items: flex-start; padding: 0 6%; }
+  #verse-card.tpl-bold {
+    --rv-dy: 0.4em;
+    --rv-blur: 0px;
+    --rv-scale: 0.92;
+    --rv-ease: cubic-bezier(0.34, 1.45, 0.64, 1);
+    --card-dy: 30px;
+    --card-s: 0.96;
+    --card-dur: 560ms;
+    --card-ease: cubic-bezier(0.34, 1.35, 0.64, 1);
+    align-items: flex-start;
+    max-width: 1280px;
+    padding: 36px 52px 30px;
+    border: none;
+    border-radius: 0;
+    background: rgba(var(--ov-card-rgb), calc(0.25 + var(--ov-card-a) * 0.75));
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.38);
+  }
+  #verse-card.tpl-bold::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 8px;
+    z-index: -1;
+    background: var(--accent);
+    transform-origin: 0% 50%;
+  }
+  @keyframes vc-wipe { from { transform: scaleX(0); } }
+  @keyframes vc-slab-in { from { opacity: 0; transform: translate3d(-0.8em, 0, 0); } }
+  #verse.vc-enter #verse-card.tpl-bold::before,
+  #verse.vc-swap-in #verse-card.tpl-bold::before { animation: vc-wipe 520ms cubic-bezier(0.7, 0, 0.2, 1) 60ms both; }
+  #verse-card.tpl-bold #verse-text,
+  #verse-card.tpl-bold #verse-secondary-text { text-align: left; text-wrap: pretty; }
+  #verse-card.tpl-bold #verse-text {
+    font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.14;
+    max-width: 28em;
+  }
+  #verse-card.tpl-bold #verse-secondary-text { border-top: none; padding-top: 0; margin-top: 12px; }
+  #verse-card.tpl-bold #verse-ref-row { margin-top: 20px; }
+  #verse-card.tpl-bold #verse-ref-row::before,
+  #verse-card.tpl-bold #verse-ref-row::after { display: none; }
+  #verse-card.tpl-bold #verse-reference {
+    background: var(--accent);
+    color: rgb(var(--ov-card-rgb));
+    text-shadow: none;
+    padding: 0.28em 0.7em 0.24em;
+    font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+    font-style: normal;
+    font-weight: 700;
+    font-size: clamp(13px, 1.3vw, 22px);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  #verse.vc-enter .tpl-bold #verse-ref-row,
+  #verse.vc-swap-in .tpl-bold #verse-ref-row { animation-name: vc-slab-in; animation-timing-function: cubic-bezier(0.34, 1.3, 0.64, 1); }
+  #verse.fullscreen #verse-card.tpl-bold {
+    width: auto;
+    max-width: 92%;
+    padding: clamp(36px, 6vh, 90px) clamp(36px, 5vw, 100px);
+    background: rgba(var(--ov-card-rgb), calc(var(--ov-card-a) * 0.55));
+  }
+  #verse.fullscreen #verse-card.tpl-bold::before { height: 12px; }
+  #verse.fullscreen #verse-card.tpl-bold #verse-reference { font-size: clamp(16px, 1.6vw, 30px); }
+
+  /* No card (clear-text palettes) still wins over every design, including
+     the new ones declared after the original .no-card rule ([class] only
+     lifts specificity). Their own surface layers go too. */
+  #verse-card.no-card[class],
+  #verse.fullscreen #verse-card.no-card[class] {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  #verse-card.tpl-stained.no-card::before,
+  #verse-card.tpl-manuscript.no-card::before { display: none; }
+  #verse-card.tpl-bold.no-card #verse-reference { text-shadow: none; }
+
   @media (prefers-reduced-motion: reduce) {
-    #verse, #verse.visible, #announcement, #announcement.visible, #definition, #definition.visible,
+    #announcement, #announcement.visible, #definition, #definition.visible,
     #outline-layer, #outline-layer.visible, #status {
       transition: none !important;
       transform: none !important;
     }
-    #verse-card.reveal #verse-text,
-    #verse-card.reveal #verse-secondary-text,
-    #verse-card.reveal #verse-ref-row { animation: none; }
+    /* Section 133: a simple short fade, nothing moves, nothing loops. */
+    #verse, #verse.visible { transform: none !important; transition: opacity 200ms linear !important; }
+    #verse:not(.visible) #verse-text, #verse:not(.visible) #verse-secondary-text { filter: none; transition: none; }
+    #verse *, #verse::before, #verse *::before, #verse *::after,
+    .lb-bar { animation: none !important; }
+    .lb-bar { transition: none !important; }
+    #verse.vc-fade #verse-text, #verse.vc-fade #verse-secondary-text,
+    #verse.vc-fade #verse-ornament, #verse.vc-fade #verse-ref-row { animation: vc-fade-in 200ms linear both !important; }
+    #verse.vc-fade-out #verse-text, #verse.vc-fade-out #verse-secondary-text,
+    #verse.vc-fade-out #verse-ornament, #verse.vc-fade-out #verse-ref-row { animation: vc-fade-out 150ms linear forwards !important; }
   }
 
   /*
@@ -802,15 +1430,20 @@
     <video id="media-video" style="display: none" playsinline></video>
   </div>
   <audio id="media-audio"></audio>
-  <div id="verse">
+  <div id="verse" data-card="classic">
     <div id="verse-card">
       <div id="verse-text"></div>
       <div id="verse-secondary-text"></div>
+      <div id="verse-ornament" aria-hidden="true"></div>
       <div id="verse-ref-row">
         <div id="verse-reference"></div>
       </div>
     </div>
   </div>
+  <!-- Section 133: the cinema design's letterbox bars. Outside #verse on
+       purpose (a transformed ancestor would capture position: fixed); shown
+       only by the sibling selector #verse[data-card="cinema"] + #verse-letterbox. -->
+  <div id="verse-letterbox" aria-hidden="true"><div class="lb-bar lb-top"></div><div class="lb-bar lb-bottom"></div></div>
   <div id="outline-layer">
     <div id="outline-card">
       <div id="outline-badge"></div>
@@ -831,6 +1464,7 @@
     </div>
   </div>
   <div id="canvas-layer"></div>
+  <script src="verse-motion.js"></script>
   <script src="overlay.js"></script>
 </body>
 </html>
