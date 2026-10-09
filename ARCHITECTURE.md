@@ -6365,3 +6365,15 @@ accuracy were **not measured** (no local engine installed on the development mac
 **Open.** The free plan's limits and the model name come from Groq's public documentation (sources disagree on the daily token figure) and were not exercised against the live API: tests use a fake `fetch`. Limits are shared at organisation level, so a heavy AI day could eat into the transcription quota: measure on a real service before relying on it.
 
 **Tests.** `groq-text-client.test.ts` (request shape, Authorization header, scrubbing, malformed bodies, timeout), `ai-provider.test.ts` (selection rule, no silent fallback), `config-store.test.ts` (round trip, old file, corruption).
+
+## 129. French/English Only Transcripts and a Silent Preview (fix, no scope change)
+
+**Why.** Two field reports from a live service. (1) Playing a library video sounded doubled with an echo: the dashboard's Live preview iframe loads a second copy of the overlay page (section 69), and that copy played the cue's audio next to the real output (OBS / audience window). With the laptop both feeding and listening to the mixer, the doubling was amplified. (2) Quiet or noisy audio produced transcripts in Hindi/Urdu and other scripts the church does not speak.
+
+**Silent preview.** `renderOverlayPreview` (`desktop/renderer/dashboard.js`) adds `muted=1` to the preview URL, and the design editor already sends `designPreview=1`. `overlay.js` mutes its `<video>` and `<audio>` elements for either flag. Only the real output makes sound. The overlay is still a read-only viewer and gains no control channel (AGENTS.md section 20). A second real output (OBS source plus an open browser tab) would still double: keep one.
+
+**Language guard.** `hasForeignScript` (`server/asr/script-guard.ts`, pure) is true when text holds any letter outside the Latin script. French and English use none, so such a transcript is never real speech from this church. `AppCore`'s `asr.onTranscript` drops it first, for every engine (Groq, Deepgram, local Whisper, failover), partial or final, before correction, detection or display. Each drop is logged at debug as `asr.foreign-script-dropped` with a 40-character preview (AGENTS.md section 46: observable, not silent).
+
+**Not covered.** A hallucination in another Latin-script language (Spanish, Portuguese) passes this guard. Local Whisper already restricts itself to French/English (section 118); Groq in bilingual mode and Deepgram `multi` do not.
+
+**Tests.** `script-guard.test.ts` (French/English accents and digits kept; Hindi, Urdu, Punjabi, Chinese and mixed text rejected). The mute flag is plain browser JS with no harness: verify by playing a video with the dashboard open and listening for a single copy.

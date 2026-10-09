@@ -1891,6 +1891,19 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   }
 
   asr.onTranscript((transcript) => {
+    // French and English only (ARCHITECTURE.md section 129): an engine that
+    // hallucinates Hindi/Urdu/etc. over noise or silence must never reach a
+    // detector or the dashboard.
+    if (hasForeignScript(transcript.text)) {
+      logger.debug({
+        component: "asr",
+        event: "asr.foreign-script-dropped",
+        correlationId: transcript.correlationId,
+        sequence: transcript.sequence,
+        metadata: { textPreview: transcript.text.slice(0, 40) },
+      })
+      return
+    }
     // TACHE UNIQUE (audit priorité absolue): apply deterministic phonetic
     // correction to the raw ASR text BEFORE any consumer sees it, so the
     // transcript.received log, every detector, and the operator dashboard
@@ -1917,18 +1930,6 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     // "V.C." into "V. C." and silently breaks the token match, so the
     // exact hallucination this correction exists to catch would reach
     // every downstream consumer uncorrected.
-    // French and English only: an engine that hallucinates Hindi/Urdu/etc. over
-    // noise or silence must never reach a detector or the dashboard.
-    if (hasForeignScript(transcript.text)) {
-      logger.debug({
-        component: "asr",
-        event: "asr.foreign-script-dropped",
-        correlationId: transcript.correlationId,
-        sequence: transcript.sequence,
-        metadata: { textPreview: transcript.text.slice(0, 40) },
-      })
-      return
-    }
     const corrected = correctTranscription(transcript.text)
     const correctedText = postprocessTranscript(corrected.correctedText)
     // Audit trail at debug so it never drowns the info-level transcript
