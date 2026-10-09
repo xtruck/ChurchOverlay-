@@ -835,6 +835,16 @@ test("validateWsMessage: verse:preview is operator-only and needs a seq and a re
   }
 })
 
+test("verse:preview-result: a null verse may carry a reason, only 'not-found' or 'unavailable'", () => {
+  const validate = ACTION_REGISTRY["verse:preview-result"].validatePayload
+  const base = { seq: 1, reference: { book: "john", chapter: 3, verse: 16 }, verse: null }
+  assert.equal(validate(base), true)
+  assert.equal(validate({ ...base, reason: "not-found" }), true)
+  assert.equal(validate({ ...base, reason: "unavailable" }), true)
+  assert.equal(validate({ ...base, reason: "whatever" }), false)
+  assert.equal(validate({ ...base, reason: 3 }), false)
+})
+
 test("verse:preview-result is a server-only event: no client may send it", () => {
   const payload = { seq: 3, reference: { book: "john", chapter: 3, verse: 16 }, verse: null }
   const msg = { id: "01P", type: "verse:preview-result", timestamp: 1700000000000, payload }

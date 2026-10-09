@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { EchoWatch, HOLD_MS, MEDIA_LOUD_MS, REPEAT_WINDOW_MS, normalizeSentence } from "./echo-warning"
+import { EchoWatch, HOLD_MS, MEDIA_LOUD_MS, REPEAT_WINDOW_MS, isMediaAudible, normalizeSentence } from "./echo-warning"
 
 const SENTENCE = "Car Dieu a tellement aimé le monde"
 
@@ -79,4 +79,26 @@ test("EchoWatch: reset clears the warning and the memory (mic stopped)", () => {
 
 test("normalizeSentence: lowercases, strips accents and punctuation, collapses spaces", () => {
   assert.equal(normalizeSentence("  Qu'est-ce  que   l'ÉGLISE ? "), "qu est ce que l eglise")
+})
+
+test("isMediaAudible: only a playing video/audio cue counts; images, paused cues and no cue never do", () => {
+  const playing = { state: "playing" as const, positionMs: 1000, asOfServerTime: 0 }
+  assert.equal(isMediaAudible(null), false)
+  assert.equal(isMediaAudible({ cue: { kind: "image", id: "i", title: "t" } }), false)
+  assert.equal(isMediaAudible({ cue: { kind: "video", id: "v", title: "t" }, playback: { ...playing, state: "paused" } }), false)
+  assert.equal(isMediaAudible({ cue: { kind: "video", id: "v", title: "t" }, playback: playing }), true)
+  assert.equal(isMediaAudible({ cue: { kind: "audio", id: "a", title: "t" }, playback: playing }), true)
+})
+
+test("isMediaAudible: a clip with a known duration stops counting once its position reaches it", () => {
+  const at = (positionMs: number) => ({
+    cue: { kind: "video" as const, id: "v", title: "t", autoClearMs: 60_000 },
+    playback: { state: "playing" as const, positionMs, asOfServerTime: 0 },
+  })
+  assert.equal(isMediaAudible(at(59_999)), true)
+  assert.equal(isMediaAudible(at(60_000)), false)
+  assert.equal(isMediaAudible(at(120_000)), false)
+  // no duration (or a non-positive one): the position cannot prove the clip ended
+  const noDuration = { cue: { kind: "video" as const, id: "v", title: "t", autoClearMs: null }, playback: { state: "playing" as const, positionMs: 999_999, asOfServerTime: 0 } }
+  assert.equal(isMediaAudible(noDuration), true)
 })

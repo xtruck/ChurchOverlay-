@@ -560,6 +560,85 @@ test("AppCore: verse:preview of a reference outside the known-valid index answer
   }
 })
 
+test("AppCore: verse:preview says WHY a verse is missing: not-found for a bad reference, unavailable when the source has nothing (section 131)", async () => {
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}), // knows nothing: every valid reference is "unavailable"
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const reasons: Record<number, unknown> = {}
+    operatorSocket.on("message", (data) => {
+      const message = JSON.parse(data.toString())
+      if (message.type === "verse:preview-result") reasons[message.payload.seq] = message.payload.reason
+    })
+    const send = (seq: number, chapter: number) =>
+      operatorSocket.send(
+        JSON.stringify({ id: "01P" + seq, type: "verse:preview", timestamp: Date.now(), payload: { seq, reference: { book: "john", chapter, verse: 1 } } })
+      )
+    send(1, 99) // no such chapter: the index rejects it
+    await new Promise((resolve) => setTimeout(resolve, 80))
+    send(2, 3) // valid reference, but the source has nothing
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    assert.equal(reasons[1], "not-found")
+    assert.equal(reasons[2], "unavailable")
+    operatorSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: a burst of verse:preview requests runs one lookup at a time and only the newest waiting one is answered (section 131)", async () => {
+  let release: () => void = () => {}
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let calls = 0
+  const gatedSource: VerseSource = {
+    async getVerse(reference: VerseReference): Promise<Verse | null> {
+      calls += 1
+      await gate
+      return makeVerse(reference, "text")
+    },
+  }
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: gatedSource,
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const answered: number[] = []
+    operatorSocket.on("message", (data) => {
+      const message = JSON.parse(data.toString())
+      if (message.type === "verse:preview-result") answered.push(message.payload.seq)
+    })
+    for (const seq of [1, 2, 3, 4]) {
+      operatorSocket.send(
+        JSON.stringify({ id: "01P" + seq, type: "verse:preview", timestamp: Date.now(), payload: { seq, reference: { book: "john", chapter: 3, verse: 15 + seq } } })
+      )
+    }
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    assert.equal(calls, 1) // the other three are waiting behind the first lookup
+    release()
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    assert.deepEqual(answered, [1, 4]) // 2 and 3 were superseded by 4
+    assert.equal(calls, 2)
+    operatorSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
 test("AppCore: a viewer cannot send verse:preview", async () => {
   const johnVerse = makeVerse({ book: "john", chapter: 3, verse: 16 }, "For God so loved the world...")
   const app = await startAppCore({

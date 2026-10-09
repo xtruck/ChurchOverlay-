@@ -3360,7 +3360,8 @@
       previewTextEl.textContent = payload.verse.text
     } else {
       previewRefEl.textContent = ""
-      previewTextEl.textContent = t("preview.notFound")
+      // "unavailable": the reference is valid but the Bible source did not answer.
+      previewTextEl.textContent = t(payload.reason === "unavailable" ? "preview.unavailable" : "preview.notFound")
     }
   }
 

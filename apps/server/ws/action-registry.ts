@@ -144,13 +144,14 @@ function isVersePreviewPayload(payload: unknown): payload is Record<string, unkn
   )
 }
 
-/** The answer to a preview: the verse, or null when the reference does not exist or could not be fetched. */
+/** The answer to a preview: the verse, or null with a reason ("not-found": no such verse; "unavailable": the Bible source did not answer). */
 function isVersePreviewResultPayload(payload: unknown): payload is Record<string, unknown> {
   return (
     isPlainObject(payload) &&
     typeof payload.seq === "number" &&
     isVerseReferencePayload(payload.reference) &&
-    (payload.verse === null || isBareVersePayload(payload.verse))
+    (payload.verse === null || isBareVersePayload(payload.verse)) &&
+    (payload.reason === undefined || payload.reason === "not-found" || payload.reason === "unavailable")
   )
 }
 

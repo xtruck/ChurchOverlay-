@@ -1,3 +1,5 @@
+import type { MediaShowPayload } from "../../../packages/contracts"
+
 /**
  * ARCHITECTURE.md section 132: a non-blocking warning for the operator when the
  * laptop seems to be hearing its own output (a video or song played through the
@@ -35,6 +37,23 @@ export const HOLD_MS = 8000
 export const MIN_REPEAT_WORDS = 4
 /** Bound on remembered sentences (AGENTS.md section 36). */
 const MAX_RECENT = 8
+
+/**
+ * Is a video/audio cue audibly playing right now? Images never are. The server
+ * is never told when a clip ends by itself, so a finished cue still reads as
+ * "playing"; the one end the server can know is the operator-set duration
+ * (`cue.autoClearMs`): once the position has reached it, the clip is over, and
+ * the cue is treated as not playing (it is also about to be auto-cleared).
+ * Without a duration the limit stays: a finished clip counts as playing.
+ */
+export function isMediaAudible(media: MediaShowPayload | null): boolean {
+  if (media === null || media.cue.kind === "image") return false
+  const playback = media.playback
+  if (playback === undefined || playback.state !== "playing") return false
+  const durationMs = media.cue.autoClearMs
+  if (typeof durationMs === "number" && durationMs > 0 && playback.positionMs >= durationMs) return false
+  return true
+}
 
 export function normalizeSentence(text: string): string {
   return text

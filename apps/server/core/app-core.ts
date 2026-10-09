@@ -51,7 +51,7 @@ import { LatencyTracker, type LatencySnapshot } from "./latency-tracker"
 import { correctTranscription, detectHallucination } from "../asr/transcription-corrector"
 import { postprocessTranscript } from "../asr/postprocess/pipeline"
 import { hasForeignScript, isLikelyThirdLatinLanguage } from "../asr/script-guard"
-import { EchoWatch, type EchoWarning } from "./echo-warning"
+import { EchoWatch, isMediaAudible, type EchoWarning } from "./echo-warning"
 import { ServiceHealthLog, type ServiceHealthSnapshot } from "./service-health"
 import { resolveQuickBook } from "../detector/quick-book"
 import { TranscriptAssembler } from "../asr/transcript-assembler"
@@ -1398,8 +1398,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     // health log observe. Speech "at level" means speech heard and not too quiet.
     const now = Date.now()
     serviceHealth.observeMicState(now, snapshot.state)
-    const media = mediaPlayback.currentPayloadForSync()
-    const mediaPlaying = media !== null && media.cue.kind !== "image" && media.playback?.state === "playing"
+    const mediaPlaying = isMediaAudible(mediaPlayback.currentPayloadForSync())
     const speechAtLevel = snapshot.speechDbfs !== null && snapshot.state !== "too-quiet" && snapshot.state !== "warming-up"
     echoWatch.observeMic(now, speechAtLevel, mediaPlaying)
     syncEchoWarning(now)
@@ -1446,6 +1445,57 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         await (asr as { onUtteranceEnd: () => Promise<void> }).onUtteranceEnd()
       }
     }
+  }
+
+  // Section 131: coalescing state for verse:preview (see the case below).
+  let previewRunning = false
+  let previewQueued: WsMessage | null = null
+
+  function takeQueuedPreview(): WsMessage | null {
+    const queued = previewQueued
+    previewQueued = null
+    return queued
+  }
+
+  /**
+   * Resolves one preview through the SAME known-valid index and resolveVerse()
+   * as a real override, but never calls beginDisplayIntent() or any
+   * broadcast*Verse(), so what is on the congregation screen cannot change.
+   * The answer goes to operators only. A null verse says why: "not-found" (the
+   * index rejects the reference) or "unavailable" (it is valid, but the Bible
+   * source failed or its circuit breaker is open), so a source outage is never
+   * shown to the operator as "no such verse".
+   */
+  async function answerPreview(message: WsMessage): Promise<void> {
+    const { seq, reference: typed } = message.payload as { seq: number; reference: VerseReference }
+    const reference: VerseReference = {
+      ...typed,
+      book: resolveQuickBook(typed.book) ?? typed.book.trim().replace(/\s+/g, " ").toLowerCase(),
+    }
+    let verse: Verse | null = null
+    let reason: "not-found" | "unavailable" | undefined
+    if (!index.exists(reference)) {
+      reason = "not-found"
+    } else {
+      try {
+        verse = await resolveVerse(reference, source, cache, circuitBreaker, translationIdFor(source), logger)
+      } catch (err) {
+        logger.warn({
+          component: "app-core",
+          event: "preview.lookup-failed",
+          correlationId: message.correlationId,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
+      if (verse === null) reason = "unavailable"
+    }
+    wsServer.broadcastToOperators({
+      id: generateUlid(),
+      type: "verse:preview-result",
+      timestamp: Date.now(),
+      correlationId: message.correlationId,
+      payload: { seq, reference: typed, verse, ...(reason !== undefined ? { reason } : {}) },
+    })
   }
 
   async function handleCommand(message: WsMessage, role: WsRole): Promise<void> {
@@ -1541,26 +1591,25 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
 
       case "verse:preview": {
         // ARCHITECTURE.md section 131: a look-ahead for the operator's typing
-        // box. It goes through the SAME known-valid index and resolveVerse()
-        // as a real override, but it never calls beginDisplayIntent() or any
-        // broadcast*Verse(), so what is on the congregation screen cannot change.
-        // The answer goes to operators only, never to overlay/stage/live pages.
-        const { seq, reference: typed } = message.payload as { seq: number; reference: VerseReference }
-        const reference: VerseReference = {
-          ...typed,
-          book: resolveQuickBook(typed.book) ?? typed.book.trim().replace(/\s+/g, " ").toLowerCase(),
+        // box. Only ONE preview lookup runs at a time; while it runs, only the
+        // newest request is kept (older ones are superseded and never answered,
+        // the dashboard drops stale answers by seq anyway). That bounds the
+        // load a typing burst or a buggy client can put on the Bible source
+        // and its circuit breaker, which real verses share.
+        if (previewRunning) {
+          previewQueued = message
+          return
         }
-        let verse: Verse | null = null
-        if (index.exists(reference)) {
-          verse = await resolveVerse(reference, source, cache, circuitBreaker, translationIdFor(source), logger)
+        previewRunning = true
+        try {
+          let next: WsMessage | null = message
+          while (next !== null) {
+            await answerPreview(next)
+            next = takeQueuedPreview()
+          }
+        } finally {
+          previewRunning = false
         }
-        wsServer.broadcastToOperators({
-          id: generateUlid(),
-          type: "verse:preview-result",
-          timestamp: Date.now(),
-          correlationId: message.correlationId,
-          payload: { seq, reference: typed, verse },
-        })
         return
       }
 
