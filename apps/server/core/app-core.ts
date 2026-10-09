@@ -51,6 +51,7 @@ import { LatencyTracker, type LatencySnapshot } from "./latency-tracker"
 import { correctTranscription, detectHallucination } from "../asr/transcription-corrector"
 import { postprocessTranscript } from "../asr/postprocess/pipeline"
 import { hasForeignScript, isLikelyThirdLatinLanguage } from "../asr/script-guard"
+import { resolveQuickBook } from "../detector/quick-book"
 import { TranscriptAssembler } from "../asr/transcript-assembler"
 import { RollingTranscriptWindow } from "../asr/rolling-transcript-window"
 import { allFamiliesAtVolume, applyVolumeHints, buildVolumeHints } from "../detector/volume-inference"
@@ -1426,7 +1427,12 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         // whitespace, lowercase): a typed "John" must reach the source as
         // "john", or the exact-match French source returns null and
         // currentVersePosition.book becomes a non-catalog id.
-        const reference: VerseReference = { ...payload, book: payload.book.trim().replace(/\s+/g, " ").toLowerCase() }
+        // Quick entry ("jn", "1co", "jean"): resolveQuickBook only picks the catalog book;
+        // the known-valid index check below still decides whether the verse exists.
+        const reference: VerseReference = {
+          ...payload,
+          book: resolveQuickBook(payload.book) ?? payload.book.trim().replace(/\s+/g, " ").toLowerCase(),
+        }
         // The known-valid index is the hallucination guard for EVERY path to
         // the screen. Without it a typed "john 3:16-30" or chapter 3.5 went
         // straight to the Bible API.
