@@ -365,6 +365,8 @@
                   <button id="asr-return-primary-btn" type="button" class="btn-secondary btn-small" style="display:none">Return to main provider</button>
                 </div>
               </div>
+              <!-- Echo warning (ARCHITECTURE.md section 132): non-blocking, operator-only, never changes a transcript. -->
+              <div id="echo-warning" class="echo-warning" role="status" hidden></div>
               <div id="asr-provider-line" class="asr-provider-line"></div>
               <div id="audio-diagnostics" class="mic-diagnostics" aria-live="off"></div>
             </section>

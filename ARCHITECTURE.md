@@ -6401,3 +6401,26 @@ accuracy were **not measured** (no local engine installed on the development mac
 **Bilingual display (sections 63, 107): already built, not rebuilt.** `LocalizedVerseSource` has a `bilingual` mode that returns French as the primary `Verse` with English in `secondary`, and the overlay stacks them. The remaining gap: in bilingual mode the primary language is always French. It is not chosen from `guessSpokenLanguage()` (`server/core/interpreter-echo-guard.ts`), which today only drives the interpreter-echo guard, the operator translation and the transcript language tag. Closing it needs an order-aware cache key (`bilingual:<translation>` would otherwise serve the wrong order), a swap in `LocalizedVerseSource`, and a decision on which transcript's guess sets the order for overrides and rundown verses. That is not a clearly small change and is left for a separate decision.
 
 **Tests.** `sermon-prep.test.ts` (French outline in order, English notes and abbreviations, dedup, index rejection counted, prose/times/dates yield nothing, size and count bounds, determinism); `app-core.test.ts` (import queues validated references without any lookup, merges books with a later rundown's, rejected input keeps the previous import, clear removes only the import's books); `i18n.test.ts` covers the new English and French strings. The dashboard card itself is plain browser JS with no harness and was not exercised in a running Electron app.
+
+## 132. Echo Warning and Service Health Report (Phase 2, owner request)
+
+**Echo warning.** When the laptop seems to be hearing its own output, the dashboard shows one non-blocking line, in French or English following the dashboard language, under the transcription health warning. It triggers on either of two signals, implemented by `EchoWatch` (`server/core/echo-warning.ts`, pure bookkeeping, no timers):
+
+- `media-loud`: a video or audio cue is playing (`MediaPlaybackController.currentPayloadForSync()` reports `playing`, kind not `image`) while the mic reading shows speech at a usable level (speech heard, state neither `too-quiet` nor `warming-up`) on every mic:health tick for 5 s in a row.
+- `repeated-sentence`: the same final sentence (lowercased, accents and punctuation removed, at least 4 words) is transcribed twice within 1.5 s.
+
+A warning stays up 8 s after its last trigger, then clears; stopping the mic clears it at once. **It never mutes, drops or changes anything:** the hook in `asr.onTranscript` only calls `observeFinalTranscript()` and carries on, so every transcript is still delivered exactly as before.
+
+**Protocol.** No new WebSocket command or event. `AsrStatusPayload` gets one optional field, `echoWarning?: { reason, since } | null`. Absent means "no change", `null` clears it. `broadcastAsrStatus()` adds it while a warning is active; `syncEchoWarning()` sends the appearing and clearing updates only when the state changes. `isStatusUpdatePayload` validates the field.
+
+**Service health report.** `ServiceHealthLog` (`server/core/service-health.ts`) passively records, bounded and in memory: transcripts dropped by the Spanish/Portuguese check or the foreign-script check (a count plus up to 50 samples of the first 40 characters), mic dropouts (a run of `no-signal` readings is one dropout; stopping the mic closes an open one), and echo warnings. The post-service export (`export-session`) now also writes, in `service-report.json`, a `health` object (verses with times, dropped transcripts, mic dropouts with durations, pipeline latency p50/p95/max, echo warnings), and a short `service-health.txt` in French then English. Nothing is invented: an empty log reports zeros and "no measurement".
+
+**Known limits.**
+- Nobody tested this with a real mixer. The thresholds (5 s, 1.5 s, 8 s hold, 4 words) are reasoned, not measured; expect to tune them after a real service.
+- The server does not learn when a video ends by itself, so the playing state can stay on after the video finishes and cause a false `media-loud` warning until the operator clears or pauses the cue.
+- A preacher speaking over a video, singing along with it, or repeating a sentence on purpose can trigger the warning. It is a hint, not a fault.
+- The dashboard line and the export were not exercised in a running Electron app. The dashboard code is plain browser JS with no harness and was only syntax-checked with `node --check`.
+- The export still stops with "Nothing was shown this session yet" when no verse was shown, so a service with no verses produces no health report.
+- The web build's export routes do not include the health report.
+
+**Tests.** `echo-warning.test.ts` (thresholds, streak reset, short phrases, expiry and renewal, reset), `service-health.test.ts` (counts, dropout open/close, bounds, French and English report, empty report), `app-core.test.ts` (a repeated sentence raises `echoWarning` while both transcripts are still delivered; a foreign-script transcript is dropped as before and counted), `action-registry.test.ts` (the `echoWarning` field's schema).

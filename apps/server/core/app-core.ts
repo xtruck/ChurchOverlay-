@@ -51,6 +51,8 @@ import { LatencyTracker, type LatencySnapshot } from "./latency-tracker"
 import { correctTranscription, detectHallucination } from "../asr/transcription-corrector"
 import { postprocessTranscript } from "../asr/postprocess/pipeline"
 import { hasForeignScript, isLikelyThirdLatinLanguage } from "../asr/script-guard"
+import { EchoWatch, type EchoWarning } from "./echo-warning"
+import { ServiceHealthLog, type ServiceHealthSnapshot } from "./service-health"
 import { resolveQuickBook } from "../detector/quick-book"
 import { TranscriptAssembler } from "../asr/transcript-assembler"
 import { RollingTranscriptWindow } from "../asr/rolling-transcript-window"
@@ -320,6 +322,12 @@ export type AppCoreHandle = {
    */
   getSessionEntries(): readonly SessionEntry[]
   /**
+   * ARCHITECTURE.md section 132: passive log of dropped transcripts, mic
+   * dropouts and echo warnings, merged with the verses and latency into the
+   * post-service health report by the Electron main process.
+   */
+  getServiceHealth(): ServiceHealthSnapshot
+  /**
    * ARCHITECTURE.md section 79: the persistent, cross-restart counterpart
    * to getSessionEntries() above — every verse ever recorded, not just
    * this run's. Empty when no sessionHistoryStore was configured, the
@@ -399,6 +407,10 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   let lastAssembledText = ""
   const rundownController = new RundownController()
   const sessionRecorder = new SessionRecorder()
+  // Section 132: observation only. Neither ever changes a transcript or a verse.
+  const echoWatch = new EchoWatch()
+  const serviceHealth = new ServiceHealthLog()
+  let lastBroadcastEcho: EchoWarning | null = null
   const sessionHistoryStore = options.sessionHistoryStore
   const glossaryDetector = new GlossaryDetector()
   const definitionClearMs = options.definitionClearMs ?? 12000
@@ -986,11 +998,32 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   }
 
   function broadcastAsrStatus(payload: AsrStatusPayload): void {
+    // Section 132: an active echo warning rides along on every status update;
+    // the clearing update (echoWarning: null) is sent by syncEchoWarning().
+    const echo = echoWatch.current(Date.now())
     wsServer.broadcast({
       id: generateUlid(),
       type: "status:update",
       timestamp: Date.now(),
-      payload: { ...payload, audioMetrics: silenceGate.getMetrics() },
+      payload: { ...payload, ...(echo !== null ? { echoWarning: echo } : {}), audioMetrics: silenceGate.getMetrics() },
+    })
+  }
+
+  /**
+   * Section 132: tells the dashboard when the echo warning appears or clears.
+   * Observation only: it never touches a transcript, the mic or the verse flow.
+   */
+  function syncEchoWarning(now: number): void {
+    const current = echoWatch.current(now)
+    if (current?.since === lastBroadcastEcho?.since && current?.reason === lastBroadcastEcho?.reason) return
+    if (current !== null) serviceHealth.recordEcho(current.since, current.reason)
+    lastBroadcastEcho = current
+    logger.info({ component: "app-core", event: current ? "echo.warning" : "echo.cleared", metadata: current ? { reason: current.reason } : undefined })
+    wsServer.broadcast({
+      id: generateUlid(),
+      type: "status:update",
+      timestamp: now,
+      payload: { asrHealth: currentAsrHealth(), echoWarning: current, audioMetrics: silenceGate.getMetrics() },
     })
   }
 
@@ -1354,12 +1387,22 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
 
   function broadcastMicHealth(): void {
     micHealth.setGain(adaptiveGain.currentGain())
+    const snapshot = micHealth.snapshot(silenceGate.isCalibrating())
     wsServer.broadcast({
       id: generateUlid(),
       type: "mic:health",
       timestamp: Date.now(),
-      payload: { ...micHealth.snapshot(silenceGate.isCalibrating()), autoGain: adaptiveGain.isEnabled() },
+      payload: { ...snapshot, autoGain: adaptiveGain.isEnabled() },
     })
+    // Section 132: this reading is also what the echo watch and the service
+    // health log observe. Speech "at level" means speech heard and not too quiet.
+    const now = Date.now()
+    serviceHealth.observeMicState(now, snapshot.state)
+    const media = mediaPlayback.currentPayloadForSync()
+    const mediaPlaying = media !== null && media.cue.kind !== "image" && media.playback?.state === "playing"
+    const speechAtLevel = snapshot.speechDbfs !== null && snapshot.state !== "too-quiet" && snapshot.state !== "warming-up"
+    echoWatch.observeMic(now, speechAtLevel, mediaPlaying)
+    syncEchoWarning(now)
   }
 
   async function handleAudioFrame(frame: AudioFrame): Promise<void> {
@@ -1426,6 +1469,10 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         return
 
       case "mic:stop":
+        // Section 132: nothing is being heard any more; a warning must not outlive the mic.
+        serviceHealth.closeMic(Date.now())
+        echoWatch.reset()
+        syncEchoWarning(Date.now())
         await asr.stop()
         logger.info({
           component: "app-core",
@@ -1940,6 +1987,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         ? "third-language"
         : null
     if (offLanguage !== null) {
+      serviceHealth.recordDrop(Date.now(), offLanguage, transcript.text)
       consecutiveOffLanguageDrops += 1
       // Debug for the first few; a run of drops means the mic is live but
       // nothing is being kept, which the operator must be able to see.
@@ -1954,6 +2002,14 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       return
     }
     consecutiveOffLanguageDrops = 0
+    // Section 132: a sentence heard twice within ~1.5 s suggests the laptop is
+    // hearing its own output. Observation only: the transcript continues
+    // below exactly as before, never muted, dropped or changed.
+    if (transcript.state === "final") {
+      const heardAt = Date.now()
+      echoWatch.observeFinalTranscript(heardAt, transcript.text)
+      syncEchoWarning(heardAt)
+    }
     // TACHE UNIQUE (audit priorité absolue): apply deterministic phonetic
     // correction to the raw ASR text BEFORE any consumer sees it, so the
     // transcript.received log, every detector, and the operator dashboard
@@ -2334,6 +2390,9 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     },
     getSessionEntries() {
       return sessionRecorder.getEntries()
+    },
+    getServiceHealth() {
+      return serviceHealth.snapshot()
     },
     getSessionHistory() {
       return sessionHistoryStore?.getEntries() ?? []

@@ -805,6 +805,24 @@ test("validateWsMessage: rejects any inbound sender for layout:update — a serv
   assert.equal(asViewer.ok, false)
 })
 
+test("ACTION_REGISTRY['status:update']: echoWarning is optional, may be null, and must be well formed (section 132)", () => {
+  const validate = ACTION_REGISTRY["status:update"].validatePayload
+  assert.equal(validate({ asrHealth: "ok" }), true)
+  assert.equal(validate({ asrHealth: "ok", echoWarning: null }), true)
+  assert.equal(validate({ asrHealth: "ok", echoWarning: { reason: "media-loud", since: 1700000000000 } }), true)
+  assert.equal(validate({ asrHealth: "ok", echoWarning: { reason: "repeated-sentence", since: 1 } }), true)
+  for (const bad of [
+    { reason: "other", since: 1 },
+    { reason: "media-loud" },
+    { reason: "media-loud", since: "now" },
+    { reason: "media-loud", since: Number.NaN },
+    "media-loud",
+    5,
+  ]) {
+    assert.equal(validate({ asrHealth: "ok", echoWarning: bad }), false, `echoWarning ${JSON.stringify(bad)} must be rejected`)
+  }
+})
+
 test("ACTION_REGISTRY['detector:near-miss'].validatePayload: accepts a text string, rejects a malformed one", () => {
   assert.equal(ACTION_REGISTRY["detector:near-miss"].validatePayload({ text: "abacuc, 4, verset, 2" }), true)
   for (const payload of [{}, { text: 5 }, { text: null }, null]) {

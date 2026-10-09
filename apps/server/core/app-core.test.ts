@@ -658,6 +658,75 @@ test("AppCore: a real spoken reference in an ASR transcript automatically reache
   }
 })
 
+test("AppCore: the same sentence heard twice raises an echo warning on status:update, and every transcript is still delivered (section 132)", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const received: WsMessage[] = []
+    operatorSocket.on("message", (data) => received.push(JSON.parse(data.toString())))
+
+    for (const [n, id] of [[1, "01E1"], [2, "01E2"]] as const) {
+      asr.emitTranscript({
+        id,
+        correlationId: `01CORR${n}`,
+        sequence: n,
+        text: "Car Dieu a tellement aimé le monde entier",
+        state: "final",
+        timestamp: Date.now(),
+      })
+    }
+    await new Promise((resolve) => setTimeout(resolve, 150))
+
+    const warnings = received.filter(
+      (m) => m.type === "status:update" && (m.payload as { echoWarning?: { reason: string } | null }).echoWarning?.reason === "repeated-sentence"
+    )
+    assert.equal(warnings.length, 1)
+    // Observation only: both transcripts reached the dashboard, unchanged.
+    const finals = received.filter((m) => m.type === "transcript:final")
+    assert.equal(finals.length, 2)
+    assert.equal(app.getServiceHealth().echoWarnings.length, 1)
+    operatorSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: a transcript in another script is dropped as before and counted in the service health log (section 132)", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const types: string[] = []
+    operatorSocket.on("message", (data) => types.push(JSON.parse(data.toString()).type))
+    asr.emitTranscript({ id: "01X", correlationId: "01CX", sequence: 1, text: "यह एक परीक्षण है", state: "final", timestamp: Date.now() })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.equal(types.includes("transcript:final"), false)
+    const health = app.getServiceHealth()
+    assert.equal(health.foreignScriptDrops, 1)
+    assert.equal(health.thirdLanguageDrops, 0)
+    operatorSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
 test("AppCore: a hallucination-guard-rejected transcript reaches the overlay as nothing", async () => {
   const asr = new FakeAsrProvider()
   const app = await startAppCore({

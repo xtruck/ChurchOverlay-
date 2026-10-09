@@ -236,7 +236,18 @@ function isStatusUpdatePayload(payload: unknown): payload is AsrStatusPayload {
       payload.asrHealth === "failover") &&
     (payload.error === undefined || typeof payload.error === "string") &&
     (payload.micCalibrating === undefined || typeof payload.micCalibrating === "boolean") &&
-    (payload.micThreshold === undefined || isFiniteNumber(payload.micThreshold))
+    (payload.micThreshold === undefined || isFiniteNumber(payload.micThreshold)) &&
+    isEchoWarningField(payload.echoWarning)
+  )
+}
+
+/** ARCHITECTURE.md section 132: optional; null clears the dashboard's echo warning. */
+function isEchoWarningField(value: unknown): boolean {
+  if (value === undefined || value === null) return true
+  return (
+    isPlainObject(value) &&
+    (value.reason === "media-loud" || value.reason === "repeated-sentence") &&
+    isFiniteNumber(value.since)
   )
 }
 

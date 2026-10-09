@@ -583,8 +583,24 @@
   // action-registry comment: a real producer now exists (AppCore
   // broadcasts this on a GroqProvider error, and again on the next
   // successful transcript as the recovery signal).
+  // ARCHITECTURE.md section 132: absent echoWarning means "no change", null clears it.
+  const echoWarningEl = document.getElementById("echo-warning")
+  let echoReason = null
+
+  function renderEchoWarning() {
+    if (!echoWarningEl) return
+    echoWarningEl.hidden = echoReason === null
+    echoWarningEl.textContent = echoReason === null ? "" : t(echoReason === "media-loud" ? "echo.mediaLoud" : "echo.repeated")
+  }
+
+  window.addEventListener("churchoverlay:languagechange", renderEchoWarning)
+
   function handleStatusUpdate(payload) {
     if (!payload) return
+    if (payload.echoWarning !== undefined) {
+      echoReason = payload.echoWarning === null ? null : payload.echoWarning.reason
+      renderEchoWarning()
+    }
     if (payload.audioMetrics && audioDiagnosticsEl) {
       const m = payload.audioMetrics
       audioDiagnosticsEl.textContent = t("mic.framesForwarded", { forwarded: m.framesForwarded, received: m.framesReceived })
