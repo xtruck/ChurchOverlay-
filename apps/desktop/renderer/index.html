@@ -244,6 +244,13 @@
                 <input id="reference" type="text" aria-keyshortcuts="Control+K" data-i18n-placeholder="placeholder.verseReference" autocomplete="off" />
                 <span class="command-kbd" aria-hidden="true"><kbd>Ctrl</kbd><kbd>K</kbd></span>
               </div>
+              <!-- Typed-reference preview (ARCHITECTURE.md section 131): operator-only,
+                   never on the congregation screen. Filled with textContent only. -->
+              <div id="reference-preview" class="reference-preview" aria-live="polite" hidden>
+                <div class="reference-preview-label" data-i18n="preview.label">Preview, not on screen</div>
+                <div id="reference-preview-ref" class="reference-preview-ref"></div>
+                <div id="reference-preview-text" class="reference-preview-text"></div>
+              </div>
               <div class="btn-row">
                 <button id="show-btn" class="btn-primary" data-i18n="override.showButton">Show on overlay</button>
                 <button id="clear-btn" class="btn-danger" aria-keyshortcuts="Shift+Escape" data-i18n="override.clearButton">Clear</button>
@@ -254,6 +261,7 @@
                  and looked up exactly like a typed reference (AGENTS.md 50). -->
             <div class="recent-strip">
               <span class="recent-label" data-i18n="recent.label">Recent</span>
+              <span class="recent-hint" aria-hidden="true"><kbd>Alt</kbd> <kbd>1</kbd>–<kbd>9</kbd></span>
               <div id="recent-verses" class="recent-verses">
                 <span class="recent-empty" data-i18n="recent.empty">Verses shown this session appear here for one-click recall.</span>
               </div>
@@ -829,6 +837,7 @@
             <div class="shortcuts-row"><span data-i18n="shortcuts.clear">Clear the congregation screen</span><span><kbd>Shift</kbd> <kbd>Esc</kbd></span></div>
             <div class="shortcuts-row"><span data-i18n="shortcuts.toggleMic">Start / stop listening</span><span><kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>M</kbd></span></div>
             <div class="shortcuts-row"><span data-i18n="shortcuts.recall">Re-show a recent verse</span><span><kbd>Alt</kbd> <kbd>1</kbd>–<kbd>9</kbd></span></div>
+            <div class="shortcuts-row"><span data-i18n="shortcuts.stepVerse">Previous / next verse</span><span><kbd>Alt</kbd> <kbd>&larr;</kbd> · <kbd>Alt</kbd> <kbd>&rarr;</kbd></span></div>
             <div class="shortcuts-row"><span data-i18n="shortcuts.rundown">Next / previous rundown scene (clicker)</span><span><kbd>PgDn</kbd> · <kbd>PgUp</kbd></span></div>
             <div class="shortcuts-row"><span data-i18n="shortcuts.views">Switch view</span><span><kbd>Ctrl</kbd> <kbd>1</kbd>–<kbd>6</kbd></span></div>
             <div class="shortcuts-row"><span data-i18n="palette.title">Command palette</span><span><kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>P</kbd></span></div>

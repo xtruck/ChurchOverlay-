@@ -2875,7 +2875,10 @@
         showLiveVerse()
         const ref = message.payload && message.payload.reference
         onScreen.verse = ref ? formatDisplayedReference(message.payload) : "…"
-        if (ref) rememberRecentVerse(message.payload)
+        if (ref) {
+          rememberRecentVerse(message.payload)
+          lastShownReference = { book: ref.book, chapter: ref.chapter, verse: ref.verse }
+        }
         renderTally()
       } else if (message.type === "verse:clear") {
         onScreen.verse = null
@@ -2924,6 +2927,8 @@
         renderCopilotSuggestions(message.payload)
       } else if (message.type === "sermonNotes:update") {
         appendSermonNote(message.payload.notes)
+      } else if (message.type === "verse:preview-result") {
+        showPreviewResult(message.payload)
       } else if (message.type === "detector:near-miss") {
         showNearMiss(message.payload && message.payload.text)
       }
@@ -3262,6 +3267,9 @@
     } else if (event.altKey && !ctrl && /^Digit[1-9]$/.test(event.code)) {
       event.preventDefault()
       recallRecentVerse(Number(event.code.slice(5)) - 1)
+    } else if (event.altKey && !ctrl && !event.shiftKey && (key === "ArrowLeft" || key === "ArrowRight")) {
+      event.preventDefault()
+      if (!event.repeat) stepVerse(key === "ArrowRight" ? 1 : -1)
     } else if (ctrl && !event.shiftKey && !event.altKey && /^(Digit|Numpad)[1-6]$/.test(event.code)) {
       // event.code, not key: on a French AZERTY keyboard the digit row types
       // "&", "\u00e9", ... unless Shift is held, so key never matched there.
@@ -3291,7 +3299,67 @@
     const value = referenceInput.value.trim()
     referenceFieldEl.classList.toggle("valid", value !== "" && parseReference(value) !== null)
     referenceFieldEl.classList.remove("invalid")
+    schedulePreview(value)
   })
+
+  // ---- Typed-reference preview (ARCHITECTURE.md section 131) --------------
+  // Operator-only look-ahead: shows what the typed reference would display,
+  // under the box, labelled "not on screen". It never touches the overlay;
+  // the server answers through the same validation as a real verse.
+  const PREVIEW_DEBOUNCE_MS = 250
+  const previewEl = document.getElementById("reference-preview")
+  const previewRefEl = document.getElementById("reference-preview-ref")
+  const previewTextEl = document.getElementById("reference-preview-text")
+  let previewTimer = null
+  let previewSeq = 0
+
+  function hidePreview() {
+    previewEl.hidden = true
+    previewRefEl.textContent = ""
+    previewTextEl.textContent = ""
+  }
+
+  function schedulePreview(value) {
+    clearTimeout(previewTimer)
+    // Any newer keystroke invalidates answers still in flight.
+    previewSeq += 1
+    const reference = value === "" ? null : parseReference(value)
+    if (!reference) {
+      hidePreview()
+      return
+    }
+    const seq = previewSeq
+    previewTimer = setTimeout(() => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return
+      ws.send(JSON.stringify({ id: crypto.randomUUID(), type: "verse:preview", timestamp: Date.now(), payload: { seq, reference } }))
+    }, PREVIEW_DEBOUNCE_MS)
+  }
+
+  function showPreviewResult(payload) {
+    // Only the newest answer is shown.
+    if (!payload || payload.seq !== previewSeq) return
+    previewEl.hidden = false
+    if (payload.verse) {
+      previewRefEl.textContent = formatDisplayedReference(payload.verse)
+      previewTextEl.textContent = payload.verse.text
+    } else {
+      previewRefEl.textContent = ""
+      previewTextEl.textContent = t("preview.notFound")
+    }
+  }
+
+  // Alt+Left / Alt+Right: one verse back/forward from the last verse shown.
+  // An ordinary verse:override, so the server validates it; past the end of a
+  // chapter nothing is shown (no rollover to the next chapter).
+  let lastShownReference = null
+  function stepVerse(delta) {
+    if (!lastShownReference) return
+    const verse = lastShownReference.verse + delta
+    if (verse < 1) return
+    const reference = { book: lastShownReference.book, chapter: lastShownReference.chapter, verse }
+    sendJson({ id: crypto.randomUUID(), type: "verse:override", timestamp: Date.now(), payload: reference })
+    log(t("log.sentVerseOverride", { reference: JSON.stringify(reference) }), "sent")
+  }
 
   // renderTally() also re-renders the recent-verse chips, and re-applies the
   // tally texts that applyTranslations() would otherwise reset to "off air".

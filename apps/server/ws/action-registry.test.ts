@@ -15,6 +15,8 @@ test("ACTION_REGISTRY: contains all registered actions including Phase 2 and inn
       "transcript:final",
       "verse:clear",
       "verse:override",
+      "verse:preview",
+      "verse:preview-result",
       "verse:show",
       "verse:pending",
       "verse:confirm-pending",
@@ -803,6 +805,25 @@ test("validateWsMessage: rejects any inbound sender for layout:update — a serv
   )
   assert.equal(asOperator.ok, false)
   assert.equal(asViewer.ok, false)
+})
+
+test("validateWsMessage: verse:preview is operator-only and needs a seq and a reference", () => {
+  const payload = { seq: 3, reference: { book: "john", chapter: 3, verse: 16 } }
+  const msg = (p: unknown) => ({ id: "01P", type: "verse:preview", timestamp: 1700000000000, payload: p })
+  assert.equal(validateWsMessage(msg(payload), "operator").ok, true)
+  assert.equal(validateWsMessage(msg(payload), "viewer").ok, false)
+  for (const bad of [null, {}, { seq: 3 }, { reference: payload.reference }, { seq: "3", reference: payload.reference }, { seq: 1.5, reference: payload.reference }, { seq: 1, reference: { book: "", chapter: 1, verse: 1 } }]) {
+    assert.equal(validateWsMessage(msg(bad), "operator").ok, false, `payload ${JSON.stringify(bad)} must be rejected`)
+  }
+})
+
+test("verse:preview-result is a server-only event: no client may send it", () => {
+  const payload = { seq: 3, reference: { book: "john", chapter: 3, verse: 16 }, verse: null }
+  const msg = { id: "01P", type: "verse:preview-result", timestamp: 1700000000000, payload }
+  assert.equal(validateWsMessage(msg, "operator").ok, false)
+  assert.equal(validateWsMessage(msg, "viewer").ok, false)
+  assert.equal(ACTION_REGISTRY["verse:preview-result"].validatePayload(payload), true)
+  assert.equal(ACTION_REGISTRY["verse:preview-result"].validatePayload({ ...payload, verse: "text" }), false)
 })
 
 test("ACTION_REGISTRY['detector:near-miss'].validatePayload: accepts a text string, rejects a malformed one", () => {
