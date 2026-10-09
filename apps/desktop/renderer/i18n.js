@@ -437,9 +437,7 @@
       "sermonPrep.title": "Sermon notes: queued verses",
       "sermonPrep.hint": "Paste the pastor's notes or outline (French or English). Every Bible reference in it becomes a one-click verse, and transcription expects those books.",
       "sermonPrep.inputLabel": "Sermon notes",
-      "sermonPrep.placeholder": "Introduction: John 3:16
-1. Romans 8:28
-2. Eph 2:8",
+      "sermonPrep.placeholder": "Introduction: John 3:16\n1. Romans 8:28\n2. Eph 2:8",
       "sermonPrep.import": "Find verses",
       "sermonPrep.clear": "Clear",
       "sermonPrep.show": "Show",
@@ -995,9 +993,7 @@
       "sermonPrep.title": "Notes de prédication : versets en file",
       "sermonPrep.hint": "Collez les notes ou le plan du pasteur (français ou anglais). Chaque référence biblique devient un verset à un clic, et la transcription s’attend à ces livres.",
       "sermonPrep.inputLabel": "Notes de prédication",
-      "sermonPrep.placeholder": "Introduction : Jean 3:16
-1. Romains 8:28
-2. Éph 2:8",
+      "sermonPrep.placeholder": "Introduction : Jean 3:16\n1. Romains 8:28\n2. Éph 2:8",
       "sermonPrep.import": "Trouver les versets",
       "sermonPrep.clear": "Effacer",
       "sermonPrep.show": "Afficher",
