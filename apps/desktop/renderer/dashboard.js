@@ -2587,7 +2587,10 @@
   // rejecting a typo-free field here isn't a security boundary.
   function parseReference(text) {
     // Unicode letters so "Gen\u00e8se 1:1" and multi-word names ("Song of Solomon 2:1") parse; the server re-validates.
-    const match = /^\s*((?:[123]\s*)?\p{L}[\p{L}.'\u2019 ]*?)\s+(\d{1,3}):(\d{1,3})\s*$/u.exec(text)
+    // Quick entry: "jn 3 16", "1co 13 4", "gen 1:1" all work. The chapter and verse are
+    // separated by a space, colon, dot or comma; the book may be a shortcut (the server
+    // resolves it, see apps/server/detector/quick-book.ts).
+    const match = /^\s*((?:[123]\s*)?\p{L}[\p{L}.'\u2019 ]*?)\s*(\d{1,3})(?:\s+|\s*[:.,]\s*)(\d{1,3})\s*$/u.exec(text)
     if (!match) return null
     return {
       book: match[1].trim().replace(/\s+/g, " ").toLowerCase(),
