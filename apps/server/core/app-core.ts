@@ -63,6 +63,7 @@ import { NavigationCommandDetector, containsCatalogBookName } from "../detector/
 import { isCatalogBookWord } from "../detector/regex-detector"
 import { resolveNavigationCommand } from "../verse/resolve-navigation-command"
 import { RundownController } from "../rundown/rundown-controller"
+import { parseSermonPrep, type SermonPrepParseOutcome, type SermonPrepResult } from "../rundown/sermon-prep"
 import { GlossaryDetector } from "../glossary/glossary-detector"
 import { SessionRecorder, type SessionEntry } from "./session-recorder"
 import type { SessionHistoryStore, SessionHistoryEntry } from "./session-history-store"
@@ -340,6 +341,17 @@ export type AppCoreHandle = {
    * a WS event, so the public protocol and the read-only overlay are unchanged.
    */
   getPipelineLatency(): LatencySnapshot
+  /**
+   * ARCHITECTURE.md section 130: parses pasted sermon notes (plain text) into
+   * validated references and adds their books to the ASR planned-book bias.
+   * Displays nothing: each queued verse is shown later by an ordinary
+   * verse:override. Replaces any previous import. Electron IPC only.
+   */
+  importSermonPrep(text: unknown): SermonPrepParseOutcome
+  /** The last successful import, or null (lets a reloaded dashboard rebuild its queue). */
+  getSermonPrep(): SermonPrepResult | null
+  /** Forgets the import and removes its books from the planned-book bias. */
+  clearSermonPrep(): void
   stop(): Promise<void>
 }
 
@@ -790,6 +802,9 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
    * or ruled out as the app's own processing.
    */
   let plannedBookIds: readonly string[] = []
+  let rundownPlannedBookIds: readonly string[] = []
+  /** Section 130: the last imported sermon notes (references only, never the text itself). */
+  let sermonPrep: SermonPrepResult | null = null
 
   /**
    * "Corinthiens 5 verset 2" names no volume, so detection yields nothing. When the
@@ -1176,7 +1191,18 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
    * whose static prompt already names every book).
    */
   function applyPlannedBooks(rundown: Rundown): void {
-    const bookIds = [...new Set(rundown.scenes.flatMap((scene) => (scene.kind === "verse" ? [scene.reference.book] : [])))]
+    rundownPlannedBookIds = [
+      ...new Set(rundown.scenes.flatMap((scene) => (scene.kind === "verse" ? [scene.reference.book] : []))),
+    ]
+    pushPlannedBooks()
+  }
+
+  /**
+   * The plan is the loaded rundown's books plus the imported sermon notes'
+   * books (section 130), deduplicated, rundown first.
+   */
+  function pushPlannedBooks(): void {
+    const bookIds = [...new Set([...rundownPlannedBookIds, ...(sermonPrep?.bookIds ?? [])])]
     // Kept for volume inference (a planned "1 Corinthians" says what a bare "Corinthiens" means),
     // whether or not the active ASR provider can use the list itself.
     plannedBookIds = bookIds
@@ -2324,6 +2350,36 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     },
     getPipelineLatency() {
       return pipelineLatency.snapshot()
+    },
+    importSermonPrep(text: unknown) {
+      const outcome = parseSermonPrep(text, index)
+      if (!outcome.ok) {
+        logger.info({ component: "app-core", event: "sermon-prep.rejected", metadata: { reason: outcome.reason } })
+        return outcome
+      }
+      sermonPrep = outcome.result
+      pushPlannedBooks()
+      // Counts only: the pasted notes are the pastor's private text (AGENTS.md section 24).
+      logger.info({
+        component: "app-core",
+        event: "sermon-prep.imported",
+        metadata: {
+          references: outcome.result.references.length,
+          books: outcome.result.bookIds.length,
+          rejected: outcome.result.rejectedCount,
+          truncated: outcome.result.truncated,
+        },
+      })
+      return outcome
+    },
+    getSermonPrep() {
+      return sermonPrep
+    },
+    clearSermonPrep() {
+      if (sermonPrep === null) return
+      sermonPrep = null
+      pushPlannedBooks()
+      logger.info({ component: "app-core", event: "sermon-prep.cleared" })
     },
     async stop() {
       stopped = true

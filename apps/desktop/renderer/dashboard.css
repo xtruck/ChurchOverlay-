@@ -1133,6 +1133,16 @@ header.topbar {
 
 /* Builder */
 .rundown-builder { margin-top: var(--space-4); padding: var(--space-5); }
+/* ARCHITECTURE.md section 130: sermon-prep import (queued verses). */
+.sermon-prep-card { margin-top: var(--space-4); padding: var(--space-4); display: grid; gap: var(--space-2); }
+.sermon-prep-input { width: 100%; resize: vertical; min-height: 6em; }
+.sermon-prep-actions { display: flex; gap: var(--space-2); }
+.sermon-prep-list { margin: 0; padding-left: 1.4em; display: grid; gap: var(--space-1); max-height: 22em; overflow-y: auto; }
+.sermon-prep-item { padding: var(--space-1) 0; border-bottom: 1px solid var(--border); }
+.sermon-prep-item:last-child { border-bottom: 0; }
+.sermon-prep-item > * { vertical-align: middle; }
+.sermon-prep-ref { font-weight: 600; font-size: var(--fs-13); margin-right: var(--space-2); }
+.sermon-prep-item.shown .sermon-prep-ref { color: var(--text-muted); }
 .rundown-builder-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: var(--space-6); align-items: start; }
 .rundown-builder-grid:has(#rundown-field-canvas[style*="block"]) { grid-template-columns: 1fr; }
 .rundown-add-btn { width: 100%; margin-bottom: var(--space-3); }

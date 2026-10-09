@@ -1514,6 +1514,25 @@ ipcMain.handle("get-pipeline-latency", () => {
   return appCoreHandle?.getPipelineLatency() ?? null
 })
 
+/**
+ * ARCHITECTURE.md section 130: sermon-prep import. The renderer sends only
+ * the pasted text; parsing, bounding and known-valid validation happen in
+ * AppCore. The result is references only — showing one is an ordinary
+ * verse:override from the dashboard.
+ */
+ipcMain.handle("import-sermon-prep", (_event, text: unknown) => {
+  if (!appCoreHandle) throw new Error("services are not started yet")
+  return appCoreHandle.importSermonPrep(text)
+})
+
+ipcMain.handle("get-sermon-prep", () => {
+  return appCoreHandle?.getSermonPrep() ?? null
+})
+
+ipcMain.handle("clear-sermon-prep", () => {
+  appCoreHandle?.clearSermonPrep()
+})
+
 ipcMain.handle("get-session-history", () => {
   return appCoreHandle?.getSessionHistory() ?? []
 })

@@ -492,6 +492,22 @@
           </section>
         </div>
 
+        <!-- ARCHITECTURE.md section 130: sermon-prep import. Plain text in;
+             validated references out; each "Show" is an ordinary
+             verse:override. Imported text is only ever rendered with textContent. -->
+        <section class="card glass sermon-prep-card" aria-labelledby="sermon-prep-title">
+          <h3 id="sermon-prep-title" class="section-title" data-i18n="sermonPrep.title">Sermon notes: queued verses</h3>
+          <p class="view-sub" data-i18n="sermonPrep.hint">Paste the pastor's notes or outline (French or English). Every Bible reference in it becomes a one-click verse, and transcription expects those books.</p>
+          <label for="sermon-prep-input" class="sr-only" data-i18n="sermonPrep.inputLabel">Sermon notes</label>
+          <textarea id="sermon-prep-input" class="sermon-prep-input" rows="5" maxlength="20000" spellcheck="false" data-i18n-placeholder="sermonPrep.placeholder"></textarea>
+          <div class="sermon-prep-actions">
+            <button id="sermon-prep-import-btn" type="button" class="btn-primary btn-small" data-i18n="sermonPrep.import">Find verses</button>
+            <button id="sermon-prep-clear-btn" type="button" class="btn-secondary btn-small" data-i18n="sermonPrep.clear">Clear</button>
+          </div>
+          <p id="sermon-prep-status" class="view-sub" aria-live="polite"></p>
+          <ol id="sermon-prep-list" class="sermon-prep-list"></ol>
+        </section>
+
         <div id="rundown-builder" class="card glass rundown-builder" style="display: none">
           <h3 class="section-title" data-i18n="rundown.builder.title">Build a rundown</h3>
           <div class="rundown-builder-grid">

@@ -4472,6 +4472,65 @@ test("AppCore: rundown:load biases the ASR toward exactly this rundown's own boo
   }
 })
 
+test("AppCore: sermon-prep import queues validated references, merges its books into the planned-book bias, displays nothing", async () => {
+  const asr = new FakeAsrProvider()
+  const requested: VerseReference[] = []
+  class CountingVerseSource extends EchoVerseSource {
+    override async getVerse(reference: VerseReference): Promise<Verse | null> {
+      requested.push(reference)
+      return super.getVerse(reference)
+    }
+  }
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new CountingVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    assert.equal(app.getSermonPrep(), null)
+    const outcome = app.importSermonPrep("Intro : Jean 3:16\n1. Rm 8:28\n2. Jean 3:99 (typo)")
+    assert.ok(outcome.ok)
+    if (!outcome.ok) return
+    assert.deepEqual(outcome.result.references, [
+      { book: "john", chapter: 3, verse: 16 },
+      { book: "romans", chapter: 8, verse: 28 },
+    ])
+    assert.equal(outcome.result.rejectedCount, 1)
+    assert.deepEqual(asr.plannedBooks, ["john", "romans"])
+    assert.equal(requested.length, 0, "an import never looks up or shows a verse by itself")
+    assert.deepEqual(app.getSermonPrep(), outcome.result)
+
+    // A rundown's books come first; the import's books are kept alongside, deduplicated.
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const rundown: Rundown = {
+      id: "01RUNDOWN",
+      title: "Sunday Service",
+      scenes: [
+        { kind: "verse", reference: { book: "psalm", chapter: 23, verse: 1 } },
+        { kind: "verse", reference: { book: "john", chapter: 1, verse: 1 } },
+      ],
+    }
+    operatorSocket.send(JSON.stringify({ id: "01A", type: "rundown:load", timestamp: Date.now(), payload: { rundown } }))
+    await waitFor(() => asr.plannedBooks !== null && asr.plannedBooks.length === 3)
+    assert.deepEqual(asr.plannedBooks, ["psalm", "john", "romans"])
+
+    // Rejected input leaves the previous import untouched.
+    assert.deepEqual(app.importSermonPrep("x".repeat(20_001)), { ok: false, reason: "too-long" })
+    assert.deepEqual(app.getSermonPrep(), outcome.result)
+
+    app.clearSermonPrep()
+    assert.equal(app.getSermonPrep(), null)
+    assert.deepEqual(asr.plannedBooks, ["psalm", "john"], "clearing removes only the import's books")
+    operatorSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
 test("AppCore: rundown:load is a harmless no-op for an ASR provider that does not implement setPlannedBooks", async () => {
   class PlainAsrProvider {
     async start(): Promise<void> {}

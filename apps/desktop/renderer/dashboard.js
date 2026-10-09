@@ -768,6 +768,84 @@
   }
   setInterval(refreshLatency, 5000)
 
+  // ---- Sermon-prep import (ARCHITECTURE.md section 130) --------------------
+  // The server parses and validates; this only renders the references it returns.
+  // Imported text never reaches innerHTML: every node is built with textContent.
+  // "Show" is an ordinary verse:override, validated again on the server.
+  const sermonPrepInputEl = document.getElementById("sermon-prep-input")
+  const sermonPrepImportBtn = document.getElementById("sermon-prep-import-btn")
+  const sermonPrepClearBtn = document.getElementById("sermon-prep-clear-btn")
+  const sermonPrepStatusEl = document.getElementById("sermon-prep-status")
+  const sermonPrepListEl = document.getElementById("sermon-prep-list")
+  const sermonPrepAvailable = Boolean(window.churchOverlay && window.churchOverlay.importSermonPrep)
+
+  function renderSermonPrep(result) {
+    sermonPrepListEl.textContent = ""
+    const references = result && Array.isArray(result.references) ? result.references : []
+    references.forEach((r) => {
+      const item = document.createElement("li")
+      item.className = "sermon-prep-item"
+      const label = document.createElement("span")
+      label.className = "sermon-prep-ref"
+      label.textContent = formatDisplayedReference({ reference: r })
+      const show = document.createElement("button")
+      show.type = "button"
+      show.className = "btn-secondary btn-small"
+      show.textContent = t("sermonPrep.show")
+      show.addEventListener("click", () => {
+        const payload = { book: r.book, chapter: r.chapter, verse: r.verse }
+        sendJson({ id: crypto.randomUUID(), type: "verse:override", timestamp: Date.now(), payload })
+        item.classList.add("shown")
+        log(t("log.sentVerseOverride", { reference: JSON.stringify(payload) }), "sent")
+      })
+      item.append(label, show)
+      sermonPrepListEl.appendChild(item)
+    })
+    if (!result) {
+      sermonPrepStatusEl.textContent = ""
+      return
+    }
+    let status = t("sermonPrep.found", { count: references.length })
+    if (result.rejectedCount > 0) status += " " + t("sermonPrep.rejected", { count: result.rejectedCount })
+    if (result.truncated) status += " " + t("sermonPrep.truncated", { count: references.length })
+    sermonPrepStatusEl.textContent = status
+  }
+
+  if (!sermonPrepAvailable) {
+    sermonPrepImportBtn.disabled = true
+    sermonPrepClearBtn.disabled = true
+  } else {
+    sermonPrepImportBtn.addEventListener("click", () => {
+      window.churchOverlay
+        .importSermonPrep(String(sermonPrepInputEl.value))
+        .then((outcome) => {
+          if (outcome && outcome.ok) {
+            renderSermonPrep(outcome.result)
+            return
+          }
+          sermonPrepStatusEl.textContent = t(outcome && outcome.reason === "too-long" ? "sermonPrep.tooLong" : "sermonPrep.failed")
+        })
+        .catch((err) => {
+          console.error("sermon prep import failed", err)
+          sermonPrepStatusEl.textContent = t("sermonPrep.failed")
+        })
+    })
+    sermonPrepClearBtn.addEventListener("click", () => {
+      window.churchOverlay
+        .clearSermonPrep()
+        .then(() => {
+          sermonPrepInputEl.value = ""
+          renderSermonPrep(null)
+        })
+        .catch((err) => console.error("sermon prep clear failed", err))
+    })
+    // A reloaded dashboard rebuilds its queue from the server's copy (the server is authoritative).
+    window.churchOverlay
+      .getSermonPrep()
+      .then((result) => renderSermonPrep(result))
+      .catch((err) => console.error("sermon prep unavailable", err))
+  }
+
   // ---- Offline backup (Settings) -----------------------------------------
   const localAsrModelToggleEl = document.getElementById("local-asr-model-toggle")
   const localAsrEngineToggleEl = document.getElementById("local-asr-engine-toggle")
