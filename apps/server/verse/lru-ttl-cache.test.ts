@@ -63,7 +63,7 @@ test("LruTtlCache: clear() empties the cache", () => {
 })
 
 test("LruTtlCache: size() reflects the current entry count, including after eviction/expiry", () => {
-  let now = 0
+  const now = 0
   const cache = new LruTtlCache<string>(2, () => now)
   cache.set("a", "1", 1000)
   cache.set("b", "2", 1000)

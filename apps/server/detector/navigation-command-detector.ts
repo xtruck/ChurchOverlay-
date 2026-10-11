@@ -1,7 +1,6 @@
 import type { NavigationCommand, NavigationCommandDetector as INavigationCommandDetector } from "../../../packages/contracts"
 import { normalizeSpokenReferences } from "./spoken-reference-normalizer"
 import { CATALOG_IDS, isCatalogBookWord, normalizeBookName, stripAccents } from "./regex-detector"
-import { BOOK_CATALOG } from "../verse/book-catalog"
 
 /**
  * ARCHITECTURE.md section 61.2-61.3: voice-driven verse navigation, a

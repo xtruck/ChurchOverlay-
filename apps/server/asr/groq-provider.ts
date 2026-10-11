@@ -1,7 +1,6 @@
 import type { AsrProvider, AudioFrame, TranscriptResult } from "../../../packages/contracts"
 import { generateUlid } from "../../../packages/shared/ulid"
 import type { Logger } from "../../../packages/shared/logger"
-import { FRENCH_BOOK_ALIASES } from "../detector/regex-detector"
 import { isPlainObject } from "../../../packages/shared/type-guards"
 import { hasForeignScript } from "./script-guard"
 
@@ -358,7 +357,6 @@ export class GroqProvider implements AsrProvider {
   async onUtteranceEnd(): Promise<void> {
     if (!this.active) return
     const bufferedDurationMs = (this.bufferedSampleCount / SAMPLE_RATE) * 1000
-    const timeSinceLastFlush = this.now() - this.lastFlushTime
 
     // Only flush if we've buffered at least the minimum duration
     // This avoids flushing on single words / brief noise
@@ -388,7 +386,7 @@ export class GroqProvider implements AsrProvider {
     // Extract the samples to flush (excluding overlap)
     const samplesToFlush = this.extractSamples(this.bufferedFrames, flushSamples)
     // Retain the overlap samples for the next chunk
-    const overlapFrames = this.extractFrames(this.bufferedFrames, overlapSamples, totalSamples)
+    const overlapFrames = this.extractFrames(this.bufferedFrames, overlapSamples)
 
     // Detach the buffer BEFORE awaiting, exactly like flush() does. Doing it
     // after the await overwrote every frame sendAudio() pushed while the
@@ -423,7 +421,7 @@ export class GroqProvider implements AsrProvider {
   /**
    * Extract frames representing the last N samples for overlap retention
    */
-  private extractFrames(frames: Int16Array[], overlapSamples: number, totalSamples: number): Int16Array[] {
+  private extractFrames(frames: Int16Array[], overlapSamples: number): Int16Array[] {
     const result: Int16Array[] = []
     let remaining = overlapSamples
     // Start from the end and work backwards

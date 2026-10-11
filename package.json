@@ -11,6 +11,7 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint \"apps/**/*.ts\" \"packages/**/*.ts\" \"scripts/**/*.ts\"",
     "start": "npm run build && electron .",
     "start:web": "npm run build && node dist/apps/web/index.js",
     "test": "tsc && cd dist && node --test",
@@ -28,7 +29,9 @@
     "@types/ws": "^8.18.2",
     "electron": "^44.5.1",
     "electron-builder": "^26.15.3",
-    "typescript": "^5.6.0"
+    "eslint": "^9.39.5",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.71.1"
   },
   "dependencies": {
     "dotenv": "^18.0.5",

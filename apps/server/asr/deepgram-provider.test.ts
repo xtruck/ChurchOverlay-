@@ -62,6 +62,8 @@ test("DeepgramProvider: opens the documented streaming URL and sends canonical P
   class CapturingWebSocket extends MockWebSocket {
     constructor(url: string, options: unknown) {
       super(url, options)
+      // The test double records its own instance so the test can drive it.
+      // eslint-disable-next-line @typescript-eslint/no-this-alias
       socket = this
       this.readyState = MockWebSocket.OPEN
       queueMicrotask(() => this.emit("open"))
