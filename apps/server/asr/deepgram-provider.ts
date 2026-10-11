@@ -191,6 +191,15 @@ export class DeepgramProvider implements AsrProvider {
       }
       throw error
     }
+    // stop() ran while this socket was still connecting: it had nothing open to
+    // close, so close it here instead of leaving a live, billed connection that
+    // keeps delivering transcripts after the mic was stopped.
+    if (this.socket !== socket) {
+      if (socket.readyState === this.WebSocketImpl.OPEN || socket.readyState === this.WebSocketImpl.CONNECTING) {
+        socket.close()
+      }
+      return
+    }
     this.lastSendAt = Date.now()
     this.armKeepAlive(socket)
   }

@@ -212,11 +212,19 @@ export class FailoverAsrProvider implements AsrProvider {
 
   async stop(): Promise<void> {
     this.running = false
+    // A failover still opening the secondary would finish starting it AFTER this
+    // stop and leave it live (a Deepgram secondary would leak its socket). Wait for
+    // it; openSecondary() already reports the secondary's own failure.
+    if (this.activationPromise) await this.activationPromise.catch(() => {})
     // Let an in-flight return settle first so it cannot leave the primary started after stop().
     if (this.returning) await this.returning.catch(() => {})
     this.switching = false
-    await this.secondary.stop()
-    await this.primary.stop()
+    try {
+      await this.secondary.stop()
+    } finally {
+      // A throwing secondary must not leave the primary running.
+      await this.primary.stop()
+    }
   }
 
   async returnToPrimary(): Promise<void> {

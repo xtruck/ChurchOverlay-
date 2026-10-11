@@ -120,6 +120,45 @@ test("FailoverAsrProvider: audio waits for secondary startup instead of leaking 
   assert.deepEqual(secondary.frames.map((item) => item.sequence), [2])
 })
 
+test("FailoverAsrProvider: stop() during failover activation waits for it, so the secondary ends up stopped", async () => {
+  class OrderedDelayedProvider extends DelayedProvider {
+    readonly order: string[] = []
+    override async start(): Promise<void> {
+      await super.start()
+      this.order.push("started")
+    }
+    override async stop(): Promise<void> {
+      this.order.push("stopped")
+      await super.stop()
+    }
+  }
+  const primary = new FakeProvider()
+  const secondary = new OrderedDelayedProvider()
+  const provider = new FailoverAsrProvider({ primary, secondary })
+  await provider.start()
+
+  primary.triggerSustainedLimit() // failover begins; secondary.start() is still pending
+  await new Promise((resolve) => setImmediate(resolve))
+  const stopping = provider.stop() // the operator stops the mic mid-activation
+  secondary.releaseStart()
+  await stopping
+
+  assert.equal(secondary.order.at(-1), "stopped", "the secondary must be stopped AFTER its late start, not before it")
+})
+
+test("FailoverAsrProvider: a throwing secondary.stop() still stops the primary", async () => {
+  const primary = new FakeProvider()
+  const secondary = new FakeProvider()
+  secondary.stop = async () => {
+    throw new Error("secondary stop failed")
+  }
+  const provider = new FailoverAsrProvider({ primary, secondary })
+  await provider.start()
+
+  await assert.rejects(provider.stop(), /secondary stop failed/)
+  assert.equal(primary.stopCalls, 1, "the primary is released even though the secondary threw")
+})
+
 test("FailoverAsrProvider: forwards utterance end to the live provider only", async () => {
   const primary = new FakeProvider()
   const secondary = new FakeProvider()

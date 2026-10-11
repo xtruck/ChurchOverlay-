@@ -91,6 +91,28 @@ test("DeepgramProvider: opens the documented streaming URL and sends canonical P
   await provider.stop()
 })
 
+test("DeepgramProvider: stop() while the socket is still connecting leaves no live connection behind", async () => {
+  let socket: MockWebSocket | undefined
+  class SlowWebSocket extends MockWebSocket {
+    constructor(url: string, options: unknown) {
+      super(url, options)
+      // The test double records its own instance so the test can drive it.
+      // eslint-disable-next-line @typescript-eslint/no-this-alias
+      socket = this
+    }
+  }
+  const provider = new DeepgramProvider({ apiKey: "deepgram-test", WebSocketImpl: SlowWebSocket as never })
+
+  const starting = provider.start() // the socket is created but has not opened yet
+  await provider.stop() // the operator stops the mic mid-connect
+  assert.ok(socket)
+  socket.readyState = MockWebSocket.OPEN
+  socket.emit("open") // the connection completes anyway
+  await starting // a deliberate stop is not an error
+
+  assert.equal(socket.readyState, 3, "the late-opening socket was closed, not left live")
+})
+
 test("DeepgramProvider: unexpected close reports once and permits a fresh start", async () => {
   const sockets: CapturingSocket[] = []
   class CapturingSocket extends MockWebSocket {
