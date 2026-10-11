@@ -148,7 +148,7 @@ async function main() {
     logger,
     language: whisperLanguageFor(displayMode),
   })
-  let sermonNotesGen: SermonNotesGenerator | undefined = groqApiKey
+  const sermonNotesGen: SermonNotesGenerator | undefined = groqApiKey
     ? new SermonNotesGenerator({ apiKey: groqApiKey })
     : undefined
 
@@ -397,7 +397,7 @@ async function main() {
     const entries = appCoreHandle?.getSessionEntries() || []
     const youtubeDescription = buildYouTubeDescription(entries)
     const analytics = generatePreachingAnalytics(entries)
-    const sermonSegments = entries.map((e, idx) => ({
+    const sermonSegments = entries.map((e) => ({
       timestampMs: e.timestamp,
       text: `${e.reference.book} ${e.reference.chapter}:${e.reference.verse} ${e.text}`,
     }))
@@ -482,6 +482,14 @@ async function main() {
     }
     hybridAsr.emitText(text)
     res.json({ success: true, emitted: text })
+  })
+
+  // Page URLs carry their token in the query string (SECURITY.md), so keep it
+  // out of the Referer header and stop MIME sniffing, as the desktop static server does.
+  app.use(["/overlay", "/stage", "/live", "/remote"], (_req, res, next) => {
+    res.setHeader("Referrer-Policy", "no-referrer")
+    res.setHeader("X-Content-Type-Options", "nosniff")
+    next()
   })
 
   // Overlay static files
