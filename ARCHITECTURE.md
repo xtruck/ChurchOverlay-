@@ -6600,3 +6600,25 @@ Every colour comes from the palette's seven roles through the existing CSS varia
 Sources: github.com/openai/whisper, github.com/ufal/whisper_streaming, github.com/SYSTRAN/faster-whisper, github.com/OpenWhispr/openwhispr, and general web guidance on VAD and hallucination settings (blog-level, not authoritative).
 
 **Tests.** `deepgram-provider.test.ts` (stop during connect), `failover-provider.test.ts` (stop waits for activation; a throwing secondary still stops the primary), `hybrid-provider.test.ts` (forwarding), `groq-provider.test.ts` (discard log; a 429'd chunk is re-queued and sent with the next flush; the re-queue stays bounded and a forced drop is logged), `silence-gate.test.ts` (`resetMetrics`).
+
+## 139. Optional Offline-First ASR Mode (Phase 2, owner request)
+
+**Decision.** The owner asked in chat for the local provider to be "main". Offered the choices, the owner picked an **optional offline-first mode**: a setting the operator turns on, with the default left cloud-first. Making local the default for everyone was not chosen, because no latency or French/English accuracy measurement of the local engines on the church's hardware exists yet (section 138; ROADMAP item 16 still lists CUDA and a real-service comparison as open).
+
+**What it is.** `AsrStrategy` (section 95) gains a third value, `"offline-first"`. The provider chain is built by the same `asrChain()` and nested `FailoverAsrProvider` composition as today; the only differences are the order and the trigger:
+- Order: `local -> [cloud chain as before]` instead of `[cloud chain] -> local`. The cloud part keeps the streaming-first order (Deepgram then Groq) when both keys exist, or the single configured cloud provider.
+- Trigger: the local provider, as a primary, uses `"primary-error"` (like Deepgram): a failed start, a failed send or a reported engine error moves audio to the next provider and announces it through the existing failover status. Automatic return to the local engine uses the same bounded backoff as the Deepgram auto-return (section 115); the operator can also return manually (`asr:return-primary`).
+- **Unchanged:** the default (`streaming-first`) and `batch-first` chains are byte-for-byte the same; the engine is still installed and enabled only by the operator (section 99/113), never downloaded at service start; a saved config without the new value behaves as before; the web build does not read the strategy and is unaffected; no WebSocket action, no provider-SDK import in the core, no change to detection, validation or the verse path.
+
+**No silent fallback (AGENTS.md section 46).** If `offline-first` is selected but the local engine is not enabled, not installed or failed its checks, the chain falls back to the cloud-first order, and that is visible: a `asr.offline-first-unavailable` warning is logged at service start, and the dashboard shows "Offline-first is selected but the local engine is not ready: using cloud" in the strategy note and keeps the provider line truthful (it names the providers actually carrying audio). The offline-first button is enabled only while the local engine is ready (or already selected, so it can be turned off).
+
+**Trade-offs, stated plainly.**
+- The local engines emit a final transcript only at the end of an utterance and no partials (sections 99, 113), and the cloud streaming primary was chosen for sub-second finals (section 95: Groq's batch round trip was measured at p90 about 3.3 s). Offline-first therefore trades speed for independence from the internet. Whether the local engine is fast and accurate enough on the church's machine is **not measured**: use the section 87 WER tooling and a real service before relying on it.
+- A transient local engine error now fails over to the cloud (it is a primary with the `primary-error` trigger). That is the intended visible degradation, not a silent switch.
+- At least one cloud key is still required at setup (`planAsr`); a fully key-less install is a separate change.
+
+**What could break.** Nothing for existing installs: the new value is only reachable by choosing it. An older app version reading a config saved with `offline-first` rejects the invalid strategy (ConfigStore validation) and reports it; the operator must reselect a strategy.
+
+**Tests.** `asr-strategy.test.ts` (plan ignores `offline-first` for cloud ordering; the chain puts local first only when requested and available; the default chain is unchanged), `config-store` strategy validation accepts the new value, `i18n.test.ts` (EN/FR parity of the new strings).
+
+**Not done here (needs the church's hardware).** A larger model (`large-v3-turbo`), whisper.cpp's own VAD and LocalAgreement streaming (section 138 research) remain proposals.

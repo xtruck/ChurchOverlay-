@@ -78,6 +78,22 @@ export function watchSystemResume(
   }
 }
 
+/**
+ * How many threads the engine uses. Whisper's per-request cost is fixed (it
+ * encodes a whole 30 s window), so threads decide how much of the computer a
+ * decode takes. Measured on a 4-core/8-thread laptop (ARCHITECTURE.md section
+ * 139): 7 threads used ~72% of the machine while decoding, 4 threads ~28-37%.
+ * By default the engine is only a fallback, so it keeps cpus - 1. In
+ * offline-first mode it transcribes every sentence next to OBS, NDI and the
+ * dashboard, so it takes half the logical cores (never fewer than 2 or more
+ * than 8; more threads scale poorly on a CPU).
+ */
+export function localEngineThreads(cpuCount: number, offlineFirst = false): number {
+  const cores = Number.isFinite(cpuCount) ? Math.max(1, Math.floor(cpuCount)) : 1
+  const threads = offlineFirst ? Math.floor(cores / 2) : cores - 1
+  return Math.max(2, Math.min(8, threads))
+}
+
 export class WhisperServerProcess {
   private readonly options: WhisperServerOptions
   private readonly spawnImpl: typeof spawn
@@ -174,7 +190,7 @@ export class WhisperServerProcess {
 
   private async launch(): Promise<void> {
     const port = await freePort()
-    const threads = this.options.threads ?? Math.max(2, Math.min(8, cpus().length - 1))
+    const threads = this.options.threads ?? localEngineThreads(cpus().length)
     const args = this.options.buildArgs ? this.options.buildArgs(port, threads) : [
       "-m", this.options.modelPath,
       "--host", "127.0.0.1",

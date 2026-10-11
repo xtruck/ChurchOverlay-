@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, powerMonitor, safeStorage, shell } from "electron"
 import { randomBytes } from "node:crypto"
-import { networkInterfaces } from "node:os"
+import { cpus, networkInterfaces } from "node:os"
 import { join } from "node:path"
 import { stat, writeFile } from "node:fs/promises"
 import { startAppCore, type AppCoreHandle } from "../../server/core/app-core"
@@ -25,7 +25,7 @@ import { isAiFeature, type AiFeature, type AiFeatureFlags } from "../../server/a
 import { FailoverAsrProvider } from "../../server/asr/failover-provider"
 import { ASR_STRATEGIES, asrChain, deepgramLanguageFor, planAsr, type AsrProviderId, type AsrStrategy } from "../../server/asr/asr-strategy"
 import { LocalWhisperProvider } from "../../server/asr/local-whisper-provider"
-import { WhisperServerProcess, watchSystemResume } from "../../server/asr/local-whisper-server"
+import { WhisperServerProcess, localEngineThreads, watchSystemResume } from "../../server/asr/local-whisper-server"
 import { LocalAsrInstaller, LOCAL_MODELS, type LocalAsrInstallState, type LocalModelId } from "./local-asr-installer"
 import { FasterWhisperInstaller, type FasterWhisperInstallState } from "./faster-whisper-installer"
 import { SermonNotesGenerator } from "../../server/ai/sermon-notes-generator"
@@ -406,6 +406,10 @@ async function startServices(
   // is actually installed — never a surprise download at service start.
   const localModel: LocalModelId = config.localAsrModel ?? "base"
   const localEngine: LocalEngine = config.localAsrEngine ?? "whisper.cpp"
+  // Section 139. When the engine carries every sentence it is limited to half the
+  // logical cores so OBS, NDI and the dashboard keep the rest (measured, section 139).
+  const offlineFirst = config.asrStrategy === "offline-first"
+  const localThreads = offlineFirst ? localEngineThreads(cpus().length, true) : undefined
   const localStatus = config.localAsrEnabled ? await getLocalEngineStatus(localEngine, localModel) : null
   await localWhisperServer?.stop()
   localWhisperServer = null
@@ -420,8 +424,9 @@ async function startServices(
             // First start imports numpy/ctranslate2 and runs a warm-up inference; antivirus scans make it slower.
             readyTimeoutMs: 180_000,
             logger,
+            threads: localThreads,
           })
-        : new WhisperServerProcess({ serverPath: localStatus.serverPath, modelPath: localStatus.modelPath, logger })
+        : new WhisperServerProcess({ serverPath: localStatus.serverPath, modelPath: localStatus.modelPath, logger, threads: localThreads })
     localAsr = new LocalWhisperProvider({ server: localWhisperServer, language: whisperLanguageFor(config.displayMode), logger })
     // Warm up now, in the background: loading the model takes seconds, and
     // the moment the internet drops is exactly when there are none to spare.
@@ -429,7 +434,17 @@ async function startServices(
       logger.error({ component: "main", event: "local-whisper.warmup-failed", error: err instanceof Error ? err.message : String(err) })
     })
   }
-  const chain = asrChain(plan, localAsr !== null)
+  // Section 139: offline-first is opt-in and only takes effect while the local
+  // engine is ready. When it is selected but not ready the chain stays cloud-first,
+  // and that is reported (log here, note in the dashboard), never silent (AGENTS.md 46).
+  if (offlineFirst && localAsr === null) {
+    logger.warn({
+      component: "main",
+      event: "asr.offline-first-unavailable",
+      metadata: { reason: localStatus?.state ?? "local engine not enabled" },
+    })
+  }
+  const chain = asrChain(plan, localAsr !== null, offlineFirst)
   const providers: Record<AsrProviderId, GroqProvider | DeepgramProvider | LocalWhisperProvider | null> = {
     groq: groqAsr,
     deepgram: deepgramAsr,
@@ -446,12 +461,14 @@ async function startServices(
       // A streaming socket either works or it doesn't: fail over on any
       // error. A batch provider only after sustained 429s or sustained
       // network errors (GroqProvider signals both the same way).
-      trigger: id === "deepgram" ? "primary-error" : "sustained-rate-limit",
+      // The local engine is only ever a primary in offline-first mode (it is the
+      // last link otherwise); like a streaming socket it either works or it doesn't.
+      trigger: id === "deepgram" || id === "local" ? "primary-error" : "sustained-rate-limit",
       secondaryLabel: labels[chain[i + 1] as AsrProviderId],
       // Streaming primary only: come back to Deepgram on our own after a
       // hiccup (ARCHITECTURE.md section 115). Groq's sustained-429 failover
       // stays operator-controlled (section 86).
-      ...(id === "deepgram"
+      ...(id === "deepgram" || id === "local"
         ? {
             autoReturn: {
               onAttempt: (result) =>

@@ -1105,16 +1105,24 @@
     renderAiAvailability(asrStatus.aiReady)
     renderAiProvider(asrStatus)
     const both = asrStatus.hasGroq && asrStatus.hasDeepgram
+    // Offline first (ARCHITECTURE.md section 139) only works while the local engine is ready.
+    const offlineFirst = asrStatus.strategy === "offline-first"
+    const localReady = Boolean(asrStatus.localActive)
     setActiveOption(asrStrategyToggleEl, "asrStrategy", asrStatus.strategy)
     asrStrategyToggleEl.querySelectorAll("button").forEach((button) => {
-      button.disabled = !both
+      // Streaming/batch need both cloud keys; offline-first needs a ready local engine (or is already on, so it can be turned off).
+      button.disabled = button.dataset.asrStrategy === "offline-first" ? !(localReady || offlineFirst) : !both
     })
-    asrStrategyNoteEl.textContent = both ? "" : t("asrSettings.needsBothKeys")
+    if (offlineFirst && !localReady) asrStrategyNoteEl.textContent = t("asrSettings.offlineFirstUnavailable")
+    else if (offlineFirst) asrStrategyNoteEl.textContent = t("asrSettings.offlineFirstNote")
+    else asrStrategyNoteEl.textContent = both ? "" : t("asrSettings.needsBothKeys")
     let provider
     if (!asrStatus.hasDeepgram) provider = t("asrSettings.providerGroq")
     else if (!asrStatus.hasGroq) provider = t("asrSettings.providerDeepgram")
-    else provider = asrStatus.strategy === "streaming-first" ? t("asrSettings.providerStreamingFirst") : t("asrSettings.providerBatchFirst")
-    if (asrStatus.localActive) provider += t("asrSettings.plusOffline")
+    else provider = asrStatus.strategy === "batch-first" ? t("asrSettings.providerBatchFirst") : t("asrSettings.providerStreamingFirst")
+    // The provider line names what is really carrying audio: local first only while it is ready.
+    if (offlineFirst && localReady) provider = t("asrSettings.providerOfflineFirst")
+    else if (localReady) provider += t("asrSettings.plusOffline")
     asrProviderLineEl.textContent = provider
     statusbarAsrTextEl.textContent = provider
   }

@@ -117,6 +117,44 @@ test("LocalWhisperProvider: a slow engine never builds an unbounded backlog (old
   }
 })
 
+test("LocalWhisperProvider: falling behind speech is reported once (so a failover chain can move to the cloud), not just logged", async () => {
+  const fake = await fakeWhisperServer(() => ({ json: { text: "ok" }, delayMs: 120 }))
+  try {
+    const provider = new LocalWhisperProvider({ server: fake.endpoint })
+    const errors: Error[] = []
+    provider.onError((error) => errors.push(error))
+    await provider.start()
+    for (let i = 0; i < 6; i++) {
+      await provider.sendAudio(frame(1000))
+      await provider.onUtteranceEnd()
+    }
+    await new Promise((r) => setTimeout(r, 600))
+    assert.equal(errors.length, 1, "one overload report per burst, not one per dropped batch")
+    assert.match(errors[0]!.message, /cannot keep up/i)
+  } finally {
+    await fake.close()
+  }
+})
+
+test("LocalWhisperProvider: a fast engine never reports an overload", async () => {
+  const fake = await fakeWhisperServer(() => ({ json: { text: "ok" } }))
+  try {
+    const provider = new LocalWhisperProvider({ server: fake.endpoint })
+    const errors: Error[] = []
+    provider.onError((error) => errors.push(error))
+    await provider.start()
+    for (let i = 0; i < 6; i++) {
+      await provider.sendAudio(frame(1000))
+      await provider.onUtteranceEnd()
+      await new Promise((r) => setTimeout(r, 40))
+    }
+    await new Promise((r) => setTimeout(r, 200))
+    assert.deepEqual(errors, [])
+  } finally {
+    await fake.close()
+  }
+})
+
 test("LocalWhisperProvider: a server error is reported, empty text is silently skipped", async () => {
   let call = 0
   const fake = await fakeWhisperServer(() => (++call === 1 ? { status: 500, json: { error: "boom" } } : { json: { text: "   " } }))

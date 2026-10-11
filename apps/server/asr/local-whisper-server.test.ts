@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { EventEmitter } from "node:events"
 import type { spawn } from "node:child_process"
-import { WhisperServerProcess, watchSystemResume } from "./local-whisper-server"
+import { WhisperServerProcess, localEngineThreads, watchSystemResume } from "./local-whisper-server"
 import { Logger } from "../../../packages/shared/logger"
 
 /** A stand-in child process: never really spawned, killed on request. */
@@ -48,6 +48,22 @@ function harness() {
   })
   return { server, children, state }
 }
+
+test("localEngineThreads: offline-first leaves half the cores to OBS, NDI and the UI; the default is unchanged", () => {
+  // Default (the engine is only a fallback): cpus - 1, between 2 and 8.
+  assert.equal(localEngineThreads(8), 7)
+  assert.equal(localEngineThreads(16), 8)
+  assert.equal(localEngineThreads(2), 2)
+  assert.equal(localEngineThreads(1), 2)
+  // Offline-first (the engine carries every sentence): half the logical cores, between 2 and 8.
+  assert.equal(localEngineThreads(8, true), 4)
+  assert.equal(localEngineThreads(4, true), 2)
+  assert.equal(localEngineThreads(2, true), 2)
+  assert.equal(localEngineThreads(32, true), 8)
+  // Garbage in, a safe number out.
+  assert.equal(localEngineThreads(Number.NaN, true), 2)
+  assert.equal(localEngineThreads(0), 2)
+})
 
 test("WhisperServerProcess.onSystemResume: a healthy engine is left alone", async () => {
   const { server, children, state } = harness()

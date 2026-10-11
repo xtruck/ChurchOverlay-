@@ -10,15 +10,21 @@
  * - streaming-first: Deepgram (streaming, sub-second finals) primary; Groq
  *   takes over on any Deepgram connection failure. The fast path — real
  *   service recordings measured the Groq batch round-trip at p90 ≈ 3.3 s.
+ * - offline-first (ARCHITECTURE.md section 139): the local engine carries
+ *   audio and the cloud chain is its fallback. Opt-in; it only takes effect
+ *   when the local engine is installed and ready (see asrChain).
  */
-export type AsrStrategy = "batch-first" | "streaming-first"
+export type AsrStrategy = "batch-first" | "streaming-first" | "offline-first"
 
-export const ASR_STRATEGIES: readonly AsrStrategy[] = ["batch-first", "streaming-first"]
+export const ASR_STRATEGIES: readonly AsrStrategy[] = ["batch-first", "streaming-first", "offline-first"]
+
+/** The order of the two cloud providers; offline-first only changes whether local goes in front of it. */
+export type CloudAsrStrategy = "batch-first" | "streaming-first"
 
 export type AsrPlan =
   | { readonly kind: "groq-only" }
   | { readonly kind: "deepgram-only" }
-  | { readonly kind: "failover"; readonly primary: "groq" | "deepgram"; readonly strategy: AsrStrategy }
+  | { readonly kind: "failover"; readonly primary: "groq" | "deepgram"; readonly strategy: CloudAsrStrategy }
 
 export type AsrPlanInput = {
   readonly groqApiKey?: string
@@ -33,7 +39,8 @@ export function planAsr(input: AsrPlanInput): AsrPlan {
   if (!hasGroq && !hasDeepgram) throw new Error("A Groq or Deepgram API key is required.")
   if (!hasDeepgram) return { kind: "groq-only" }
   if (!hasGroq) return { kind: "deepgram-only" }
-  const strategy = input.preferred ?? "streaming-first"
+  // offline-first does not change the cloud order: it is streaming-first behind the local engine.
+  const strategy: CloudAsrStrategy = input.preferred === "batch-first" ? "batch-first" : "streaming-first"
   return { kind: "failover", primary: strategy === "streaming-first" ? "deepgram" : "groq", strategy }
 }
 
@@ -42,10 +49,13 @@ export type AsrProviderId = "groq" | "deepgram" | "local"
 /**
  * The ordered fallback chain for a plan: first entry carries audio, each
  * next one takes over when the previous fails. The offline engine, when
- * installed and enabled, is always the last resort — slower and less
- * accurate than either cloud service, but it works with no internet.
+ * installed and enabled, is the last resort by default — slower and less
+ * accurate than either cloud service, but it works with no internet. With
+ * `offlineFirst` (the operator's opt-in, section 139) it goes in front
+ * instead, but only while it is available: an unavailable local engine
+ * leaves the cloud-first order, and the caller reports that.
  */
-export function asrChain(plan: AsrPlan, localAvailable: boolean): AsrProviderId[] {
+export function asrChain(plan: AsrPlan, localAvailable: boolean, offlineFirst = false): AsrProviderId[] {
   const chain: AsrProviderId[] =
     plan.kind === "groq-only"
       ? ["groq"]
@@ -54,8 +64,8 @@ export function asrChain(plan: AsrPlan, localAvailable: boolean): AsrProviderId[
         : plan.primary === "deepgram"
           ? ["deepgram", "groq"]
           : ["groq", "deepgram"]
-  if (localAvailable) chain.push("local")
-  return chain
+  if (!localAvailable) return chain
+  return offlineFirst ? ["local", ...chain] : [...chain, "local"]
 }
 
 /**

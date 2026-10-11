@@ -137,6 +137,8 @@ export class LocalWhisperProvider implements AsrProvider {
   private bufferedSamples = 0
   private queue: Int16Array[] = []
   private draining = false
+  /** True after an overload was reported, until the queue empties (one report per burst). */
+  private overloadReported = false
   private sequence = 0
   private correlationId = ""
   private transcriptCallback: ((result: TranscriptResult) => void) | null = null
@@ -209,6 +211,7 @@ export class LocalWhisperProvider implements AsrProvider {
 
   async start(): Promise<void> {
     this.active = true
+    this.overloadReported = false
     this.sequence = 0
     this.correlationId = generateUlid(this.now())
     this.languageLock.reset()
@@ -267,11 +270,27 @@ export class LocalWhisperProvider implements AsrProvider {
     }
     this.discardBufferedAudio()
     this.queue.push(batch)
+    let dropped = 0
     while (this.queue.length > MAX_BACKLOG) {
       this.queue.shift()
+      dropped += 1
       this.logger?.warn({ component: "asr", event: "local-whisper.backlog-dropped" })
     }
+    if (dropped > 0) this.reportOverload()
     void this.drain()
+  }
+
+  /**
+   * Audio was skipped because the engine fell more than MAX_BACKLOG batches
+   * behind speech. A log line is not enough: as an offline-first primary this
+   * error is what moves transcription to the cloud (FailoverAsrProvider,
+   * "primary-error"), and as the last resort it tells the operator why words
+   * are missing. Reported once per burst, re-armed when the queue empties.
+   */
+  private reportOverload(): void {
+    if (this.overloadReported) return
+    this.overloadReported = true
+    this.errorCallback?.(new Error("Local transcription cannot keep up with speech on this computer; some audio was skipped."))
   }
 
   private async drain(): Promise<void> {
@@ -309,6 +328,8 @@ export class LocalWhisperProvider implements AsrProvider {
       }
     } finally {
       this.draining = false
+      // The engine caught up: a later overload is a new burst and is reported again.
+      if (this.queue.length === 0) this.overloadReported = false
     }
   }
 
