@@ -63,6 +63,49 @@ test("GroqProvider: discardBufferedAudio() logs how much audio it threw away, an
   assert.equal(logged[0]!.metadata.durationMs, 3000)
 })
 
+test("GroqProvider: the audio of a chunk that got a 429 is re-queued and sent with the next flush, not lost", async () => {
+  const captured: CapturedRequest[] = []
+  let call = 0
+  const fetchImpl = fakeFetch(() => {
+    call += 1
+    return call === 1
+      ? jsonResponse({ error: { message: "Rate limit reached" } }, 429)
+      : jsonResponse({ text: "Jean 3:16" })
+  }, captured)
+  const provider = new GroqProvider({ apiKey: "test-key", chunkDurationMs: 1000, fetchImpl })
+  const errors: Error[] = []
+  const results: TranscriptResult[] = []
+  provider.onError((error) => errors.push(error))
+  provider.onTranscript((result) => results.push(result))
+  await provider.start()
+
+  await provider.sendAudio(oneSecondFrame(0)) // this chunk gets the 429
+  assert.equal(results.length, 0)
+  assert.ok(errors[0] instanceof RateLimitError)
+
+  await provider.sendAudio(oneSecondFrame(1)) // the next flush must carry the first second too
+  assert.equal(captured.length, 2)
+  const secondFile = (captured[1]!.init!.body as FormData).get("file") as Blob
+  assert.equal(secondFile.size, 44 + 2 * 16000 * 2, "2 s of 16 kHz PCM16 plus the WAV header: the 429'd second was not lost")
+  assert.equal(results.length, 1)
+  assert.equal(results[0]!.text, "Jean 3:16")
+})
+
+test("GroqProvider: a re-queued 429 chunk never grows the buffer past MAX_THROTTLED_BUFFER_MS; the drop is logged", async () => {
+  const { logger, lines } = capturingLogger()
+  const fetchImpl = fakeFetch(() => jsonResponse({ error: { message: "Rate limit reached" } }, 429))
+  const provider = new GroqProvider({ apiKey: "test-key", chunkDurationMs: 1000, fetchImpl, logger })
+  provider.onError(() => {})
+  await provider.start()
+
+  // Every flush gets a 429. Buffered audio must stay bounded and any drop must be logged.
+  for (let i = 0; i < 40; i++) await provider.sendAudio(oneSecondFrame(i))
+
+  const buffered = (provider as unknown as { bufferedSampleCount: number }).bufferedSampleCount
+  assert.ok(buffered / 16000 * 1000 <= MAX_THROTTLED_BUFFER_MS, "buffer stays within the throttle ceiling")
+  assert.ok(lines.some((l) => (l as { event: string }).event === "asr.audio-discarded"), "the forced drop is logged")
+})
+
 test("GroqProvider: constructor requires an apiKey", () => {
   assert.throws(() => new GroqProvider({ apiKey: "" }))
 })

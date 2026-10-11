@@ -510,8 +510,32 @@ export class GroqProvider implements AsrProvider {
       })
       this.lastFlushTime = this.now()
     } catch (err) {
+      // A 429 says "come back later": the operator is told transcription will
+      // resume, so the chunk that was refused goes back in front of newer audio.
+      // Without this its speech (possibly a verse reference) was silently lost.
+      if (err instanceof RateLimitError && err.type === "429") this.requeueRefusedChunk(samples)
       this.errorCallback?.(err instanceof Error ? err : new Error(String(err)))
     }
+  }
+
+  /**
+   * Puts a chunk the provider refused (HTTP 429) back at the front of the
+   * buffer, within the same bound the throttle uses (MAX_THROTTLED_BUFFER_MS,
+   * AGENTS.md section 36). If it would not fit, it is dropped and logged, never
+   * silently (sections 11 and 46).
+   */
+  private requeueRefusedChunk(samples: Int16Array): void {
+    const totalSamples = this.bufferedSampleCount + samples.length
+    if ((totalSamples / SAMPLE_RATE) * 1000 > MAX_THROTTLED_BUFFER_MS) {
+      this.logger?.warn({
+        component: "asr",
+        event: "asr.audio-discarded",
+        metadata: { durationMs: Math.round((samples.length / SAMPLE_RATE) * 1000), reason: "rate-limited-buffer-full" },
+      })
+      return
+    }
+    this.bufferedFrames.unshift(samples)
+    this.bufferedSampleCount = totalSamples
   }
 
   /**
