@@ -48,6 +48,21 @@ function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status })
 }
 
+test("GroqProvider: discardBufferedAudio() logs how much audio it threw away, and stays silent when there is none", async () => {
+  const { logger, lines } = capturingLogger()
+  const provider = new GroqProvider({ apiKey: "test-key", logger, chunkDurationMs: 5000, fetchImpl: fakeFetch(() => jsonResponse({ text: "x" })) })
+  await provider.start()
+
+  provider.discardBufferedAudio() // nothing buffered yet
+  assert.equal(lines.filter((l) => (l as { event: string }).event === "asr.audio-discarded").length, 0)
+
+  await provider.sendAudio(frameForMs(3000)) // below the 5 s chunk: stays buffered
+  provider.discardBufferedAudio()
+  const logged = lines.filter((l) => (l as { event: string }).event === "asr.audio-discarded") as Array<{ metadata: { durationMs: number } }>
+  assert.equal(logged.length, 1)
+  assert.equal(logged[0]!.metadata.durationMs, 3000)
+})
+
 test("GroqProvider: constructor requires an apiKey", () => {
   assert.throws(() => new GroqProvider({ apiKey: "" }))
 })

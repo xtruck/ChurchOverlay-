@@ -345,6 +345,14 @@ export class GroqProvider implements AsrProvider {
 
   /** Used by failover: discard buffered batch audio without issuing another request. */
   discardBufferedAudio(): void {
+    // AGENTS.md sections 11 and 46: audio thrown away on failover must be observable, not silent.
+    if (this.bufferedSampleCount > 0) {
+      this.logger?.warn({
+        component: "asr",
+        event: "asr.audio-discarded",
+        metadata: { durationMs: Math.round((this.bufferedSampleCount / SAMPLE_RATE) * 1000) },
+      })
+    }
     this.bufferedFrames = []
     this.bufferedSampleCount = 0
   }
