@@ -30,6 +30,8 @@ export type WhisperServerOptions = {
 }
 
 const MAX_RESTART_DELAY_MS = 30_000
+/** Consecutive failed restarts before giving up loudly (~2 min of backoff at the cap). */
+const MAX_RESTART_ATTEMPTS = 8
 const RESUME_HEALTH_TIMEOUT_MS = 3_000
 /** Drivers and the network stack settle for a moment after wake (OpenWhispr waits too before re-warming). */
 export const RESUME_SETTLE_DELAY_MS = 2_000
@@ -85,6 +87,7 @@ export class WhisperServerProcess {
   private starting: Promise<void> | null = null
   private stopped = true
   private restartAttempts = 0
+  private restartTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(options: WhisperServerOptions) {
     this.options = options
@@ -110,6 +113,8 @@ export class WhisperServerProcess {
 
   async stop(): Promise<void> {
     this.stopped = true
+    if (this.restartTimer) clearTimeout(this.restartTimer)
+    this.restartTimer = null
     const child = this.child
     this.child = null
     this.port = 0
@@ -230,12 +235,38 @@ export class WhisperServerProcess {
     }
   }
 
+  /**
+   * Schedules one bounded, backoff-aware restart. A pending timer absorbs
+   * duplicate calls (the exit handler and a failed launch can both ask). A
+   * failed restart is logged and rescheduled until MAX_RESTART_ATTEMPTS, so
+   * the offline engine never dies silently (AGENTS.md section 37, 46).
+   */
   private scheduleRestart(): void {
+    if (this.restartTimer || this.stopped) return
+    if (this.restartAttempts >= MAX_RESTART_ATTEMPTS) {
+      this.options.logger?.error({
+        component: "asr",
+        event: "local-whisper.restart-abandoned",
+        metadata: { attempts: this.restartAttempts },
+      })
+      return
+    }
     const delay = Math.min(1000 * 2 ** this.restartAttempts, MAX_RESTART_DELAY_MS)
     this.restartAttempts += 1
-    setTimeout(() => {
-      if (!this.stopped) this.ensureStarted().catch(() => {})
-    }, delay).unref?.()
+    this.restartTimer = setTimeout(() => {
+      this.restartTimer = null
+      if (this.stopped) return
+      this.ensureStarted().catch((error: unknown) => {
+        this.options.logger?.error({
+          component: "asr",
+          event: "local-whisper.restart-failed",
+          metadata: { attempt: this.restartAttempts },
+          error: error instanceof Error ? error.message : String(error),
+        })
+        this.scheduleRestart()
+      })
+    }, delay)
+    this.restartTimer.unref?.()
   }
 
   private async waitUntilReady(child: ChildProcess, stderr: () => string): Promise<void> {

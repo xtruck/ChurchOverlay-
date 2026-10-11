@@ -81,7 +81,13 @@ export class HybridAsrProvider implements AsrProvider {
   setApiKey(apiKey: string): void {
     const trimmed = apiKey.trim()
     if (this.real && this.active) {
-      this.real.stop().catch(() => {})
+      this.real.stop().catch((error: unknown) => {
+        this.logger?.warn({
+          component: "asr",
+          event: "hybrid.stop-failed",
+          error: error instanceof Error ? error.message : String(error),
+        })
+      })
     }
     if (!trimmed) {
       this.real = null

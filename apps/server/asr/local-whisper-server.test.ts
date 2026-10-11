@@ -3,6 +3,7 @@ import assert from "node:assert/strict"
 import { EventEmitter } from "node:events"
 import type { spawn } from "node:child_process"
 import { WhisperServerProcess, watchSystemResume } from "./local-whisper-server"
+import { Logger } from "../../../packages/shared/logger"
 
 /** A stand-in child process: never really spawned, killed on request. */
 class FakeChild extends EventEmitter {
@@ -80,6 +81,39 @@ test("WhisperServerProcess.onSystemResume: does nothing once stopped", async () 
   await server.onSystemResume()
   assert.equal(state.healthCalls, before)
   assert.equal(children.length, 1)
+})
+
+test("WhisperServerProcess: a restart whose launch throws is logged and retried, never silently dropped", async () => {
+  const lines: Array<{ event?: string }> = []
+  const logger = new Logger({ write: (line) => lines.push(JSON.parse(line)) })
+  const children: FakeChild[] = []
+  let spawns = 0
+  const spawnImpl = (() => {
+    spawns += 1
+    if (spawns === 2) throw new Error("spawn EPERM") // the first restart fails before any child exists
+    const child = new FakeChild()
+    children.push(child)
+    return child
+  }) as unknown as typeof spawn
+  const fetchImpl = (() => Promise.resolve(new Response('{"status":"ok"}', { status: 200 }))) as typeof fetch
+  const server = new WhisperServerProcess({
+    serverPath: "C:/engine/whisper-server.exe",
+    modelPath: "C:/models/m.bin",
+    spawnImpl,
+    fetchImpl,
+    readyTimeoutMs: 2_000,
+    logger,
+  })
+  await server.ensureStarted()
+  children[0]!.emit("exit", 1) // the engine crashes; the restart is scheduled (1 s backoff)
+
+  // The second retry (2 s backoff) must succeed: the failure above did not end the restart cycle.
+  const deadline = Date.now() + 6_000
+  while (children.length < 2 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50))
+  assert.equal(children.length, 2, "a later restart attempt still brings the engine back")
+  assert.ok(server.baseUrl, "ready again")
+  assert.ok(lines.some((line) => line.event === "local-whisper.restart-failed"), "the failed restart is logged")
+  await server.stop()
 })
 
 test("watchSystemResume: resume events are debounced and reach the CURRENT engine; unsubscribe detaches", async () => {
