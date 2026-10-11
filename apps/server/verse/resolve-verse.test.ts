@@ -42,6 +42,28 @@ test("resolveVerse: a cache hit returns the cached verse without calling the sou
   assert.equal(source.callCount, 0)
 })
 
+test("resolveVerse: a source verse for a DIFFERENT reference is rejected, logged, and never cached", async () => {
+  const cache = new VerseCache()
+  const circuitBreaker = new CircuitBreaker()
+  const { logger, lines } = capturingLogger()
+  const wrong: Verse = { ...SOME_VERSE, reference: { book: "john", chapter: 3, verse: 17 } }
+  const source = new CountingFakeVerseSource(async () => wrong)
+
+  const result = await resolveVerse(JOHN_3_16, source, cache, circuitBreaker, "kjv", logger)
+  assert.equal(result, null)
+  assert.equal(cache.getVerse(JOHN_3_16, "kjv"), undefined, "nothing cached as a verse")
+  assert.equal(cache.isNegativelyCached(JOHN_3_16, "kjv"), false, "a faulty source is not a confirmed 'not found'")
+  assert.equal((lines[0] as { event: string }).event, "source-failed")
+})
+
+test("resolveVerse: a source verse with blank text is rejected and never cached", async () => {
+  const cache = new VerseCache()
+  const source = new CountingFakeVerseSource(async () => ({ ...SOME_VERSE, text: "   " }))
+
+  assert.equal(await resolveVerse(JOHN_3_16, source, cache, new CircuitBreaker()), null)
+  assert.equal(cache.getVerse(JOHN_3_16, "kjv"), undefined)
+})
+
 test("resolveVerse: a negatively-cached reference returns null without calling the source", async () => {
   const cache = new VerseCache()
   cache.setNotFound(JOHN_3_16, "kjv")

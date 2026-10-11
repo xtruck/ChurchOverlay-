@@ -36,6 +36,8 @@ export class OfflineFallbackVerseSource implements VerseSource {
   private readonly offline: VerseSource
   private readonly logger?: Logger
   private readonly circuitBreaker: CircuitBreaker
+  /** True once the "serving from offline while the breaker is open" state has been logged, so a long outage logs once, not per lookup. */
+  private openStateLogged = false
 
   constructor(options: OfflineFallbackVerseSourceOptions) {
     this.primary = options.primary
@@ -46,12 +48,22 @@ export class OfflineFallbackVerseSource implements VerseSource {
 
   async getVerse(reference: VerseReference): Promise<Verse | null> {
     if (!this.circuitBreaker.canProceed()) {
+      // Section 46: the operator must be able to tell which source produced the text.
+      if (!this.openStateLogged) {
+        this.openStateLogged = true
+        this.logger?.warn({
+          component: "offline-fallback-verse-source",
+          event: "breaker-open-serving-offline",
+          metadata: { reference },
+        })
+      }
       return this.offline.getVerse(reference)
     }
 
     try {
       const verse = await this.primary.getVerse(reference)
       this.circuitBreaker.recordSuccess()
+      this.openStateLogged = false
       return verse
     } catch (err) {
       this.circuitBreaker.recordFailure()
@@ -61,7 +73,11 @@ export class OfflineFallbackVerseSource implements VerseSource {
         metadata: { reference },
         error: err instanceof Error ? err.message : String(err),
       })
-      return this.offline.getVerse(reference)
+      const fallback = await this.offline.getVerse(reference)
+      // The live source failed, so a null from offline is "unknown", not "not found".
+      // Rethrow so the outer breaker and negative cache never record a false miss.
+      if (fallback === null) throw err
+      return fallback
     }
   }
 }

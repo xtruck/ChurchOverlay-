@@ -67,6 +67,16 @@ test("OfflineFallbackVerseSource: a thrown primary error falls back to offline, 
   assert.equal(entry.event, "primary-failed-using-offline")
 })
 
+test("OfflineFallbackVerseSource: a primary outage with no offline answer is rethrown, never reported as 'not found'", async () => {
+  const primary = new FakeVerseSource(async () => {
+    throw new Error("network unreachable")
+  })
+  const offline = new FakeVerseSource(async () => null)
+  const source = new OfflineFallbackVerseSource({ primary, offline })
+
+  await assert.rejects(source.getVerse(JOHN_3_16), /network unreachable/)
+})
+
 test("OfflineFallbackVerseSource: once its own circuit breaker opens, primary is skipped entirely — straight to offline", async () => {
   const primary = new FakeVerseSource(async () => {
     throw new Error("network unreachable")
@@ -82,6 +92,23 @@ test("OfflineFallbackVerseSource: once its own circuit breaker opens, primary is
   assert.deepEqual(verse, makeVerse("offline-bundled"))
   assert.equal(primary.calls, 1) // NOT called again — this is the whole point of the inner breaker
   assert.equal(offline.calls, 2)
+})
+
+test("OfflineFallbackVerseSource: serving from offline while the breaker is open is logged once, not per lookup", async () => {
+  const primary = new FakeVerseSource(async () => {
+    throw new Error("network unreachable")
+  })
+  const offline = new FakeVerseSource(async () => makeVerse("offline-bundled"))
+  const circuitBreaker = new CircuitBreaker({ failureThreshold: 1 })
+  const { logger, lines } = capturingLogger()
+  const source = new OfflineFallbackVerseSource({ primary, offline, circuitBreaker, logger })
+
+  await source.getVerse(JOHN_3_16) // fails and opens the breaker
+  await source.getVerse(JOHN_3_16) // breaker open
+  await source.getVerse(JOHN_3_16) // breaker still open
+
+  const events = lines.map((line) => (line as { event: string }).event)
+  assert.equal(events.filter((e) => e === "breaker-open-serving-offline").length, 1)
 })
 
 test("OfflineFallbackVerseSource: a successful primary call resets its own circuit breaker's failure streak", async () => {

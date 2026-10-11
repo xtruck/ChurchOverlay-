@@ -21,6 +21,15 @@ export function translationIdFor(source: VerseSource): string | undefined {
   return withId.getTranslationId?.()
 }
 
+function answersRequest(verse: Verse, requested: VerseReference): boolean {
+  return (
+    verse.reference.book === requested.book &&
+    verse.reference.chapter === requested.chapter &&
+    verse.reference.verse === requested.verse &&
+    verse.text.trim().length > 0
+  )
+}
+
 /**
  * Composes a VerseSource with its supporting infrastructure
  * (ARCHITECTURE.md sections 16-21): check the cache first (both the
@@ -91,6 +100,13 @@ export async function resolveVerse(
 
   try {
     const verse = await source.getVerse(reference)
+
+    // Response validation (AGENTS.md sections 13-15): a source answers for the
+    // reference it was asked for, with real text. Anything else is a faulty
+    // source, never displayed or cached; it counts as a failure, not as "not found".
+    if (verse && !answersRequest(verse, reference)) {
+      throw new Error("source returned a verse that does not match the requested reference or has no text")
+    }
     circuitBreaker.recordSuccess()
 
     if (verse) {
