@@ -220,6 +220,14 @@ as a bug.
   build-time globbing) and `http-cache-semantics` (GHSA-ch52-4w7c-c8xp, via `got` downloads).
   Every other high/critical advisory still fails the build. Remove an entry when a fix ships.
 
+## Known low-severity hardening opportunities (not implemented)
+
+Found by a read-only review (ARCHITECTURE.md section 134); none is a demonstrated exploit, all are defence in depth. (The web build's static pages now send `Referrer-Policy: no-referrer` and `X-Content-Type-Options: nosniff`, like the desktop static server.)
+
+- The WebSocket upgrade does not check the `Origin` header. A hostile web page can reach `127.0.0.1` but cannot authenticate without a token. A `verifyClient` check rejecting foreign origins would close this.
+- Sensitive IPC handlers (for example `get-operator-connection-info`, `complete-setup`) do not assert `event.senderFrame.url` is the dashboard page. The navigation guard makes a foreign page in that window unlikely.
+- Item 5 above says the renderer receives the operator token "and nothing else"; `get-operator-connection-info` also returns the port.
+
 ## Reporting a problem
 
 This is a small, single-operator application with no network-facing attack surface

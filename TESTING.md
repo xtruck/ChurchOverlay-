@@ -10,6 +10,7 @@ testing strategy changes.
 npm test                # unit + integration tests (no network, no secrets required)
 npm run test:live-groq  # real Groq API call — requires .env with GROQ_API_KEY
 npm run typecheck       # tsc --noEmit
+npm run lint            # ESLint (typescript-eslint recommended) over apps/, packages/, scripts/ TypeScript
 npm run dry-run         # manual end-to-end pipeline exercise, see below
 ```
 
