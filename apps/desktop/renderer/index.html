@@ -77,15 +77,15 @@
       <div class="setup-section">
         <label data-i18n="setup.displayModeLabel">Verse display language</label>
         <div id="setup-display-mode" class="option-list" role="group" data-i18n-aria-label="a11y.verseDisplayLanguage">
-          <button type="button" data-mode="english" class="active" data-i18n="setup.displayMode.english">English only</button>
-          <button type="button" data-mode="french" data-i18n="setup.displayMode.french">French only</button>
-          <button type="button" data-mode="bilingual" data-i18n="setup.displayMode.bilingual">Bilingual (French + English)</button>
+          <button type="button" data-mode="english" class="active" aria-pressed="true" data-i18n="setup.displayMode.english">English only</button>
+          <button type="button" data-mode="french" aria-pressed="false" data-i18n="setup.displayMode.french">French only</button>
+          <button type="button" data-mode="bilingual" aria-pressed="false" data-i18n="setup.displayMode.bilingual">Bilingual (French + English)</button>
         </div>
 
         <label data-i18n="setup.uiLanguageLabel">Interface language</label>
         <div id="setup-ui-language" class="option-list" role="group" data-i18n-aria-label="a11y.interfaceLanguage">
-          <button type="button" data-lang="en" class="active" data-i18n="setup.uiLanguage.en">English</button>
-          <button type="button" data-lang="fr" data-i18n="setup.uiLanguage.fr">French</button>
+          <button type="button" data-lang="en" class="active" aria-pressed="true" data-i18n="setup.uiLanguage.en">English</button>
+          <button type="button" data-lang="fr" aria-pressed="false" data-i18n="setup.uiLanguage.fr">French</button>
         </div>
 
         <label for="setup-audio-profile" data-i18n="setup.audioProfileLabel">Audio responsiveness</label>
@@ -924,7 +924,7 @@
             </div>
             <div class="card glass">
               <h2 class="card-title" data-i18n="overlay.placeTitle">Position and look</h2>
-              <div id="ov-target" class="segmented" role="group">
+              <div id="ov-target" class="segmented" role="group" data-i18n-aria-label="overlay.placeTitle">
                 <button type="button" data-target="name" data-i18n="overlay.target.name">Name</button>
                 <button type="button" data-target="logo" data-i18n="overlay.target.logo">Logo</button>
               </div>
