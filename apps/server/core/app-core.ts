@@ -1514,6 +1514,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         // forwards nothing yet would otherwise look identical to the mic
         // simply not working, the exact complaint this whole feature
         // exists to prevent a repeat of.
+        silenceGate.resetMetrics() // per-session totals; the previous session's peak must not read as this one's
         silenceGate.startCalibration()
         adaptiveGain.reset()
         micHealth.reset()

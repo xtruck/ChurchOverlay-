@@ -147,6 +147,19 @@ export class SilenceGate {
    * calibrated at all — it just keeps its constructor/default threshold
    * until the first calibration completes.
    */
+  /**
+   * Zeroes the diagnostic counters so one session's totals (and its RMS peak)
+   * do not leak into the next. Deliberately separate from startCalibration():
+   * calibration frames still count as received audio within a session.
+   */
+  resetMetrics(): void {
+    this.framesReceived = 0
+    this.framesRejected = 0
+    this.framesForwarded = 0
+    this.rmsSum = 0
+    this.maxRms = 0
+  }
+
   startCalibration(): void {
     this.calibrating = true
     this.calibrationSampleCount = 0
