@@ -1394,6 +1394,9 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       timestamp: Date.now(),
       payload: { ...snapshot, autoGain: adaptiveGain.isEnabled() },
     })
+    // A reading taken while the mic is stopped (e.g. auto-gain toggled between
+    // sessions) is stale: it must not open a dropout or start an echo episode.
+    if (!micRunning) return
     // Section 132: this reading is also what the echo watch and the service
     // health log observe. Speech "at level" means speech heard and not too quiet.
     const now = Date.now()
@@ -1450,6 +1453,8 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   // Section 131: coalescing state for verse:preview (see the case below).
   let previewRunning = false
   let previewQueued: WsMessage | null = null
+  // True between a successful mic:start and mic:stop. Gates the health and echo observers.
+  let micRunning = false
 
   function takeQueuedPreview(): WsMessage | null {
     const queued = previewQueued
@@ -1515,11 +1520,13 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         micHealthAudioMs = 0
         broadcastAsrStatus({ asrHealth: currentAsrHealth(), micCalibrating: true })
         await asr.start()
+        micRunning = true
         logger.info({ component: "app-core", event: "mic.started" })
         return
 
       case "mic:stop":
         // Section 132: nothing is being heard any more; a warning must not outlive the mic.
+        micRunning = false
         serviceHealth.closeMic(Date.now())
         echoWatch.reset()
         syncEchoWarning(Date.now())
@@ -1608,6 +1615,8 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
             next = takeQueuedPreview()
           }
         } finally {
+          // A throw mid-loop must not leave a superseded request queued for the next burst.
+          previewQueued = null
           previewRunning = false
         }
         return
