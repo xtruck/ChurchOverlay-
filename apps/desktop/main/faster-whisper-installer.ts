@@ -9,6 +9,7 @@ import {
   type PinnedFile,
 } from "./faster-whisper-manifest"
 import { atomicWrite, downloadWithProgress, exists, readZip } from "./local-asr-installer"
+import { isNotFoundError } from "../../../packages/shared/type-guards"
 
 /**
  * Downloads the faster-whisper engine on demand (never in the installer):
@@ -227,8 +228,9 @@ export class FasterWhisperInstaller {
     const wanted = await readFile(this.sidecarSource)
     try {
       if ((await readFile(this.sidecarPath)).equals(wanted)) return
-    } catch {
-      // not copied yet
+    } catch (error) {
+      // Only "not copied yet" is expected; a permission or I/O error must surface.
+      if (!isNotFoundError(error)) throw error
     }
     await mkdir(dirname(this.sidecarPath), { recursive: true })
     await atomicWrite(this.sidecarPath, wanted)
