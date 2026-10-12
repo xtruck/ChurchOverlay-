@@ -1,9 +1,10 @@
 # ChurchOverlay — Architecture Specification
 
 Version: 1.1
-Status: Architecture Baseline
-Scope: v1
-Last Updated: 2026-09-21
+Status: Architecture Baseline with approved Phase 2 amendments
+Scope: v1 baseline; approved Phase 2 decisions are recorded in later sections
+Baseline established: 2026-09-21
+Last Updated: 2026-10-12
 
 ## 1. Purpose
 
@@ -1506,9 +1507,10 @@ This document is the architectural baseline for v1.
 
 Recorded here per AGENTS.md section 43's requirement that a scope change be explained
 (why, what changes, what breaks, what tests are required) before it happens, not folded
-in silently. Sections 1-58 above remain the accurate v1 baseline — nothing in them is
-retracted by this section. This section governs what comes *after* v1, not a
-retroactive rewrite of it.
+in silently. Sections 1-58 above remain the historical v1 baseline; approved changes
+and later implementation decisions are recorded explicitly in this section and the
+feature notes that follow. This section governs Phase 2 and does not silently rewrite
+the original v1 baseline.
 
 ### 59.1 Why
 
@@ -1525,22 +1527,24 @@ Two decisions were made together, both confirmed explicitly rather than assumed:
    Groq API key), and no church-specific text or defaults left anywhere in UI copy or
    `package.json` metadata.
 2. **Feature scope.** Three items from section 3's out-of-scope list are approved to
-   move forward: media library & song lyrics, service rundown & scenes, and an AI
-   copilot. Each still requires its own dedicated architecture note before its code
-   starts (section 59.3) — this section approves the *scope change itself* and the
-   *build order*, not a full technical design for all three at once.
+   move forward: a media library, service rundown & scenes, and an AI copilot. Song
+   lyrics were initially considered with the media library but were later dropped
+   from Phase 2 (section 60). Each feature required its own dedicated architecture
+   note before its code started (section 59.3); the notes and subsequent approved
+   refinements are recorded below.
 
 ### 59.2 What changes
 
-- Sections 2-3's v1 scope lock is amended: media library, songs/lyrics, scenes,
+- Sections 2-3's v1 scope lock is amended: media library, scenes,
   rundown/service planning, and "AI agent" (now understood as a broader AI copilot, not
   only the `ReferenceInterpreter` idea in `ROADMAP.md`) are no longer permanently
-  out-of-scope — see the updated markers in section 3. Everything else on that list
-  (local/hybrid ASR, semantic detection, cameras, branding engine as a distinct
-  subsystem, MCP server, ProPresenter/Planning Center integration, automated OBS
-  control, remote/cloud sync, multi-user networking, mobile application, cloud backend,
-  dynamic plugin loading) remains locked out exactly as before. `AGENTS.md` section 4's
-  "Do NOT implement" list is amended the same way.
+  out-of-scope — see the updated markers in section 3. At the time of this original
+  approval, local/hybrid ASR and semantic detection remained out of scope; later,
+  explicitly bounded approvals for those capabilities are recorded in sections 95,
+  99, 113, 121, 124, and 139. Cameras, a general branding engine, MCP, third-party
+  presentation integrations, automatic OBS control, remote/cloud sync, multi-user
+  networking, mobile, a cloud backend, and dynamic plugin loading remain outside the
+  approved scope.
 - A visual refactor (internally "Phase 0") of the existing v1 screens — operator
   dashboard, overlay, and the first-run setup screen — is approved as a single full
   pass: same screens, actions, and data, restyled. This does not touch section 2's
@@ -1549,77 +1553,71 @@ Two decisions were made together, both confirmed explicitly rather than assumed:
   and carries no scope-change requirement on its own. Build order within that pass:
   dashboard first (highest surface area), then overlay, then the setup screen — a
   sequencing choice, not separate rounds of review.
-- Build order for the three approved features, chosen by risk and dependency: **media
-  library & song lyrics**, then **service rundown & scenes**, then **AI copilot**.
-  Media/lyrics is self-contained and never touches the verse pipeline, so it's the
+- Original build order for the three approved features, chosen by risk and dependency:
+  **media library**, then **service rundown & scenes**, then **AI copilot**. The media
+  feature is self-contained and never touches the verse pipeline, so it was the
   safest first real addition. Rundown/scenes builds on having media cues to sequence
   and forces state-machine design work (section 48's pattern: named states, defined
   transitions, invalid transitions handled safely) that the AI copilot will also need.
-  AI copilot goes last — `ROADMAP.md` already documents why its one concretely-evaluated
-  approach (Gemini Live as a `ReferenceInterpreter`) needs real session-management
-  engineering the current Groq batch model doesn't, and "AI copilot" has now been
-  confirmed to mean something broader than that one idea, which raises its own,
-  not-yet-answered design questions (section 59.4).
+  The AI copilot was originally sequenced last because its scope and design carried
+  more risk; later approved AI slices and their limits are documented in sections 121
+  and 123-126.
 - Resolved product decisions for the rundown feature, to remove ambiguity before its
-  architecture note is written: **live voice-detected verse display keeps running in
+  architecture note was written: **live voice-detected verse display keeps running in
   the background while a rundown is active** — starting a rundown does not suspend
-  automatic detection. The exact precedence between a live-detected verse and whatever
-  scene the rundown currently has on air is still open (section 59.4) and must be
-  settled in that feature's own architecture note, not guessed at here.
+  automatic detection. Precedence is now resolved in section 64 and summarized in
+  section 59.4.
 - Resolved product decision for the media library: v1 of that feature supports
   **images and video/audio backgrounds**, not images only. Video/audio pulls in real
   complexity images alone don't (playback control, a new WS event cadence for a
   running clip) — that complexity is now in scope for this feature, not deferred to a
   later one.
 
-### 59.3 What each feature needs before code (unchanged from the original plan)
+### 59.3 Required architecture notes (completed)
 
-Each of the three needs its own short architecture note — which module owns it, which
-interface it uses, which invariant it could affect, how it will be tested, confirmation
-it's the approved Phase 2 scope and not scope creep beyond it:
+Each feature required a short architecture note before implementation, covering module
+ownership, interfaces, affected invariants, tests, and approved scope. The notes are
+recorded in sections 60 and 64 for media and rundown, and sections 121 and 123-126 for
+the approved AI slices. The following summarizes those original design constraints;
+further expansion still requires a separate scope/design decision:
 
-- **Media library & song lyrics** — lowest risk. Needs a new `MediaCue`/`LyricsCue`
-  concept alongside `Verse`, a new WS event type (`media:show`, distinct from
+- **Media library** — the original note specified a `MediaCue` concept alongside
+  `Verse`, a new WS event type (`media:show`, distinct from
   `verse:show` — AGENTS.md section 19 keeps the action registry small and adds types
   only when a real feature needs them, which this now is), and secure file handling for
   operator-selected local images/video/audio: either a scoped Electron `dialog` picker
   or a dedicated IPC channel where the main process reads the file and the renderer
   never receives a raw filesystem path (AGENTS.md section 28's secrets/renderer-
-  isolation reasoning extended to arbitrary local files). Nothing existing breaks; this
-  is additive. Tests needed: a new source unit-tested the way `FreeApiSource` is, a
-  WS/action-registry test for `media:show`, and at least one deliberate
-  "malicious/traversal path" test — AGENTS.md section 15's "no arbitrary filesystem
-  paths from untrusted WS payloads" applies directly here.
-- **Service rundown & scenes** — medium risk. A real new stateful subsystem: a
+  isolation reasoning extended to arbitrary local files). The design was additive and
+  required tests for import/storage, `media:show` validation, and malicious/traversal
+  paths from untrusted payloads.
+- **Service rundown & scenes** — the original note called for a stateful subsystem,
+  implemented as a
   pre-planned sequence of scenes (verse mode, an announcement slide, a media cue,
   blank) the operator steps through, replacing today's single implicit state (verse
   showing or cleared) with an explicit state machine (named states, defined
   transitions, per section 48). New operator-only WS commands (`scene:next`,
   `scene:previous`, `scene:goto`, `rundown:load`), schema-validated the same way
-  `verse:override` is. Its architecture note must settle the precedence question left
-  open in section 59.4.
-- **AI copilot** — highest risk by a clear margin. `ROADMAP.md`'s existing
-  Gemini-Live-as-`ReferenceInterpreter` writeup is one candidate building block, not
-  the whole feature now that "AI copilot" has been confirmed to mean something
-  broader (section 59.4 has the open question). Whatever form it takes, any
-  AI-proposed Bible reference must still pass through the same hallucination-guard
-  pipeline `RegexDetector`'s output does today (section 15) — an AI-proposed reference
-  is never trusted directly, regardless of which AI approach is eventually chosen. This
-  item does not proceed to code before its own dedicated architecture review.
+  `verse:override` is. Its implemented precedence rules are specified in section 64
+  and summarized in section 59.4.
+- **AI copilot** — highest risk by a clear margin. The approved, implemented AI scope
+  is the optional, key-gated helpers in sections 121 and 123-126, not a general-purpose
+  agent. Any AI-proposed Bible reference remains an untrusted candidate and must pass
+  through the validation path in section 15; proposals remain suggestions rather than
+  directly controlling the overlay. Further AI capabilities require their own review.
 
-### 59.4 Open questions carried forward (not decided by this section)
+### 59.4 Decisions and remaining questions
 
-- **Rundown/live-detection precedence.** Confirmed: live detection keeps running
-  during a rundown. Not yet decided: when both a live-detected verse and the rundown's
-  current scene want the overlay at the same moment, which wins, and how does control
-  return afterward? This shapes the rundown state machine's actual transition table and
-  must be settled in that feature's architecture note before its code starts.
-- **AI copilot's actual shape.** Confirmed broader than the `ReferenceInterpreter`
-  idea alone. Not yet decided: sermon/topic assistance, auto-generated slide
-  suggestions, a chat-style assistant in the dashboard, the original reference-proposal
-  idea, or some combination — each has a materially different risk profile and none is
-  assumed here. This must be scoped concretely in that feature's own dedicated
-  architecture review, per section 59.3, before any code.
+- **Rundown/live-detection precedence — resolved in section 64.** Live detection,
+  manual override, and voice navigation take precedence over the current rundown scene.
+  The scene is paused and resumes when the interrupting verse is cleared; an explicit
+  rundown navigation action discards the pause and takes control. This is implemented
+  and specified by the rundown state machine in section 64.
+- **AI copilot — scoped in later approved notes.** The implemented scope is the
+  optional, key-gated, operator-only helpers and sermon suggestions described in
+  sections 121 and 123-126. They do not receive audio, bypass verse validation, or
+  directly control the overlay. A free-form chat agent or additional AI capabilities
+  are not approved by those notes and require a separate scope and architecture review.
 
 ## 60. Phase 2 Feature Note — Media Library
 
@@ -1628,9 +1626,9 @@ Song Lyrics." Lyrics/song-text-block support is dropped from Phase 2 entirely
 (confirmed explicitly) — this feature is Media Library only (images, video, audio).
 `ROADMAP.md` is updated to match.
 
-The dedicated architecture note section 59.3 requires before this feature's code
-starts, following AGENTS.md section 56's checklist. This is design only — nothing in
-this section is implemented yet.
+This section records the architecture note required by section 59.3 and the design
+constraints used for implementation. The media library is implemented; later
+hardening and implementation details are recorded in sections 74 and 112.
 
 ### 60.1 Which module owns this
 
@@ -2864,12 +2862,14 @@ reference into the pre-existing quick-fire input already was.
 
 ### 65.7 AI sermon-notes copilot (strictly separate side channel)
 
-**Confirmed explicitly with the user**: uses Groq's chat-completion API (the same
+**Original scope decision**: this feature uses Groq's chat-completion API (the same
 provider/API-key relationship already established for ASR, not a second AI vendor)
 to periodically summarize the rolling final-transcript text into short bullet-point
-notes. This is the concrete scope decision section 59.4/61.5 left open for "AI
-copilot" — sermon/topic assistance, specifically, not the broader "chat-style
-assistant" or "reference-proposal" ideas also once floated; those remain unscoped.
+notes. It was the first narrowly approved "AI copilot" slice: sermon/topic assistance,
+not a general chat assistant. Later approvals added bounded reference repair,
+transcript cleanup, semantic verse suggestions, an operator-only sermon copilot, and
+post-service extras (sections 121 and 123-126). A free-form chat assistant and any
+capabilities beyond those documented slices remain unapproved.
 
 **The hard boundary, non-negotiable**: this side channel NEVER feeds into, informs,
 or is consulted by the verse-detection/hallucination-guard pipeline in either
@@ -4717,10 +4717,16 @@ protocol validation, failure behavior, and relevant tests exist in the repositor
   release gates before shipping packaged NDI support.
 - Rundown persistence across restart remains deferred; the current rundown is
   intentionally in-memory only.
-- The broader AI copilot remains unscoped. Sermon-note summarization is the only
-  approved AI side channel and is isolated from verse detection.
-- Additional translations, semantic detection, local/hybrid ASR, cloud sync,
-  mobile, and automatic OBS control remain outside the locked scope.
+- AI features remain optional, key-gated, bounded, and subject to the validation and
+  suggestion-only constraints in sections 121 and 123-126. Live-service prompt quality
+  and accuracy have not yet been measured.
+- Local/hybrid ASR and semantic verse suggestions are approved only in their documented
+  bounded forms (sections 95, 99, 113, 121, 124, and 139); their target-hardware
+  accuracy and latency still need evaluation before relying on them in production.
+- NDI packaging and redistribution remain release gates.
+- A general offline Bible database, vector search, cloud synchronization, mobile
+  application, automatic OBS control, and unrestricted/free-form AI chat remain outside
+  the approved scope.
 
 ### 83.4 Change discipline for the next feature
 
@@ -5190,7 +5196,8 @@ clear server state.
 **Why.** Real service recordings put the Groq batch round-trip at p50 215 ms but p90 ≈ 3.3 s (bimodal); the batch path waits for a whole chunk before anything is transcribed. Deepgram streaming returns finals within a few hundred ms of the speaker pausing.
 
 **What.**
-- `planAsr()` (`server/asr/asr-strategy.ts`, pure, unit-tested): with both keys the default is *streaming-first* (Deepgram primary, Groq secondary); *batch-first* keeps the previous behavior. Deepgram-only and Groq-only are first-class plans — the Deepgram-only setup the setup screen always accepted used to crash at startup because a `GroqProvider` was constructed unconditionally.
+
+- `planAsr()` (`server/asr/asr-strategy.ts`, pure, unit-tested): with both keys the default is *streaming-first* (Deepgram primary, Groq secondary); *batch-first* keeps the previous behavior. Deepgram-only and Groq-only are first-class plans — the Deepgram-*only* setup the setup screen always accepted used to crash at startup because a `GroqProvider` was constructed unconditionally.
 - `FailoverAsrProvider` gains a `trigger`: `"sustained-rate-limit"` (batch primary, unchanged) or `"primary-error"` (streaming primary: a dropped socket, failed connect or failed send switches, and the failed frame is re-routed). It forwards `onUtteranceEnd` to the live provider — wrapping Groq in a failover previously lost utterance-aligned flushing silently — and forwards failover events from nested chains.
 - `DeepgramProvider`: KeepAlive every 4 s of silence (Deepgram closes idle sockets after ~10 s, and SilenceGate stops forwarding during pauses), `Finalize` on SilenceGate utterance end, `endpointing=300`, and a short boosted biblical vocabulary (`keywords` / nova-3 `keyterm`) that deliberately excludes common names.
 - Bilingual display listens in French on Deepgram (`deepgramLanguageFor`) instead of Deepgram's English default.
@@ -5222,6 +5229,7 @@ In the same utterance, a valid explicit reference now supersedes relative naviga
 ## 99. Offline whisper.cpp Backup (moved from ROADMAP "Deferred")
 
 **What.** The last link of the chain: Deepgram → Groq → local Whisper, only when the operator enabled it and it is installed.
+
 - `LocalAsrInstaller` downloads on demand into userData (never in the installer, never in asar): whisper.cpp **v1.8.0** Windows x64, SHA-256 verified before extraction, only `whisper-server.exe` + 4 DLLs written (minimal central-directory zip reader; files are chosen by exact name, so no zip-slip); model `base` (142 MB) or `small` (466 MB) verified against whisper.cpp's published SHA-1.
 - `WhisperServerProcess` keeps the model loaded, waits for `/health`, restarts with bounded backoff, and is always stopped in `shutdown()`.
 - `LocalWhisperProvider`: utterance-aligned WAV batches with per-request language and a biblical prompt, one request at a time, bounded backlog (drops the oldest rather than falling behind).
@@ -5261,6 +5269,7 @@ church says constantly, and one wrong-verse bug:
 - `"le chapitre d'après"` / `"le verset d'avant"`: no command at all.
 
 **What.**
+
 - `normalizeSpokenReferences()` (still the shared pre-pass for both detectors): a French/English
   preposition directly in front of the *verse* keyword is dropped (`"au verset 16"` →
   `"verset 16"`); positional ordinals are rewritten into the `"<keyword> <number>"` order every
@@ -5277,6 +5286,7 @@ church says constantly, and one wrong-verse bug:
   (U+2019, U+02BC, U+00B4, backtick) fold onto the straight one before phrase matching, so
   `"l’écran"` and `"l'écran"` are one phrase.
 - The in-app Voice Commands reference (section 78) lists the new phrases.
+
 
 **Deliberately not done, and why.**
 - The preposition is *not* stripped in front of `"chapitre"`. The chapter side is already accepted
@@ -5311,6 +5321,7 @@ phrasings, never over the text the app actually reads: the 31,170 bundled
 Louis Segond verses, which QuoteMatcher fingerprints word-for-word. Running
 `correctTranscription()` over every verse found **3,290 verses (10.6%)**
 rewritten — almost all of it damage, not repair:
+
 - Spoken numbers were rewritten into digits ("quatre-vingts" to "80"),
   so the verse's own 5-word runs no longer matched what a preacher reads.
 - Accents were stripped ("Ou es-tu?" for "Où es-tu?").
@@ -5319,6 +5330,7 @@ rewritten — almost all of it damage, not repair:
   annuler", "la somme" to "la psaume").
 
 **What.** Two rules now keep the corrector off ordinary and quoted speech:
+
 1. The corrector never rewrites spoken numbers and never strips accents.
    Rewriting a *spoken reference* into the compact written shape belongs to
    `normalizeSpokenReferences()` — the detector's own context-gated,
@@ -5357,6 +5369,7 @@ normalizer 0.03 ms, RegexDetector 0.04 ms, quote match 0.008 ms at p50). The
 variable part is the Bible lookup, so that is what the readout exposes.
 
 **What.**
+
 - `LatencyTracker` (`server/core/latency-tracker.ts`): the last 100 samples,
   nearest-rank p50/p95, max, last. Nulls when empty — never an invented
   number.
@@ -6574,29 +6587,35 @@ Every colour comes from the palette's seven roles through the existing CSS varia
 **What the reviews cleared** (read, found correct): a partial transcript cannot reach verse detection (`passesTranscriptGate`; the one `detector.detect` call on a partial only feeds the near-miss log); provider confidence is never invented (Deepgram sets it only when the API sends a number; Groq and local Whisper set none); float-to-int16 conversion clamps and rounds, the adaptive-gain limiter cannot overflow, endianness is explicit little-endian; calibration and gain state reset on `mic:start`; the local Whisper backlog, the Groq buffer and the auto-return backoff are bounded; Groq, local Whisper and the Deepgram connect all have timeouts.
 
 **Fixed (each with a test):**
-- **Deepgram socket leaked when `stop()` ran during connect** (`DeepgramProvider`, section 86). `stop()` closed the socket only if already open. A socket still connecting then opened, `start()` carried on, and a live, billed connection kept delivering transcripts after the mic was stopped. `start()` now closes a socket that finished opening after a stop and returns quietly (a deliberate stop is not an error). Reproduced first: the new test failed on the old code.
+
+- **Deepgram socket leaked when `stop()` ran during connect** (`DeepgramProvider`, section 86). `stop()` closed the socket only if already open. A socket still connecting then opened, `start()` carried on, and a live, *billed* connection kept delivering transcripts after the mic was stopped. `start()` now closes a socket that finished opening after a stop and returns quietly (a deliberate stop is not an error). Reproduced first: the new test failed on the old code.
 - **Failover `stop()` could leave the secondary running** (`FailoverAsrProvider`, section 95). `stop()` did not wait for an in-flight activation, so a secondary whose `start()` was pending finished starting after the stop. It now waits for the activation, and stops the primary even if `secondary.stop()` throws. Both cases reproduced first.
 - **The web build lost the end-of-utterance flush** (`HybridAsrProvider`, section 80). `AppCore` finds `onUtteranceEnd`, `setCurrentVerseRef` and `discardBufferedAudio` by name (`"x" in asr`); the hybrid wrapper had none, so in web mode Groq fell back to fixed-length cuts and never got the verse-aware prompt. They are now forwarded to the real provider (and are no-ops without a key). Behavior change: web mode now cuts at sentence boundaries like the desktop app. Not forwarded on purpose: `onRateLimitedSustained` (hybrid has no second provider to fail over to).
 - **Discarded audio is now logged** (`GroqProvider.discardBufferedAudio`, called on failover). Up to the throttled buffer (15 s) was deleted with no trace; it now logs `asr.audio-discarded` with the duration (AGENTS.md sections 11 and 46).
 - **A Groq 429 no longer loses the refused chunk's audio** (`GroqProvider.transcribeAndEmit`, section 80). When a chunk's request got HTTP 429 the audio was already detached from the buffer and never re-queued, although the operator is told transcription "resumes in Ns"; a verse spoken in that chunk was lost. The chunk is now put back at the front of the buffer (older audio first), within the existing `MAX_THROTTLED_BUFFER_MS` bound; if it cannot fit it is dropped and logged as `asr.audio-discarded` with `reason: rate-limited-buffer-full`. Reproduced first: the second request carried 1 s instead of 2 s. Timeouts and network failures are NOT re-queued yet (below).
 - **Silence-gate metrics no longer accumulate across sessions** (`SilenceGate.resetMetrics`, called at `mic:start`). The counters and the RMS peak were never reset, so `mic.stopped` and the status payload mixed every session since the process started, which misleads the "nothing is detected" diagnosis. `startCalibration()` is deliberately unchanged (calibration frames still count within a session).
 
+
 **Reported but NOT changed, and not verified by me** (the reviewer's claims; each needs its own check and, where it changes ASR behavior, a measurement or a live test first):
+
 - Groq still drops the audio of a chunk whose request TIMES OUT or fails on the network (only the 429 case is re-queued); the same re-queue is the fix idea, but a timeout may mean the request is still being processed, so it needs a decision on duplicate text first.
 - `GroqProvider.stop()` can lose the tail of a sermon if the final flush is denied by the rate limiter.
 - The Groq seam text de-duplication seems to run on every chunk, not only overlapping ones, which could strip a deliberately repeated reference and emit an empty final.
 - A final from the primary that arrives after a failover is dropped without a log; `handleAudioFrame` skips the end-of-utterance flush when `sendAudio` throws; `lastAssembledText` in `AppCore` is never reset, so a byte-identical repeated assembled reference may be suppressed.
 
 **Verified by reading, NOT changed** (design needed):
+
 - The dashboard's audio `onmessage` handler returns silently when the WebSocket is not open and never checks `ws.bufferedAmount`: frames are dropped without a count while the UI still shows the mic as active, and a stalled socket can buffer without limit (AGENTS.md sections 11, 22 and 36). The fix needs a counter, a visible "audio not reaching the server" state and a cap, in the dashboard page (which has no test harness); the server also ignores frame `sequence` gaps. It should be its own change.
 - After a `mic:stop`, a still-pending `mic:start` can set `micRunning` (section 134) to true again, because the start resolves after the stop. Narrow (the dashboard sends the pair in order) and I did not reproduce it.
 
 **Local provider: web and GitHub research (sections 99, 113, 118), nothing here is implemented or measured.** The owner asked for ideas from GitHub and the web. Findings, with sources: the local faster-whisper sidecar already does what the common guidance recommends (`vad_filter` with a 300 ms silence window, `condition_on_previous_text=False`, `beam_size=1`, a no-speech threshold, log-probability and compression-ratio limits, a repeated-phrase guard, French/English-only language choice, a prompt-echo guard); whisper.cpp runs with `-nt -sns`. So the research mostly confirms the design. What it adds:
+
 - **Model size is the main lever the app has not used.** Only `base` and `small` ship for both local engines (`local-asr-installer.ts`, `faster-whisper-manifest.ts`). OpenAI's Whisper (github.com/openai/whisper, MIT, last release v20250625) offers `large-v3-turbo`, a multilingual model far faster than `large-v3`; it would improve French accuracy but is much larger and, on a CPU-only laptop, may not keep up with live speech. The open CUDA gate (ROADMAP item 16) decides whether it is usable: it needs a measurement on the church's hardware, a pinned and hashed manifest entry, and a disk-space warning, not a guess.
 - **whisper.cpp has its own VAD** (a `--vad` flag with a separate Silero model file appears in its changelog and CLI). I could not confirm that the bundled v1.8.0 `whisper-server` accepts it, so the first step is `whisper-server --help` on the real binary. The app already gates silence upstream (section 9), so the expected gain is small.
 - **Streaming instead of per-utterance batches** (`ufal/whisper_streaming`, "LocalAgreement-2": re-decode a growing buffer and commit only the words two consecutive passes agree on) would show text earlier. It is the biggest change: the local engine currently emits a final only at the end of an utterance, and committed words would have to be treated as partials (never reaching detection, AGENTS.md section 8) until the utterance ends.
 - **A different engine family:** OpenWhispr (github.com/OpenWhispr/openwhispr, MIT, the project the sidecar credits) now also offers NVIDIA Parakeet models through sherpa-onnx. Its README does not state French support, latency or hardware needs, so none of that is verified; it would be a third engine with a new native runtime, a new installer and licence review.
 - **The owner also asked for the local provider to be "main".** Today local is deliberately the last link of the chain (cloud primary, never a silent switch: sections 95, 99, 113). Making it the default is an architecture decision, not a tuning change; the numbers it needs (latency and French/English accuracy on the target machine, using the WER tooling of section 87) do not exist yet. Recorded as a question for the owner, not changed.
+
 Sources: github.com/openai/whisper, github.com/ufal/whisper_streaming, github.com/SYSTRAN/faster-whisper, github.com/OpenWhispr/openwhispr, and general web guidance on VAD and hallucination settings (blog-level, not authoritative).
 
 **Tests.** `deepgram-provider.test.ts` (stop during connect), `failover-provider.test.ts` (stop waits for activation; a throwing secondary still stops the primary), `hybrid-provider.test.ts` (forwarding), `groq-provider.test.ts` (discard log; a 429'd chunk is re-queued and sent with the next flush; the re-queue stays bounded and a forced drop is logged), `silence-gate.test.ts` (`resetMetrics`).
@@ -6606,6 +6625,7 @@ Sources: github.com/openai/whisper, github.com/ufal/whisper_streaming, github.co
 **Decision.** The owner asked in chat for the local provider to be "main". Offered the choices, the owner picked an **optional offline-first mode**: a setting the operator turns on, with the default left cloud-first. Making local the default for everyone was not chosen, because no latency or French/English accuracy measurement of the local engines on the church's hardware exists yet (section 138; ROADMAP item 16 still lists CUDA and a real-service comparison as open).
 
 **What it is.** `AsrStrategy` (section 95) gains a third value, `"offline-first"`. The provider chain is built by the same `asrChain()` and nested `FailoverAsrProvider` composition as today; the only differences are the order and the trigger:
+
 - Order: `local -> [cloud chain as before]` instead of `[cloud chain] -> local`. The cloud part keeps the streaming-first order (Deepgram then Groq) when both keys exist, or the single configured cloud provider.
 - Trigger: the local provider, as a primary, uses `"primary-error"` (like Deepgram): a failed start, a failed send or a reported engine error moves audio to the next provider and announces it through the existing failover status. Automatic return to the local engine uses the same bounded backoff as the Deepgram auto-return (section 115); the operator can also return manually (`asr:return-primary`).
 - **Unchanged:** the default (`streaming-first`) and `batch-first` chains are byte-for-byte the same; the engine is still installed and enabled only by the operator (section 99/113), never downloaded at service start; a saved config without the new value behaves as before; the web build does not read the strategy and is unaffected; no WebSocket action, no provider-SDK import in the core, no change to detection, validation or the verse path.
@@ -6613,6 +6633,7 @@ Sources: github.com/openai/whisper, github.com/ufal/whisper_streaming, github.co
 **No silent fallback (AGENTS.md section 46).** If `offline-first` is selected but the local engine is not enabled, not installed or failed its checks, the chain falls back to the cloud-first order, and that is visible: a `asr.offline-first-unavailable` warning is logged at service start, and the dashboard shows "Offline-first is selected but the local engine is not ready: using cloud" in the strategy note and keeps the provider line truthful (it names the providers actually carrying audio). The offline-first button is enabled only while the local engine is ready (or already selected, so it can be turned off).
 
 **Trade-offs, stated plainly.**
+
 - The local engines emit a final transcript only at the end of an utterance and no partials (sections 99, 113), and the cloud streaming primary was chosen for sub-second finals (section 95: Groq's batch round trip was measured at p90 about 3.3 s). Offline-first therefore trades speed for independence from the internet. Whether the local engine is fast and accurate enough on the church's machine must be measured on that machine (one laptop was measured, below); use the section 87 WER tooling and a real service before relying on it.
 - A transient local engine error now fails over to the cloud (it is a primary with the `primary-error` trigger). That is the intended visible degradation, not a silent switch.
 - At least one cloud key is still required at setup (`planAsr`); a fully key-less install is a separate change.
