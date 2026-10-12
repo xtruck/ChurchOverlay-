@@ -608,7 +608,10 @@ test("GroqProvider: does not flush again until another full chunk accumulates, a
   assert.equal(results.length, 2)
   assert.equal(results[0]?.sequence, 1)
   assert.equal(results[1]?.sequence, 2)
-  assert.equal(results[0]?.correlationId, results[1]?.correlationId)
+  // AGENTS.md section 23: each utterance is its own processing chain.
+  assert.ok(results[0]?.correlationId)
+  assert.ok(results[1]?.correlationId)
+  assert.notEqual(results[0]?.correlationId, results[1]?.correlationId)
 })
 
 test("GroqProvider: stop() flushes any remaining buffered audio below the chunk threshold", async () => {

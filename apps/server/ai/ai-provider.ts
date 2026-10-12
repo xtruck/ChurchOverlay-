@@ -1,5 +1,6 @@
 import { ClaudeClient, type TextCompleter } from "./claude-client"
 import { GroqTextClient } from "./groq-text-client"
+import { GuardedTextCompleter, type GuardedTextCompleterOptions } from "./guarded-text-completer"
 
 /**
  * Which service runs the optional AI helpers (ARCHITECTURE.md section 128).
@@ -42,8 +43,16 @@ export function aiProviderReady(config: AiProviderConfig): boolean {
 }
 
 /** The completer for the selected provider, or undefined (helpers inert) when none is ready. */
-export function createTextCompleter(config: AiProviderConfig, fetchImpl?: typeof fetch): TextCompleter | undefined {
+export function createTextCompleter(
+  config: AiProviderConfig,
+  fetchImpl?: typeof fetch,
+  guard?: GuardedTextCompleterOptions
+): GuardedTextCompleter | undefined {
   if (!aiProviderReady(config)) return undefined
-  if (selectedAiProvider(config) === "groq") return new GroqTextClient({ apiKey: config.groqApiKey as string, fetchImpl })
-  return new ClaudeClient({ apiKey: config.anthropicApiKey as string, fetchImpl })
+  const inner: TextCompleter =
+    selectedAiProvider(config) === "groq"
+      ? new GroqTextClient({ apiKey: config.groqApiKey as string, fetchImpl })
+      : new ClaudeClient({ apiKey: config.anthropicApiKey as string, fetchImpl })
+  // Bounded failure strategy (AGENTS.md section 38): a failing model is not hammered once per transcript.
+  return new GuardedTextCompleter(inner, guard)
 }

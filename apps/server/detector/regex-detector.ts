@@ -86,7 +86,7 @@ const REFERENCE_PATTERN =
 // which still refuses to match a run-together "abacuc4verset2" with no
 // separator at all.
 const SPOKEN_REFERENCE_PATTERN =
-  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(\d{1,3})[\s,]+(?:chapitre|chapter|verset|verse|le\s+verset|the\s+verse)[\s,]+(\d{1,3})(?![\p{L}\d])/giu
+  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(\d{1,3})[\s,]+(?:chapitre|chapter|versets?|verses?|le\s+versets?|the\s+verses?)[\s,]+(\d{1,3})(?![\p{L}\d])/giu
 
 // CORRECTIF (found investigating a verse-range navigation question,
 // 2026-09-23): the pattern above only covers "BOOK NUMBER KEYWORD NUMBER"
@@ -112,7 +112,7 @@ const SPOKEN_REFERENCE_PATTERN =
 // above.
 
 const SPOKEN_REFERENCE_DOUBLE_KEYWORD_PATTERN =
-  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)(?:[\s,]+(?:au|à|a|dans\s+le|in|at))?[\s,]+(?:chapitre|chapter)[\s,]+(\d{1,3})[\s,]+(?:le\s+|the\s+)?(?:verset|verse)[\s,]+(\d{1,3})(?![\p{L}\d])/giu
+  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)(?:[\s,]+(?:au|à|a|dans\s+le|in|at))?[\s,]+(?:chapitre|chapter)[\s,]+(\d{1,3})[\s,]+(?:le\s+|the\s+)?(?:versets?|verses?)[\s,]+(\d{1,3})(?![\p{L}\d])/giu
 
 // The written/dictated compact forms ASR actually produces for a pause
 // between chapter and verse: "Jean 3.16", "Romains 8, 28", and the bare
@@ -140,13 +140,45 @@ const STOPWORDS = new Set([
   "le", "la", "les", "un", "une", "des", "de", "du", "et", "ou", "mais",
   "est", "sont", "etait", "dans", "sur", "pour", "par", "avec", "que",
   "qui", "ce", "cette",
-  "chapitre", "chapter", "verset", "verse",
+  "chapitre", "chapter", "verset", "verse", "versets", "verses",
 ])
 
+/**
+ * Typographic forms an ASR (or its smart-formatting) can emit around a
+ * reference, folded to the plain "Jean 3:16" the patterns expect: zero-width
+ * characters and a BOM are dropped, the full-width colon becomes ":", and the
+ * French typographic space around a colon between digits ("Jean 3 : 16",
+ * with a normal, no-break or narrow no-break space) is closed up. Pure text
+ * folding; it adds no book knowledge and no reference the speaker did not say.
+ */
+function normalizeAsrTypography(text: string): string {
+  return text
+    .replace(/[​-‍⁠﻿]/g, "")
+    .replace(/：/g, ":")
+    .replace(/(\d)\s*:\s*(\d)/g, "$1:$2")
+}
+
+// Book aliases that are also everyday words with numbers after them ("un grand
+// nombre 12 14 personnes"): accepted only with "verset"/"chapitre" or a colon.
+const COMPACT_FORM_EXCLUDED_WORDS = new Set(["nombre"])
+
+/** Words an operator approved as mis-hearings of a book name (see learned-aliases.ts). Read at detect time, so approvals apply live. */
+export interface LearnedAliasLookup {
+  get(word: string): string | undefined
+}
+
+export type RegexDetectorOptions = { readonly learnedAliases?: LearnedAliasLookup }
+
 export class RegexDetector implements VerseDetector {
+  private readonly learnedAliases: LearnedAliasLookup | undefined
+
+  constructor(options: RegexDetectorOptions = {}) {
+    this.learnedAliases = options.learnedAliases
+  }
+
   detect(rawText: string): VerseReference[] {
     const references: VerseReference[] = []
-    const text = normalizeSpokenReferences(rawText, isCatalogBookWord)
+    const text = normalizeSpokenReferences(normalizeAsrTypography(rawText), isCatalogBookWord)
 
     for (const pattern of [
       REFERENCE_PATTERN,
@@ -160,8 +192,17 @@ export class RegexDetector implements VerseDetector {
         const rawVerse = match[3]
         if (!rawBook || !rawChapter || !rawVerse) continue
 
-        const book = normalizeBookName(rawBook)
+        let book = normalizeBookName(rawBook)
         if (STOPWORDS.has(book)) continue
+        // An operator-approved mishearing, in EXPLICIT forms only (a colon, or "verset"/"chapitre"): a learned
+        // word may also be an everyday word, so it never matches the bare "word N M" form.
+        if (!CATALOG_IDS.has(book) && this.learnedAliases && pattern !== COMPACT_REFERENCE_PATTERN) {
+          const learned = this.learnedAliases.get(stripAccents(rawBook).toLowerCase())
+          if (learned !== undefined) book = learned
+        }
+        // Bare "word N M" with an ordinary-word book ("un grand nombre 12 14 personnes")
+        // is not a reference; those words need an explicit keyword or colon.
+        if (pattern === COMPACT_REFERENCE_PATTERN && COMPACT_FORM_EXCLUDED_WORDS.has(stripAccents(rawBook).toLowerCase())) continue
 
         references.push({
           book,
@@ -377,6 +418,12 @@ export const PHONETIC_BOOK_ALIASES: Readonly<Record<string, string>> = {
   neemie: "nehemiah",
   nehemi: "nehemiah",
   nehemia: "nehemiah",
+  // Numbers — Observed live (2026-10-12): "dans nombre un, le verset 2" heard
+  // twice for "Nombres 1:2" (the ASR dropped the plural -s). "nombre" is also
+  // an ordinary French word, so this is the same accepted-risk shape as
+  // "Jean"/"Marc": it only matches inside the "BOOK N:M" pattern, and the
+  // known-valid index still decides whether the reference exists.
+  nombre: "numbers",
   // Esther — French "H"-drop mishearing. No English alias added: "Easter"
   // is a real, unrelated English word one "H"-drop away from "Esther",
   // and the collision is worth avoiding even at this pattern's low risk.

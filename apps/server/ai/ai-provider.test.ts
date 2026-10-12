@@ -14,7 +14,7 @@ test("isAiProvider: only the two known providers", () => {
 test("no choice and an Anthropic key: Anthropic, exactly as before this option existed", () => {
   const config = { anthropicApiKey: "sk-ant-x", groqApiKey: "gsk_x" }
   assert.equal(selectedAiProvider(config), "anthropic")
-  assert.ok(createTextCompleter(config) instanceof ClaudeClient)
+  assert.ok(createTextCompleter(config)?.inner instanceof ClaudeClient)
 })
 
 test("no choice and only a Groq key: no AI until the operator picks one (the transcription key alone does not start sending text)", () => {
@@ -26,12 +26,12 @@ test("no choice and only a Groq key: no AI until the operator picks one (the tra
 
 test("an explicit Groq choice uses the Groq key, even when an Anthropic key exists", () => {
   const config = { aiProvider: "groq" as const, anthropicApiKey: "sk-ant-x", groqApiKey: "gsk_x" }
-  assert.ok(createTextCompleter(config) instanceof GroqTextClient)
+  assert.ok(createTextCompleter(config)?.inner instanceof GroqTextClient)
 })
 
 test("an explicit Anthropic choice uses Anthropic", () => {
   const config = { aiProvider: "anthropic" as const, anthropicApiKey: "sk-ant-x", groqApiKey: "gsk_x" }
-  assert.ok(createTextCompleter(config) instanceof ClaudeClient)
+  assert.ok(createTextCompleter(config)?.inner instanceof ClaudeClient)
 })
 
 test("no silent fallback: a chosen provider without its key leaves the helpers inert instead of using the other one", () => {

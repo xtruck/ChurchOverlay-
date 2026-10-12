@@ -1,5 +1,6 @@
 import { scrubSecrets } from "../../../packages/shared/logger"
 import type { TextCompleter } from "./claude-client"
+import type { AiAvailability } from "./guarded-text-completer"
 
 /**
  * The free-tier alternative to ClaudeClient (ARCHITECTURE.md section 128): the
@@ -25,7 +26,12 @@ export type GroqTextClientOptions = {
   readonly fetchImpl?: typeof fetch
 }
 
-export const DEFAULT_GROQ_TEXT_MODEL = "llama-3.1-8b-instant"
+// Same model as SermonNotesGenerator. The Llama production entries on Groq's
+// Supported Models page are enterprise-gated; on a normal developer key they
+// answer 404 ("does not exist or you do not have access"), which silently
+// disabled every AI helper (live log 2026-10-12). gpt-oss-20b has published
+// developer-plan limits.
+export const DEFAULT_GROQ_TEXT_MODEL = "openai/gpt-oss-20b"
 const DEFAULT_URL = "https://api.groq.com/openai/v1/chat/completions"
 const DEFAULT_TIMEOUT_MS = 8_000
 const DEFAULT_MAX_TOKENS = 300
@@ -42,6 +48,40 @@ export class GroqTextClient implements TextCompleter {
     this.model = options.model ?? DEFAULT_GROQ_TEXT_MODEL
     this.url = options.url ?? DEFAULT_URL
     this.fetchImpl = options.fetchImpl ?? fetch
+  }
+
+  /**
+   * One-time startup check that this key can use the configured model: it lists the
+   * models the key may use and looks for ours. Spends no completion. Only a definitive
+   * answer counts: a network error, a timeout or an unexpected body is "unknown", never
+   * a failure, so a flaky connection at startup cannot switch the helpers off.
+   */
+  async checkAvailability(): Promise<AiAvailability> {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS)
+    try {
+      const response = await this.fetchImpl(this.url.replace(/\/chat\/completions$/, "/models"), {
+        method: "GET",
+        headers: { authorization: `Bearer ${this.apiKey}` },
+        signal: controller.signal,
+      })
+      if (response.status === 401 || response.status === 403) return "auth"
+      if (!response.ok) return "unknown"
+      const body = (await response.json()) as { data?: unknown }
+      if (!Array.isArray(body.data)) return "unknown"
+      const ids = body.data.flatMap((entry) =>
+        typeof entry === "object" && entry !== null && typeof (entry as { id?: unknown }).id === "string"
+          ? [(entry as { id: string }).id]
+          : []
+      )
+      if (ids.length === 0) return "unknown"
+      return ids.includes(this.model) ? "ok" : "model-unavailable"
+    } catch {
+      // Documented: any failure to ask is "could not tell", reported as unknown to the caller.
+      return "unknown"
+    } finally {
+      clearTimeout(timer)
+    }
   }
 
   async complete(request: { system: string; user: string; maxTokens?: number; timeoutMs?: number }): Promise<string> {

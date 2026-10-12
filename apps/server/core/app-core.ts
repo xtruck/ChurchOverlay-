@@ -35,6 +35,7 @@ import { scrubSecrets } from "../../../packages/shared/logger"
 import { InterpreterEchoGuard, guessSpokenLanguage } from "./interpreter-echo-guard"
 import { SuggestionArbiter, suggestionKey } from "./suggestion-arbiter"
 import { CallBudget, type TextCompleter } from "../ai/claude-client"
+import type { AiHelpersStatus, AiHelpersStatusSource } from "../ai/guarded-text-completer"
 import { ReferenceRepairer } from "../ai/reference-repairer"
 import { LiveTranslator } from "../ai/live-translator"
 import { ClaudeSermonNotes } from "../ai/claude-sermon-notes"
@@ -64,6 +65,8 @@ import { MediaPlaybackController } from "../media/media-playback-controller"
 import { NavigationCommandDetector, containsCatalogBookName } from "../detector/navigation-command-detector"
 import { isCatalogBookWord } from "../detector/regex-detector"
 import { resolveNavigationCommand } from "../verse/resolve-navigation-command"
+import { suggestNearestReferences } from "../verse/nearest-references"
+import { extractAnnouncedChapter } from "../detector/announced-context"
 import { RundownController } from "../rundown/rundown-controller"
 import { parseSermonPrep, type SermonPrepParseOutcome, type SermonPrepResult } from "../rundown/sermon-prep"
 import { GlossaryDetector } from "../glossary/glossary-detector"
@@ -463,6 +466,12 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   // verse" after an operator's manual override continues from wherever
   // the operator pointed, the least-surprising default.
   let currentVersePosition: VerseReference | null = null
+  // The chapter the speaker just ANNOUNCED ("Dans Esaïe 4, le verset 8" names Isaiah 4), kept so a bare
+  // "verset N" resolves against it instead of against whatever verse was last displayed (which would
+  // show a verse of the wrong book). Bounded by a short lifetime and dropped as soon as any verse is
+  // shown or cleared; it is context only, every reference built from it is still validated.
+  let announcedChapter: { readonly reference: VerseReference; readonly at: number } | null = null
+  const ANNOUNCED_CHAPTER_TTL_MS = 60_000
   // The actual resolved Verse behind currentVersePosition, kept only so a
   // newly-connecting viewer can be resynced with what is REALLY on screen
   // during a verse-interrupt (see onViewerConnected below) — without this,
@@ -713,6 +722,39 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     },
   })
 
+  // Operator-visible state of the optional AI helpers: when the circuit breaker pauses them, or a
+  // startup check finds the model or key unusable, the dashboard says so instead of every helper
+  // failing silently. Only a fixed state/reason code is broadcast (never upstream error text).
+  let aiHelpersStatus: AiHelpersStatus = { state: "ok" }
+  const aiStatusSource = options.claudeClient as Partial<AiHelpersStatusSource> | undefined
+  if (
+    aiStatusSource !== undefined &&
+    typeof aiStatusSource.subscribeStatus === "function" &&
+    typeof aiStatusSource.checkAvailability === "function"
+  ) {
+    aiStatusSource.subscribeStatus((status) => {
+      aiHelpersStatus = status
+      logger.warn({
+        component: "app-core",
+        event: status.state === "ok" ? "ai.helpers-recovered" : "ai.helpers-unavailable",
+        metadata: { state: status.state, ...(status.reason !== undefined ? { reason: status.reason } : {}) },
+      })
+      wsServer.broadcast({
+        id: generateUlid(),
+        type: "status:update",
+        timestamp: Date.now(),
+        payload: { asrHealth: currentAsrHealth(), aiHelpers: status, audioMetrics: silenceGate.getMetrics() },
+      })
+    })
+    aiStatusSource.checkAvailability().catch((err) =>
+      logger.warn({
+        component: "app-core",
+        event: "ai.availability-check-failed",
+        error: err instanceof Error ? err.message : String(err),
+      })
+    )
+  }
+
   function showVerse(verse: Verse, trigger: VerseTrigger, correlationId?: string): void {
     // The operator (override, navigation, rundown) took control: whatever is
     // detected next is intentional, never an interpreter's echo.
@@ -720,6 +762,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     // Whatever was waiting for approval has now been dealt with (shown, overridden, rundown).
     suggestionArbiter.clearDetectedWaiting()
     currentVersePosition = verse.reference
+    announcedChapter = null
     // TASK B: Update ASR prompt with current verse reference for dynamic context
     const refStr = `${verse.reference.book} ${verse.reference.chapter}:${verse.reference.verse}`
     if ("setCurrentVerseRef" in asr && typeof asr.setCurrentVerseRef === "function") {
@@ -768,6 +811,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
 
   function clearVerse(correlationId?: string): void {
     currentVersePosition = null
+    announcedChapter = null
     lastShownVerse = null
     // TASK B: Clear ASR prompt context when verse is cleared
     if ("setCurrentVerseRef" in asr && typeof asr.setCurrentVerseRef === "function") {
@@ -1007,7 +1051,13 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       id: generateUlid(),
       type: "status:update",
       timestamp: Date.now(),
-      payload: { ...payload, ...(echo !== null ? { echoWarning: echo } : {}), audioMetrics: silenceGate.getMetrics() },
+      payload: {
+        ...payload,
+        ...(echo !== null ? { echoWarning: echo } : {}),
+        // Every status update restates a non-ok AI state, so a dashboard that connected late still learns it.
+        ...(aiHelpersStatus.state !== "ok" ? { aiHelpers: aiHelpersStatus } : {}),
+        audioMetrics: silenceGate.getMetrics(),
+      },
     })
   }
 
@@ -1035,7 +1085,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
    * correction-candidate correlation below. Purely additive — the
    * existing logger.warn call at the near-miss site is unchanged.
    */
-  function recordAndBroadcastNearMiss(text: string, correlationId?: string): void {
+  function recordAndBroadcastNearMiss(text: string, correlationId?: string, suggestions: readonly VerseReference[] = []): void {
     recentNearMisses.push({ text, timestamp: Date.now() })
     if (recentNearMisses.length > RECENT_NEAR_MISS_LIMIT) {
       recentNearMisses = recentNearMisses.slice(-RECENT_NEAR_MISS_LIMIT)
@@ -1045,7 +1095,8 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       type: "detector:near-miss",
       timestamp: Date.now(),
       correlationId,
-      payload: { text },
+      // Operator-only "did you mean?" buttons; each one is sent back as an ordinary verse:override.
+      payload: suggestions.length > 0 ? { text, suggestions } : { text },
     })
   }
 
@@ -1520,8 +1571,10 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     }
     let verse: Verse | null = null
     let reason: "not-found" | "unavailable" | undefined
+    let suggestions: VerseReference[] = []
     if (!index.exists(reference)) {
       reason = "not-found"
+      suggestions = suggestNearestReferences(reference, index)
     } else {
       try {
         verse = await resolveVerse(reference, source, cache, circuitBreaker, translationIdFor(source), logger)
@@ -1540,7 +1593,13 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       type: "verse:preview-result",
       timestamp: Date.now(),
       correlationId: message.correlationId,
-      payload: { seq, reference: typed, verse, ...(reason !== undefined ? { reason } : {}) },
+      payload: {
+        seq,
+        reference: typed,
+        verse,
+        ...(reason !== undefined ? { reason } : {}),
+        ...(suggestions.length > 0 ? { suggestions } : {}),
+      },
     })
   }
 
@@ -2040,6 +2099,21 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     const hasExplicitReference =
       detector.detect(transcript.text).some((reference) => index.exists(reference)) ||
       volumeTexts.some((text) => text !== null && detector.detect(text).some((reference) => index.exists(reference)))
+    // "Dans Esaïe 4, le verset 8": the chapter named in the sentence is the context for its bare verse.
+    // (An explicit, valid reference is shown by the detection path, which resets the context itself.)
+    if (!hasExplicitReference) {
+      const announced = extractAnnouncedChapter(transcript.text)
+      if (announced) {
+        announcedChapter = { reference: { book: announced.book, chapter: announced.chapter, verse: 1 }, at: Date.now() }
+      }
+    }
+    // The position a command resolves against: a bare verse prefers a fresh announced chapter.
+    const positionFor = (command: { readonly kind: string }): VerseReference | null => {
+      if (command.kind === "goto-bare-verse" && announcedChapter !== null && Date.now() - announcedChapter.at <= ANNOUNCED_CHAPTER_TTL_MS) {
+        return announcedChapter.reference
+      }
+      return currentVersePosition
+    }
     for (const command of navigationCommandDetector.detect(transcript.text)) {
       if (hasExplicitReference && command.kind !== "goto-display-mode" && command.kind !== "cancel") {
         logger.debug({
@@ -2069,7 +2143,8 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         continue
       }
 
-      const resolution = resolveNavigationCommand(command, currentVersePosition, index)
+      const position = positionFor(command)
+      const resolution = resolveNavigationCommand(command, position, index)
 
       if (resolution.kind === "cancel") {
         supersedeInFlightDisplay()
@@ -2078,7 +2153,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       }
       if (resolution.kind === "no-op") {
         const contextless =
-          currentVersePosition === null &&
+          position === null &&
           (command.kind === "goto-bare-verse" || command.kind === "goto-bare-chapter-verse")
         logger[contextless ? "debug" : "warn"]({
           component: "app-core",
@@ -2087,18 +2162,6 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
           metadata: { command, reason: resolution.reason },
         })
         continue
-      }
-
-      // TASK 5: if this was a fallback (out-of-range chapter), broadcast a
-      // warning so the dashboard can surface it. The reference is valid (last
-      // chapter of the book) so we proceed to resolveVerse() normally.
-      if (resolution.fallback) {
-        logger.warn({
-          component: "app-core",
-          event: "navigation.fallback",
-          correlationId: transcript.correlationId,
-          metadata: { originalCommand: command, fallbackReference: resolution.reference },
-        })
       }
 
       // Still the full resolveVerse() pipeline (cache -> circuit breaker ->
@@ -2377,7 +2440,12 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         correlationId: transcript.correlationId,
         metadata: { text: transcript.text },
       })
-      recordAndBroadcastNearMiss(transcript.text, transcript.correlationId)
+      // A reference the detector heard but the index rejected (Isaiah 4:8) offers its nearest valid
+      // verse as an operator button, never as something shown on its own.
+      const nearestSuggestions = detectorRefs
+        .flatMap((reference) => suggestNearestReferences(reference, index))
+        .slice(0, 3)
+      recordAndBroadcastNearMiss(transcript.text, transcript.correlationId, nearestSuggestions)
       suggestRepairedVerse(transcript).catch((err) => logger.warn({
         component: "app-core",
         event: "ai.repair-failed",

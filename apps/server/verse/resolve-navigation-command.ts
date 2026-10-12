@@ -2,7 +2,7 @@ import type { NavigationCommand, VerseIndex, VerseReference } from "../../../pac
 import { BOOK_CATALOG } from "./book-catalog"
 
 export type NavigationResolution =
-  | { readonly kind: "reference"; readonly reference: VerseReference; readonly fallback?: boolean }
+  | { readonly kind: "reference"; readonly reference: VerseReference }
   | { readonly kind: "cancel" }
   | { readonly kind: "no-op"; readonly reason: "chapter_out_of_range" | "verse_out_of_range" | "no_current_position" | "unknown_book" }
 
@@ -38,21 +38,10 @@ export function resolveNavigationCommand(
     if (index.exists(candidate)) {
       return { kind: "reference", reference: candidate }
     }
-    // TASK 5: out-of-range chapter — instead of no-op, fall back to the
-    // book's last valid chapter (verse 1) so that subsequent bare-verse
-    // commands ("verset 16") have a valid currentPosition to resolve against.
-    // This matches the observed live sequence: "Jean chapitre 23" (John has 21
-    // chapters) -> falls back to John 21:1 -> "verset 16" resolves to John 21:16.
-    // The caller (AppCore) should broadcast a warning for the dashboard.
-    const bookIndex = BOOK_CATALOG.findIndex((b) => b.id === command.book)
-    if (bookIndex < 0) {
+    // An out-of-range chapter is a no-op: never display a chapter other than
+    // the one named (live log 2026-10-12 audit).
+    if (!BOOK_CATALOG.some((b) => b.id === command.book)) {
       return { kind: "no-op", reason: "unknown_book" }
-    }
-    const book = BOOK_CATALOG[bookIndex]!
-    const lastChapter = book.chapters.length
-    const fallback: VerseReference = { book: command.book, chapter: lastChapter, verse: 1 }
-    if (index.exists(fallback)) {
-      return { kind: "reference", reference: fallback, fallback: true as const }
     }
     return { kind: "no-op", reason: "chapter_out_of_range" }
   }
@@ -66,47 +55,15 @@ export function resolveNavigationCommand(
     if (index.exists(candidate)) {
       return { kind: "reference", reference: candidate }
     }
-    // PROD AUDIT 2026-09: this branch used to always no-op even though it
-    // computed the precise reason. Two exact production cases:
-    //   "Daniel chapitre 13 verset 14" — Daniel has 12 chapters, so this
-    //     falls back to the book's last chapter at its last verse: 12:13.
-    //   "Esaïe chapitre 4, verset 18" — Isaiah 4 has 6 verses (verified
-    //     against BOOK_CATALOG; the "22" that appears near it in the catalog
-    //     is chapter 2's count), so this clamps to 4:6.
-    // Same fallback mechanism as goto-chapter above: an out-of-range
-    // chapter falls back to the book's LAST VALID chapter; a verse beyond
-    // a valid chapter's end is clamped to that chapter's LAST VERSE (not
-    // verse:1 — the speaker clearly wanted the end of the chapter they
-    // named). Always validated through index.exists() (invariant 17);
-    // fallback:true lets AppCore broadcast a dashboard warning.
-    const bookIndex = BOOK_CATALOG.findIndex((b) => b.id === command.book)
-    if (bookIndex < 0) {
+    // Out-of-range chapter or verse is a no-op, never a substitution: showing
+    // a different reference than the one named is worse than showing nothing
+    // (live log 2026-10-12: "Esaïe 4, verset 8" displayed 4:6).
+    const book = BOOK_CATALOG.find((b) => b.id === command.book)
+    if (!book) {
       return { kind: "no-op", reason: "unknown_book" }
     }
-    const book = BOOK_CATALOG[bookIndex]!
-    const lastChapter = book.chapters.length
-    if (command.chapter < 1 || command.chapter > lastChapter) {
-      const lastChapterRef: VerseReference = {
-        book: command.book,
-        chapter: lastChapter,
-        verse: book.chapters[lastChapter - 1]!,
-      }
-      if (index.exists(lastChapterRef)) {
-        return { kind: "reference", reference: lastChapterRef, fallback: true as const }
-      }
+    if (command.chapter < 1 || command.chapter > book.chapters.length) {
       return { kind: "no-op", reason: "chapter_out_of_range" }
-    }
-    const versesInChapter = book.chapters[command.chapter - 1]!
-    if (command.verse < 1 || command.verse > versesInChapter) {
-      const clampedRef: VerseReference = {
-        book: command.book,
-        chapter: command.chapter,
-        verse: versesInChapter,
-      }
-      if (index.exists(clampedRef)) {
-        return { kind: "reference", reference: clampedRef, fallback: true as const }
-      }
-      return { kind: "no-op", reason: "verse_out_of_range" }
     }
     return { kind: "no-op", reason: "verse_out_of_range" }
   }

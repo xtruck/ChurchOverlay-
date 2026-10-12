@@ -865,6 +865,21 @@ test("ACTION_REGISTRY['detector:near-miss'].validatePayload: accepts a text stri
   }
 })
 
+test("'did you mean' suggestions: optional, at most 3 well-formed references, on near-miss and preview-result", () => {
+  const ref = { book: "isaiah", chapter: 4, verse: 6 }
+  const nearMiss = ACTION_REGISTRY["detector:near-miss"]
+  assert.equal(nearMiss.validatePayload({ text: "x", suggestions: [ref] }), true)
+  assert.equal(nearMiss.validatePayload({ text: "x", suggestions: [] }), true)
+  assert.equal(nearMiss.validatePayload({ text: "x", suggestions: [ref, ref, ref, ref] }), false)
+  assert.equal(nearMiss.validatePayload({ text: "x", suggestions: [{ book: "isaiah" }] }), false)
+  assert.equal(nearMiss.validatePayload({ text: "x", suggestions: "isaiah 4:6" }), false)
+
+  const preview = ACTION_REGISTRY["verse:preview-result"]
+  const base = { seq: 1, reference: { book: "isaiah", chapter: 4, verse: 8 }, verse: null, reason: "not-found" }
+  assert.equal(preview.validatePayload({ ...base, suggestions: [ref] }), true)
+  assert.equal(preview.validatePayload({ ...base, suggestions: [{ book: 1 }] }), false)
+})
+
 test("validateWsMessage: rejects any inbound sender for detector:near-miss — a server-only event", () => {
   const asOperator = validateWsMessage(
     { id: "01ABC", type: "detector:near-miss", timestamp: 1700000000000, payload: { text: "abacuc 4" } },
@@ -1055,4 +1070,15 @@ test("validateWsMessage: rejects any inbound sender for copilot:suggestions, a s
   const message = { id: "01ABC", type: "copilot:suggestions", timestamp: 1700000000000, payload: { id: "s1", relatedVerses: [], keyPoint: null } }
   assert.equal(validateWsMessage(message, "operator").ok, false)
   assert.equal(validateWsMessage(message, "viewer").ok, false)
+})
+
+test("status:update aiHelpers: optional, fixed state and reason vocabulary only (free text can never ride along)", () => {
+  const status = ACTION_REGISTRY["status:update"]
+  assert.equal(status.validatePayload({ asrHealth: "ok" }), true)
+  assert.equal(status.validatePayload({ asrHealth: "ok", aiHelpers: { state: "ok" } }), true)
+  assert.equal(status.validatePayload({ asrHealth: "ok", aiHelpers: { state: "paused", reason: "repeated-failures" } }), true)
+  assert.equal(status.validatePayload({ asrHealth: "ok", aiHelpers: { state: "unavailable", reason: "model-unavailable" } }), true)
+  assert.equal(status.validatePayload({ asrHealth: "ok", aiHelpers: { state: "broken" } }), false)
+  assert.equal(status.validatePayload({ asrHealth: "ok", aiHelpers: { state: "paused", reason: "Groq text request failed (404)" } }), false)
+  assert.equal(status.validatePayload({ asrHealth: "ok", aiHelpers: "paused" }), false)
 })

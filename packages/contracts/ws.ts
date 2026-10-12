@@ -1,3 +1,5 @@
+import type { VerseReference } from "./verse"
+
 export type WsRole = "operator" | "viewer"
 
 /** Requests to the application. See ARCHITECTURE.md §30 — keep this set small. */
@@ -93,6 +95,16 @@ export type AsrStatusPayload = {
    * Never alters a transcript: it is only shown to the operator.
    */
   readonly echoWarning?: { readonly reason: "media-loud" | "repeated-sentence"; readonly since: number } | null
+  /**
+   * State of the optional AI helpers (cleanup, translate, copilot, notes). Absent means
+   * "no change". "paused": the circuit breaker is open after repeated failures;
+   * "unavailable": a startup check found the model or key unusable. `reason` is a FIXED
+   * code, never the provider's error text, because status:update also reaches viewer pages.
+   */
+  readonly aiHelpers?: {
+    readonly state: "ok" | "paused" | "unavailable"
+    readonly reason?: "model-unavailable" | "auth" | "repeated-failures"
+  }
   readonly audioMetrics?: {
     readonly framesReceived: number
     readonly framesRejected: number
@@ -113,6 +125,13 @@ export type AsrStatusPayload = {
  */
 export type DetectorNearMissPayload = {
   readonly text: string
+  /**
+   * Operator-only "did you mean?": valid references close to a reference the
+   * detector heard but the known-valid index rejected (Isaiah 4:8 -> 4:6).
+   * Offered as buttons that send an ordinary verse:override; never shown on
+   * the overlay by themselves. Optional: absent means none.
+   */
+  readonly suggestions?: readonly VerseReference[]
 }
 
 /**

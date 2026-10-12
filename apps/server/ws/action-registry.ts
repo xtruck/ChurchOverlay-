@@ -151,7 +151,18 @@ function isVersePreviewResultPayload(payload: unknown): payload is Record<string
     typeof payload.seq === "number" &&
     isVerseReferencePayload(payload.reference) &&
     (payload.verse === null || isBareVersePayload(payload.verse)) &&
-    (payload.reason === undefined || payload.reason === "not-found" || payload.reason === "unavailable")
+    (payload.reason === undefined || payload.reason === "not-found" || payload.reason === "unavailable") &&
+    isOptionalSuggestionList(payload.suggestions)
+  )
+}
+
+const MAX_REFERENCE_SUGGESTIONS = 3
+
+/** "Did you mean?" candidates on operator-only events: absent, or a short list of well-formed references. */
+function isOptionalSuggestionList(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (Array.isArray(value) && value.length <= MAX_REFERENCE_SUGGESTIONS && value.every((entry) => isVerseReferencePayload(entry)))
   )
 }
 
@@ -258,7 +269,21 @@ function isStatusUpdatePayload(payload: unknown): payload is AsrStatusPayload {
     (payload.error === undefined || typeof payload.error === "string") &&
     (payload.micCalibrating === undefined || typeof payload.micCalibrating === "boolean") &&
     (payload.micThreshold === undefined || isFiniteNumber(payload.micThreshold)) &&
-    isEchoWarningField(payload.echoWarning)
+    isEchoWarningField(payload.echoWarning) &&
+    isAiHelpersField(payload.aiHelpers)
+  )
+}
+
+/** Optional. A fixed state and reason vocabulary only: free text is rejected so an upstream error body can never ride along. */
+function isAiHelpersField(value: unknown): boolean {
+  if (value === undefined) return true
+  return (
+    isPlainObject(value) &&
+    (value.state === "ok" || value.state === "paused" || value.state === "unavailable") &&
+    (value.reason === undefined ||
+      value.reason === "model-unavailable" ||
+      value.reason === "auth" ||
+      value.reason === "repeated-failures")
   )
 }
 
@@ -495,7 +520,7 @@ function isSermonNotesPayload(payload: unknown): payload is SermonNotesPayload {
 
 /** ARCHITECTURE.md section 91: shape-only, same discipline as every other payload here. */
 function isDetectorNearMissPayload(payload: unknown): payload is DetectorNearMissPayload {
-  return isPlainObject(payload) && typeof payload.text === "string"
+  return isPlainObject(payload) && typeof payload.text === "string" && isOptionalSuggestionList(payload.suggestions)
 }
 
 /** ARCHITECTURE.md section 94: both fields optional — absence is valid ("show nothing extra"), not corruption. */

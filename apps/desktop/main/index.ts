@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, powerMonitor, safeStorage, shell } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, powerMonitor, safeStorage, shell } from "electron"
 import { randomBytes } from "node:crypto"
 import { cpus, networkInterfaces } from "node:os"
 import { join } from "node:path"
@@ -525,7 +525,11 @@ async function startServices(
     ...(config.groqApiKey ? { sermonNotesGenerator: new SermonNotesGenerator({ apiKey: config.groqApiKey }) } : {}),
     // ARCHITECTURE.md section 128: the AI helpers run on the provider the operator chose
     // (Anthropic, or the free Groq text models) and stay off (undefined) when that provider has no key.
-    claudeClient: createTextCompleter(config),
+    claudeClient: createTextCompleter(config, undefined, {
+      // Observable bounded failure (AGENTS.md sections 37, 38): the helpers pause instead of failing on every transcript.
+      onStateChange: (state, error) =>
+        logger.warn({ component: "ai", event: `ai.circuit-${state}`, ...(error !== undefined ? { error } : {}) }),
+    }),
     sermonNotesEnabled: config.enableSermonNotes,
     aiFeatures: aiFeaturesFromConfig(config),
     // ARCHITECTURE.md section 65.4: a voice-triggered display-mode switch
@@ -695,6 +699,9 @@ function createDashboardWindow(): void {
     // grid this size was originally tuned for.
     width: 1440,
     height: 900,
+    // Belt and braces with Menu.setApplicationMenu(null) in whenReady: even if a menu is restored for
+    // debugging, it stays hidden until Alt is pressed.
+    autoHideMenuBar: true,
     // Window/taskbar icon on Windows and Linux (macOS takes the Dock icon
     // from the packaged .icns). Without it, `npm start` shows Electron's own.
     icon: join(REPO_ROOT, "assets", "icons", "icon.png"),
@@ -1855,6 +1862,14 @@ app.on("web-contents-created", (_event, contents) => {
 })
 
 app.whenReady().then(async () => {
+  // The default File / Edit / View / Window bar is Electron's own, not part of the operator console: it
+  // eats screen space on a live-production machine and offers items (reload, close, devtools) that
+  // should not be one stray click away mid-service. Removed on Windows and Linux; macOS keeps its menu
+  // because Cmd+C / Cmd+V / Cmd+Q are wired through it there. CHURCHOVERLAY_SHOW_MENU=1 brings it back for debugging.
+  if (process.platform !== "darwin" && process.env.CHURCHOVERLAY_SHOW_MENU !== "1") {
+    Menu.setApplicationMenu(null)
+  }
+
   if (!safeStorage.isEncryptionAvailable()) {
     // ARCHITECTURE.md section 38: "The application must never write
     // plaintext secrets to disk." If the OS can't back safeStorage (no

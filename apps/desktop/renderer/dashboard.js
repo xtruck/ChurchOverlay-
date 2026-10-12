@@ -642,8 +642,30 @@
 
   window.addEventListener("churchoverlay:languagechange", renderEchoWarning)
 
+  // The optional AI helpers (cleanup, translate, copilot, notes) pause themselves after repeated
+  // failures, or are found unusable at startup. Say so, with a fixed message per reason; the server
+  // never sends provider error text here. Absent aiHelpers means "no change".
+  const aiHelpersIndicatorEl = document.getElementById("ai-helpers-indicator")
+  let aiHelpersStatus = { state: "ok" }
+  function renderAiHelpersStatus() {
+    if (!aiHelpersIndicatorEl) return
+    const { state, reason } = aiHelpersStatus
+    aiHelpersIndicatorEl.hidden = state === "ok"
+    if (state === "ok") {
+      aiHelpersIndicatorEl.textContent = ""
+      return
+    }
+    const key = reason === "auth" ? "ai.helpers.auth" : reason === "model-unavailable" ? "ai.helpers.model" : "ai.helpers.paused"
+    aiHelpersIndicatorEl.textContent = t(key)
+  }
+  window.addEventListener("churchoverlay:languagechange", renderAiHelpersStatus)
+
   function handleStatusUpdate(payload) {
     if (!payload) return
+    if (payload.aiHelpers !== undefined && payload.aiHelpers !== null && typeof payload.aiHelpers.state === "string") {
+      aiHelpersStatus = payload.aiHelpers
+      renderAiHelpersStatus()
+    }
     if (payload.echoWarning !== undefined) {
       echoReason = payload.echoWarning === null ? null : payload.echoWarning.reason
       renderEchoWarning()
@@ -1194,15 +1216,43 @@
 
   let nearMissHideTimer = null
   const NEAR_MISS_DISPLAY_MS = 6000
-  function showNearMiss(text) {
+  // "Did you mean?" buttons: server-computed, already-valid candidates. Textual
+  // content only (never innerHTML). Picking one is an ordinary verse:override, so
+  // it is validated and looked up like a typed reference (AGENTS.md section 50).
+  function suggestionLabel(reference) {
+    return formatDisplayedReference({ reference })
+  }
+  function appendSuggestionButtons(container, suggestions, onPick) {
+    if (!Array.isArray(suggestions) || suggestions.length === 0) return
+    const label = document.createElement("span")
+    label.className = "suggestion-label"
+    label.textContent = t("suggest.didYouMean")
+    container.appendChild(label)
+    for (const reference of suggestions) {
+      const button = document.createElement("button")
+      button.type = "button"
+      button.className = "suggestion-chip"
+      button.textContent = suggestionLabel(reference)
+      button.addEventListener("click", () => onPick(reference))
+      container.appendChild(button)
+    }
+  }
+
+  function showNearMiss(text, suggestions) {
     if (!nearMissIndicatorEl || !text) return
     nearMissIndicatorEl.textContent = t("mic.nearMiss", { text })
+    const hasSuggestions = Array.isArray(suggestions) && suggestions.length > 0
+    appendSuggestionButtons(nearMissIndicatorEl, suggestions, (reference) => {
+      sendJson({ id: crypto.randomUUID(), type: "verse:override", timestamp: Date.now(), payload: reference })
+      log(t("log.sentVerseOverride", { reference: JSON.stringify(reference) }), "sent")
+      nearMissIndicatorEl.style.display = "none"
+    })
     nearMissIndicatorEl.style.display = "block"
     if (nearMissHideTimer) clearTimeout(nearMissHideTimer)
     nearMissHideTimer = setTimeout(() => {
       nearMissHideTimer = null
       nearMissIndicatorEl.style.display = "none"
-    }, NEAR_MISS_DISPLAY_MS)
+    }, hasSuggestions ? NEAR_MISS_DISPLAY_MS * 3 : NEAR_MISS_DISPLAY_MS)
   }
 
   // One icon per MediaCueKind (apps/server/media's own "kind" discriminant,
@@ -2795,6 +2845,13 @@
       log(t("log.parseError", { text: referenceInput.value }), "error")
       return
     }
+    // The server already answered this exact text with "not-found": say so
+    // here rather than send a command it will silently reject.
+    if (previewNotFoundSeq !== null && previewNotFoundSeq === previewSeq) {
+      document.getElementById("reference-field").classList.add("invalid")
+      log(t("preview.notFound"), "error")
+      return
+    }
     sendJson({ id: crypto.randomUUID(), type: "verse:override", timestamp: Date.now(), payload: reference })
     log(t("log.sentVerseOverride", { reference: JSON.stringify(reference) }), "sent")
   })
@@ -3035,7 +3092,7 @@
       } else if (message.type === "verse:preview-result") {
         showPreviewResult(message.payload)
       } else if (message.type === "detector:near-miss") {
-        showNearMiss(message.payload && message.payload.text)
+        showNearMiss(message.payload && message.payload.text, message.payload && message.payload.suggestions)
       }
     })
   }
@@ -3434,8 +3491,13 @@
   const previewTextEl = document.getElementById("reference-preview-text")
   let previewTimer = null
   let previewSeq = 0
+  // seq of the newest preview answered "not-found" by the server (the index
+  // rejected the reference); null otherwise. Lets Show refuse a reference the
+  // server has already said does not exist instead of sending it to be dropped.
+  let previewNotFoundSeq = null
 
   function hidePreview() {
+    previewNotFoundSeq = null
     previewEl.hidden = true
     previewRefEl.textContent = ""
     previewTextEl.textContent = ""
@@ -3460,6 +3522,7 @@
   function showPreviewResult(payload) {
     // Only the newest answer is shown.
     if (!payload || payload.seq !== previewSeq) return
+    previewNotFoundSeq = !payload.verse && payload.reason === "not-found" ? payload.seq : null
     previewEl.hidden = false
     if (payload.verse) {
       previewRefEl.textContent = formatDisplayedReference(payload.verse)
@@ -3468,6 +3531,16 @@
       previewRefEl.textContent = ""
       // "unavailable": the reference is valid but the Bible source did not answer.
       previewTextEl.textContent = t(payload.reason === "unavailable" ? "preview.unavailable" : "preview.notFound")
+      // Keyboard-friendly: Tab to a candidate, Enter fills the box; the preview then
+      // shows that verse and Enter shows it, all through the normal validation path.
+      const suggestionsEl = document.createElement("div")
+      suggestionsEl.className = "preview-suggestions"
+      appendSuggestionButtons(suggestionsEl, payload.suggestions, (reference) => {
+        referenceInput.value = reference.book + " " + reference.chapter + ":" + reference.verse
+        referenceInput.dispatchEvent(new Event("input"))
+        referenceInput.focus()
+      })
+      if (suggestionsEl.childElementCount > 0) previewTextEl.appendChild(suggestionsEl)
     }
   }
 

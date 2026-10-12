@@ -69,3 +69,22 @@ test("GroqTextClient: a hung request is aborted by the timeout", async () => {
   })
   await assert.rejects(client.complete({ system: "s", user: "u", timeoutMs: 30 }), /timed out/)
 })
+
+test("GroqTextClient.checkAvailability: ok when the key lists the model, model-unavailable when it does not, auth on 401/403, unknown otherwise", async () => {
+  const captured: Captured[] = []
+  const listing = (ids: unknown) => fakeFetch(() => ok({ data: ids }), captured)
+  const client = (fetchImpl: typeof fetch) => new GroqTextClient({ apiKey: "gsk_test_key_123456", fetchImpl })
+
+  assert.equal(await client(listing([{ id: DEFAULT_GROQ_TEXT_MODEL }, { id: "other" }])).checkAvailability(), "ok")
+  assert.equal(captured[0]?.url, "https://api.groq.com/openai/v1/models")
+  assert.equal((captured[0]?.init.headers as Record<string, string>).authorization, "Bearer gsk_test_key_123456")
+  assert.equal(await client(listing([{ id: "other" }])).checkAvailability(), "model-unavailable")
+  assert.equal(await client(fakeFetch(() => new Response("no", { status: 401 }))).checkAvailability(), "auth")
+  assert.equal(await client(fakeFetch(() => new Response("no", { status: 403 }))).checkAvailability(), "auth")
+  assert.equal(await client(fakeFetch(() => new Response("no", { status: 500 }))).checkAvailability(), "unknown")
+  // Never trust the body (AGENTS.md section 15): odd shapes are "could not tell", not "unavailable".
+  assert.equal(await client(listing("nope")).checkAvailability(), "unknown")
+  assert.equal(await client(listing([])).checkAvailability(), "unknown")
+  assert.equal(await client(listing([{ id: 5 }, null])).checkAvailability(), "unknown")
+  assert.equal(await client(fakeFetch(() => { throw new Error("offline") })).checkAvailability(), "unknown")
+})

@@ -526,6 +526,9 @@ export class GroqProvider implements AsrProvider {
         state: "final",
         timestamp: this.now(),
       })
+      // AGENTS.md section 23: every Groq transcript is a final utterance, so the
+      // next one starts a new processing chain with its own correlation id.
+      this.correlationId = generateUlid(this.now())
       this.lastFlushTime = this.now()
     } catch (err) {
       // A 429 says "come back later": the operator is told transcription will

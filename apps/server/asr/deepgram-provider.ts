@@ -287,6 +287,10 @@ export class DeepgramProvider implements AsrProvider {
       ...(typeof alternative?.confidence === "number" ? { providerConfidence: alternative.confidence } : {}),
       timestamp: Date.now(),
     })
+    // AGENTS.md section 23: one processing chain per utterance. The partials and
+    // the final of an utterance share an id; the next utterance gets its own, so
+    // a single id can be traced through detector, lookup, WS and overlay.
+    if (state === "final") this.correlationId = generateUlid()
   }
 
   /** A consumer that throws must not escape into the socket's message listener. */

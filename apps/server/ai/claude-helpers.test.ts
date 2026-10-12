@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { CallBudget, ClaudeClient } from "./claude-client"
+import { CallBudget, ClaudeClient, DEFAULT_CLAUDE_MODEL } from "./claude-client"
 import { ReferenceRepairer, parseRepairedReference } from "./reference-repairer"
 import { LiveTranslator } from "./live-translator"
 import { ClaudeSermonNotes } from "./claude-sermon-notes"
@@ -107,4 +107,26 @@ test("ClaudeSermonNotes: asks for bilingual notes and passes only the recent tra
   assert.equal(await notes.summarize(text), "- Grâce / Grace")
   assert.ok(seen[0]?.system.includes("French first"))
   assert.ok((seen[0]?.user.length ?? 0) <= 6_000 && seen[0]?.user.endsWith("FIN"))
+})
+
+test("ClaudeClient.checkAvailability: ok / model-unavailable (404) / auth (401, 403) / unknown for anything else, never throws", async () => {
+  const seen: string[] = []
+  const client = (respond: () => Response | Promise<Response>) =>
+    new ClaudeClient({
+      apiKey: "sk-ant-test-key-123456",
+      fetchImpl: (async (url: string | URL | Request, init?: RequestInit) => {
+        seen.push(`${init?.method} ${String(url)} key=${(init?.headers as Record<string, string>)["x-api-key"]}`)
+        return respond()
+      }) as typeof fetch,
+    })
+  const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
+
+  assert.equal(await client(() => json({ id: DEFAULT_CLAUDE_MODEL })).checkAvailability(), "ok")
+  assert.equal(seen[0], `GET https://api.anthropic.com/v1/models/${DEFAULT_CLAUDE_MODEL} key=sk-ant-test-key-123456`)
+  assert.equal(await client(() => json({}, 404)).checkAvailability(), "model-unavailable")
+  assert.equal(await client(() => json({}, 401)).checkAvailability(), "auth")
+  assert.equal(await client(() => json({}, 403)).checkAvailability(), "auth")
+  assert.equal(await client(() => json({}, 500)).checkAvailability(), "unknown")
+  assert.equal(await client(() => json({ nope: true })).checkAvailability(), "unknown")
+  assert.equal(await client(() => { throw new Error("offline") }).checkAvailability(), "unknown")
 })

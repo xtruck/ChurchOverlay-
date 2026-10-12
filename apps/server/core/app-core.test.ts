@@ -15,6 +15,7 @@ import { KnownValidVerseIndex } from "../verse/known-valid-verse-index"
 import { MediaLibrary } from "../media/media-library"
 import { encodeAudioFrame } from "../../../packages/shared/audio-frame-codec"
 import { Logger } from "../../../packages/shared/logger"
+import { GuardedTextCompleter } from "../ai/guarded-text-completer"
 import type {
   AsrProvider,
   AudioFrame,
@@ -5828,6 +5829,75 @@ test("AppCore (AI copilot): a failed model call keeps the trigger armed: the sam
   } finally {
     viewer.close()
     operator.close()
+    await app.stop()
+  }
+})
+
+test("AppCore (AI helpers): a startup check that finds the model unavailable tells the dashboard with a fixed reason code, never error text", async () => {
+  let release: (value: "model-unavailable") => void = () => {}
+  const gate = new Promise<"model-unavailable">((resolve) => { release = resolve })
+  const inner = { complete: async () => "", checkAvailability: () => gate }
+  const guarded = new GuardedTextCompleter(inner)
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    claudeClient: guarded,
+  })
+  try {
+    const socket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const seen: WsMessage[] = []
+    socket.on("message", (data) => {
+      const message = JSON.parse(data.toString()) as WsMessage
+      if (message.type === "status:update" && (message.payload as { aiHelpers?: unknown }).aiHelpers !== undefined) seen.push(message)
+    })
+    release("model-unavailable")
+    await waitFor(() => seen.length === 1)
+    assert.deepEqual((seen[0]?.payload as { aiHelpers: unknown }).aiHelpers, { state: "unavailable", reason: "model-unavailable" })
+    socket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore (announced chapter): a sentence that names another chapter's missing verse never falls back to a verse of the chapter on screen", async () => {
+  // Live log 2026-10-12: "Dans Esaïe 4, le verset 8" (Isaiah 4 has 6 verses) was read as a bare "verset 8"
+  // and resolved against whatever was last displayed, so with John 3 on screen it would show John 3:8.
+  // A source that answers for the reference it is ASKED for (StubVerseSource returns one fixed verse, which
+  // the app would treat as "already on screen"), so a wrongly resolved John 3:8 would really be displayed.
+  const echoSource: VerseSource = {
+    getVerse: async (reference: VerseReference) => makeVerse(reference, `text of ${reference.book} ${reference.chapter}:${reference.verse}`),
+  }
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: echoSource,
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const shown: Verse[] = []
+    viewerSocket.on("message", (data) => {
+      const message = JSON.parse(data.toString()) as WsMessage
+      if (message.type === "verse:show") shown.push(message.payload as Verse)
+    })
+    asr.emitTranscript({ id: "01A", correlationId: "C1", sequence: 1, text: "Jean 3:16", state: "final", timestamp: Date.now() })
+    await waitFor(() => shown.length === 1)
+    assert.deepEqual(shown[0]?.reference, { book: "john", chapter: 3, verse: 16 })
+
+    asr.emitTranscript({ id: "01B", correlationId: "C2", sequence: 2, text: "Dans Esaïe 4, le verset 8", state: "final", timestamp: Date.now() })
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    assert.equal(shown.length, 1, "nothing may be shown for Isaiah 4:8, and above all not John 3:8")
+    viewerSocket.close()
+  } finally {
     await app.stop()
   }
 })

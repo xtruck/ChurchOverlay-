@@ -168,6 +168,13 @@ All use fake completers; nothing here calls the real Anthropic API (see "Not aut
 | Client: key sent in a header and never leaked on error, timeout abort, per-minute call budget | `claude-helpers.test.ts` |
 | Reference repair, FR/EN translation, sermon notes: strict parsing, refusal of doubtful answers | `claude-helpers.test.ts` |
 | Free Groq text client: request shape, Authorization header, key scrubbed, malformed bodies, timeout | `groq-text-client.test.ts` |
+| AI helpers pause after repeated failures, probe after the cooldown, recover (no request while open) | `guarded-text-completer.test.ts` |
+| Real-service transcripts replayed through detector and known-valid index, no network (live log 2026-10-12) | `sermon-replay.test.ts` |
+| "Did you mean" candidates are valid, bounded and never guessed for an unknown book or chapter | `nearest-references.test.ts` |
+| Startup model check (ok / model-unavailable / auth / unknown, body never trusted) and the AI helpers' status with fixed reason codes | `groq-text-client.test.ts`, `guarded-text-completer.test.ts`, `action-registry.test.ts`, `app-core.test.ts` |
+| A sentence that announces another chapter never shows a verse of the chapter on screen (mutation-checked: fails without the fix) | `announced-context.test.ts`, `app-core.test.ts` |
+| Learned-alias groundwork: proposals, validation, bounded store, hostile file parsing, explicit-forms-only detection (not wired yet) | `learned-aliases.test.ts` |
+| Offline Python tools (log reader, error rates, alias miner, replay builder, report, bake-off, gate/VAD port, quote tuner); run with `python -m unittest discover -s tools/tests` | `tools/tests/test_tools.py` (see `tools/README.md`) |
 | AI service choice: Anthropic by default when its key exists, explicit Groq, no AI with only the transcription key, no silent fallback; stored in the config | `ai-provider.test.ts`, `config-store.test.ts` |
 | Transcript cleanup: correct-only prompt, 400-character input bound, implausible/multi-line/unchanged answers ignored, timeout, failure falls back to the raw text, three toggles all OFF by default | `transcript-cleaner.test.ts` |
 | Semantic proposal: only an explicit "high" confidence is accepted, bounded window, failure drops silently | `semantic-verse-proposer.test.ts` |
