@@ -228,6 +228,17 @@ Found by a read-only review (ARCHITECTURE.md section 134); none is a demonstrate
 - Sensitive IPC handlers (for example `get-operator-connection-info`, `complete-setup`) do not assert `event.senderFrame.url` is the dashboard page. The navigation guard makes a foreign page in that window unlikely.
 - Item 5 above says the renderer receives the operator token "and nothing else"; `get-operator-connection-info` also returns the port.
 
+## Dependency advisories (GitHub Dependabot, reviewed 2026-10-12)
+
+Two open alerts, neither with a patched upstream version at the time of review:
+
+| Alert | Package | Reaches the shipped app? | Handling |
+|---|---|---|---|
+| high: `braces` stack exhaustion on deeply nested glob patterns | `braces` ← `micromatch` ← `fast-glob` ← `shelljs` ← `@stagetimerio/grandiose` (optional NDI module) | **No longer packaged.** `shelljs` is used only by grandiose's install-time script (`scripts/ndi.js`, which downloads the NDI SDK); grandiose's runtime entry (`dist/index.js`) requires only `path`, and the app's own code never loads any of the four packages. The input would also have had to be an attacker-chosen glob, which nothing in the app accepts. | `package.json` `build.files` excludes `node_modules/{shelljs,fast-glob,micromatch,braces}` from the installer. Measured: the earlier build contained all four, the new one none, while `express`, `ws`, `dotenv` and grandiose are still present. The alert stays open on GitHub because it reads the lockfile; dismissing it as "not used" is a repository-settings decision left to the owner. |
+| medium: `sprintf-js` denial of service via unbounded precision specifiers | `sprintf-js` ← `roarr` ← `global-agent` ← `@electron/get` ← `app-builder-lib` ← `electron-builder` | **No.** Build tooling only; absent from the packaged app. | None needed for the app. `npm audit fix --force` would downgrade electron-builder to a breaking older version, which is not worth it for a build-time-only advisory. |
+
+`npm audit` (13 findings) also lists other build-tooling chains; `npm audit --omit=dev` lists only the `braces` chain above. Re-check after any dependency update, and drop the `build.files` exclusions if a fixed `braces` is adopted.
+
 ## Reporting a problem
 
 This is a small, single-operator application with no network-facing attack surface

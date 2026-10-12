@@ -69,7 +69,11 @@
       "package.json",
       "!**/*.test.js",
       "!**/*.test.js.map",
-      "!**/*.map"
+      "!**/*.map",
+      "!node_modules/shelljs/**",
+      "!node_modules/fast-glob/**",
+      "!node_modules/micromatch/**",
+      "!node_modules/braces/**"
     ],
     "win": {
       "target": "nsis",
