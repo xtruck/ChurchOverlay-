@@ -44,6 +44,11 @@
     "directories": {
       "output": "release"
     },
+    "electronLanguages": [
+      "en-US",
+      "fr"
+    ],
+    "compression": "maximum",
     "asarUnpack": [
       "node_modules/@stagetimerio/grandiose/dist/**"
     ],
