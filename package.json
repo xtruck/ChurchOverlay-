@@ -11,7 +11,7 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint \"apps/**/*.ts\" \"packages/**/*.ts\" \"scripts/**/*.ts\"",
+    "lint": "eslint \"apps/**/*.ts\" \"packages/**/*.ts\" \"scripts/**/*.ts\" \"apps/desktop/renderer/audio-stream.js\"",
     "start": "npm run build && electron .",
     "start:web": "npm run build && node dist/apps/web/index.js",
     "test": "tsc && cd dist && node --test",

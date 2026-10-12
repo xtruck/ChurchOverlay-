@@ -72,6 +72,48 @@
     })
   }
 
+  function renderAudioTransportStatus() {
+    if (!audioTransportStatusEl) return
+    const metrics = audioFrameSender.snapshot()
+    const dropped = metrics.droppedDisconnected + metrics.droppedBackpressure + metrics.sendFailures
+    let key
+    let state
+    switch (metrics.lastOutcome) {
+      case "disconnected":
+        key = "mic.audioTransport.disconnected"
+        state = "disconnected"
+        break
+      case "backpressure":
+        key = "mic.audioTransport.backpressure"
+        state = "backpressure"
+        break
+      case "send-failed":
+        key = "mic.audioTransport.sendFailed"
+        state = "error"
+        break
+      case "sent":
+        key = "mic.audioTransport.sending"
+        state = dropped > 0 || metrics.captureGaps > 0 ? "degraded" : "sending"
+        break
+      default:
+        key = "mic.audioTransport.idle"
+        state = "idle"
+    }
+    const lines = []
+    if (micRunning || metrics.framesReceived > 0) {
+      lines.push(t(key, { sent: metrics.framesSent, dropped }))
+    } else {
+      lines.push(t("mic.audioTransport.idle"))
+    }
+    if (metrics.captureGaps > 0) {
+      lines.push(t("mic.audioTransport.gaps", { count: metrics.captureGaps }))
+    }
+    audioTransportStatusEl.dataset.state = state
+    audioTransportStatusEl.textContent = lines.join(" · ")
+  }
+
+  window.addEventListener("churchoverlay:languagechange", renderAudioTransportStatus)
+
   function encodeAudioFrame(samples, sequence) {
     const buffer = new ArrayBuffer(4 + samples.length * 2)
     const view = new DataView(buffer)
@@ -103,6 +145,11 @@
   let lastFinalTranscriptId = null
   const nearMissIndicatorEl = document.getElementById("near-miss-indicator")
   const audioDiagnosticsEl = document.getElementById("audio-diagnostics")
+  const audioTransportStatusEl = document.getElementById("audio-transport-status")
+  const audioFrameSender = globalThis.ChurchOverlayAudioStream.createAudioFrameSender()
+  let micRunning = false
+  let serverMicMayBeRunning = false
+  let lastAudioTransportRenderAt = 0
   const referenceInput = document.getElementById("reference")
   const showBtn = document.getElementById("show-btn")
   const clearBtn = document.getElementById("clear-btn")
@@ -2719,12 +2766,19 @@
     })
   }
 
-  function sendJson(message) {
+  function sendJson(message, { reportDisconnected = true } = {}) {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
-      log(t("log.notConnected"), "error")
-      return
+      if (reportDisconnected) log(t("log.notConnected"), "error")
+      return false
     }
-    ws.send(JSON.stringify(message))
+    try {
+      ws.send(JSON.stringify(message))
+      return true
+    } catch (err) {
+      log(t("log.connectionError"), "error", { toast: false })
+      console.error("WebSocket send failed", err)
+      return false
+    }
   }
 
   referenceInput.addEventListener("keydown", (event) => {
@@ -2807,21 +2861,34 @@
       // against makes that gap actually observable, not just fixed in
       // theory: what the operator sees IS what's being evaluated.
       updateMicLevel(computeRmsInt16(pcm16))
-      if (!ws || ws.readyState !== WebSocket.OPEN) return
-      ws.send(encodeAudioFrame(pcm16, sequence))
+      audioFrameSender.send(ws, pcm16, sequence, (frameSamples, frameSequence) =>
+        encodeAudioFrame(frameSamples, frameSequence)
+      )
+      const now = Date.now()
+      if (now - lastAudioTransportRenderAt >= 500) {
+        lastAudioTransportRenderAt = now
+        renderAudioTransportStatus()
+      }
     }
 
     // Send mic:start command so the backend ASR and calibration initialize before first audio frame
-    sendJson({ id: crypto.randomUUID(), type: "mic:start", timestamp: Date.now(), payload: null })
+    micRunning = true
+    audioFrameSender.reset()
+    serverMicMayBeRunning = sendJson(
+      { id: crypto.randomUUID(), type: "mic:start", timestamp: Date.now(), payload: null },
+      { reportDisconnected: false }
+    )
     source.connect(workletNode)
 
     micStartBtn.disabled = true
     micStopBtn.disabled = false
     micVisualEl.classList.add("active")
+    renderAudioTransportStatus()
     log(t("log.micStarted"), "sent")
   }
 
   async function stopMic() {
+    micRunning = false
     if (mediaStream) {
       mediaStream.getTracks().forEach((track) => track.stop())
       mediaStream = null
@@ -2830,13 +2897,20 @@
       await audioContext.close().catch(() => {})
       audioContext = null
     }
-    sendJson({ id: crypto.randomUUID(), type: "mic:stop", timestamp: Date.now(), payload: null })
+    if (sendJson(
+      { id: crypto.randomUUID(), type: "mic:stop", timestamp: Date.now(), payload: null },
+      { reportDisconnected: false }
+    )) {
+      serverMicMayBeRunning = false
+    }
 
     micStartBtn.disabled = false
     micStopBtn.disabled = true
     micVisualEl.classList.remove("active")
     micCalibratingStatusEl.style.display = "none"
     resetMicLevel()
+    audioFrameSender.reset()
+    renderAudioTransportStatus()
     renderMicHealth(null)
     log(t("log.micStopped"), "sent")
   }
@@ -2852,8 +2926,15 @@
       reconnectAttempts = 0
       setStatus(t("status.connectedOperator"), "connected")
       log(t("log.connected"), "received")
+      if (micRunning) {
+        serverMicMayBeRunning = sendJson({ id: crypto.randomUUID(), type: "mic:start", timestamp: Date.now(), payload: null })
+      } else if (serverMicMayBeRunning) {
+        serverMicMayBeRunning = !sendJson({ id: crypto.randomUUID(), type: "mic:stop", timestamp: Date.now(), payload: null })
+      }
+      renderAudioTransportStatus()
     })
     ws.addEventListener("close", () => {
+      renderAudioTransportStatus()
       const delay = nextReconnectDelay()
       const delaySeconds = Math.round(delay / 1000)
       setStatus(t("status.disconnectedRetrying", { seconds: delaySeconds }), "disconnected")

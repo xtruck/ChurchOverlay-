@@ -48,6 +48,7 @@ single port, reachable from any browser on the network.
 |---|---|
 | `npm run build` | Compiles TypeScript to `dist/` |
 | `npm run typecheck` | Type-checks without emitting |
+| `npm run lint` | Lints TypeScript and the browser audio transport helper |
 | `npm start` | Builds and launches the Electron app |
 | `npm run start:web` | Builds and launches the headless web server (Express + WebSocket on one port) |
 | `npm test` | Builds and runs the full test suite (`node --test`) |

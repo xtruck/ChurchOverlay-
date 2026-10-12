@@ -7,7 +7,7 @@ import tseslint from "typescript-eslint"
 
 export default tseslint.config(
   {
-    ignores: ["dist/**", "release/**", "node_modules/**", "**/*.js", "**/*.mjs", "**/*.cjs"],
+    ignores: ["dist/**", "release/**", "node_modules/**", "**/*.mjs", "**/*.cjs"],
   },
   ...tseslint.configs.recommended,
   {
@@ -17,6 +17,21 @@ export default tseslint.config(
       "no-empty": ["error", { allowEmptyCatch: false }],
       // Unused names prefixed with _ are intentional.
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" }],
+    },
+  },
+  {
+    files: ["apps/desktop/renderer/audio-stream.js"],
+    languageOptions: {
+      globals: {
+        ArrayBuffer: "readonly",
+        DataView: "readonly",
+        Number: "readonly",
+        globalThis: "readonly",
+        Uint8Array: "readonly",
+      },
+    },
+    rules: {
+      "no-undef": "error",
     },
   },
 )

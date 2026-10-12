@@ -6603,9 +6603,14 @@ Every colour comes from the palette's seven roles through the existing CSS varia
 - The Groq seam text de-duplication seems to run on every chunk, not only overlapping ones, which could strip a deliberately repeated reference and emit an empty final.
 - A final from the primary that arrives after a failover is dropped without a log; `handleAudioFrame` skips the end-of-utterance flush when `sendAudio` throws; `lastAssembledText` in `AppCore` is never reset, so a byte-identical repeated assembled reference may be suppressed.
 
-**Verified by reading, NOT changed** (design needed):
-
-- The dashboard's audio `onmessage` handler returns silently when the WebSocket is not open and never checks `ws.bufferedAmount`: frames are dropped without a count while the UI still shows the mic as active, and a stalled socket can buffer without limit (AGENTS.md sections 11, 22 and 36). The fix needs a counter, a visible "audio not reaching the server" state and a cap, in the dashboard page (which has no test harness); the server also ignores frame `sequence` gaps. It should be its own change.
+**Fixed after the review.** Browser microphone frames now use a 64 KiB
+`WebSocket.bufferedAmount` high-water mark; stale frames are dropped rather than
+queued without bound. Disconnected, congested, failed-send, and capture-sequence-gap
+counts are shown in the operator microphone card. Reconnection restarts the server
+mic pipeline when capture is still active, and sends a pending stop if the operator
+stopped while disconnected. The pure browser sender has deterministic tests and is
+included in the lint gate. This measures browser-side send/drop conditions, not
+end-to-end packet loss, because individual frames are not acknowledged by the server.
 - After a `mic:stop`, a still-pending `mic:start` can set `micRunning` (section 134) to true again, because the start resolves after the stop. Narrow (the dashboard sends the pair in order) and I did not reproduce it.
 
 **Local provider: web and GitHub research (sections 99, 113, 118), nothing here is implemented or measured.** The owner asked for ideas from GitHub and the web. Findings, with sources: the local faster-whisper sidecar already does what the common guidance recommends (`vad_filter` with a 300 ms silence window, `condition_on_previous_text=False`, `beam_size=1`, a no-speech threshold, log-probability and compression-ratio limits, a repeated-phrase guard, French/English-only language choice, a prompt-echo guard); whisper.cpp runs with `-nt -sns`. So the research mostly confirms the design. What it adds:

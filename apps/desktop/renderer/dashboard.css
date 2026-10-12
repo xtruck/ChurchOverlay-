@@ -986,6 +986,10 @@ header.topbar {
 .asr-provider-line { color: var(--text-faint); font-size: var(--fs-12); margin-top: var(--space-2); }
 .asr-provider-line:empty, .mic-diagnostics:empty { display: none; }
 .mic-diagnostics { color: var(--text-faint); font-size: var(--fs-12); margin-top: var(--space-1); }
+.mic-diagnostics[data-state="degraded"],
+.mic-diagnostics[data-state="disconnected"],
+.mic-diagnostics[data-state="backpressure"],
+.mic-diagnostics[data-state="error"] { color: var(--warn); }
 
 /* Tools drawer */
 .drawer { padding: 0; }
