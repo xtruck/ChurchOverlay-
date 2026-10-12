@@ -159,7 +159,8 @@ test("pickVerseTransition: first show, replacement, late join, gentle, reduced m
 
 test("fitLimits: lower-third and fullscreen keep their historical caps; designs adjust only what they need", () => {
   assert.deepEqual(M.fitLimits(false, "classic"), { maxWidthFraction: 1, maxHeightFraction: 0.46, maxFontPx: 64, minFontPx: 18 })
-  assert.deepEqual(M.fitLimits(true, "classic"), { maxWidthFraction: 0.9, maxHeightFraction: 0.9, maxFontPx: 120, minFontPx: 18 })
+  // Fullscreen is read from the back of the room: it fills ~95% of the frame with type up to 200px.
+  assert.deepEqual(M.fitLimits(true, "classic"), { maxWidthFraction: 0.96, maxHeightFraction: 0.94, maxFontPx: 200, minFontPx: 18 })
   for (const card of ["banner", "minimal", "elegant", "glass", "ribbon", "halo", "signal", "folio"]) {
     assert.deepEqual(M.fitLimits(false, card), M.fitLimits(false, "classic"), card)
     assert.deepEqual(M.fitLimits(true, card), M.fitLimits(true, "classic"), card)
@@ -172,7 +173,7 @@ test("fitLimits: lower-third and fullscreen keep their historical caps; designs 
     for (const fs of [false, true]) {
       const l = M.fitLimits(fs, card)
       assert.ok(l.minFontPx >= 14 && l.minFontPx < l.maxFontPx, `${card} legibility floor`)
-      assert.ok(l.maxHeightFraction > 0.4 && l.maxHeightFraction <= 0.9, `${card} height`)
+      assert.ok(l.maxHeightFraction > 0.4 && l.maxHeightFraction <= 0.95, `${card} height`)
       assert.ok(l.maxWidthFraction > 0.5 && l.maxWidthFraction <= 1, `${card} width`)
       if (!fs) assert.equal(l.maxWidthFraction, 1, `${card} lower third stays full width`)
     }

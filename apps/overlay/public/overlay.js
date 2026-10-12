@@ -181,7 +181,9 @@
   // letterbox takes frame height, poster/bold want bigger type). They come
   // from the pure VerseMotion.fitLimits(), which is unit tested.
   const Motion = window.VerseMotion
-  const SECONDARY_FONT_RATIO = 0.55 // matches the visual hierarchy already set in CSS's own clamp() sizing
+  // The second language is the same size as the first (italic tells them apart):
+  // a smaller English block was unreadable from the back of the room.
+  const SECONDARY_FONT_RATIO = 1
   const MIN_SECONDARY_FONT_PX = 10
 
   function syncNatureBackground() {
@@ -272,7 +274,8 @@
     let fontSize = limits.maxFontPx
     setFontSize(fontSize)
     while ((contentScrollWidth() > maxWidth || verseCardEl.scrollHeight > maxHeight) && fontSize > limits.minFontPx) {
-      fontSize -= 1
+      // Coarse steps while far above the floor keep the larger fullscreen caps cheap to fit.
+      fontSize -= fontSize > 80 ? 4 : 1
       setFontSize(fontSize)
     }
 

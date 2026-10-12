@@ -215,7 +215,7 @@
    */
   function fitLimits(isFullscreen, card) {
     const l = isFullscreen
-      ? { maxWidthFraction: 0.9, maxHeightFraction: 0.9, maxFontPx: 120, minFontPx: 18 }
+      ? { maxWidthFraction: 0.96, maxHeightFraction: 0.94, maxFontPx: 200, minFontPx: 18 }
       : { maxWidthFraction: 1, maxHeightFraction: 0.46, maxFontPx: 64, minFontPx: 18 }
     if (card === "cinema") {
       // The card is a full-width band (its width never shrinks with the
@@ -224,13 +224,13 @@
       l.maxWidthFraction = 1
     } else if (card === "manuscript") {
       // A page, not a billboard: keep fullscreen type book-like.
-      if (isFullscreen) l.maxFontPx = 96
+      if (isFullscreen) l.maxFontPx = 150
     } else if (card === "poster") {
-      l.maxFontPx = isFullscreen ? 136 : 64
+      l.maxFontPx = isFullscreen ? 220 : 64
     } else if (card === "bold") {
-      l.maxFontPx = isFullscreen ? 112 : 64
+      l.maxFontPx = isFullscreen ? 190 : 64
     } else if (card === "split") {
-      l.maxWidthFraction = isFullscreen ? 0.92 : 1
+      l.maxWidthFraction = isFullscreen ? 0.96 : 1
     }
     return l
   }
