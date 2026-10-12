@@ -8,6 +8,7 @@ import {
   MAX_THROTTLED_BUFFER_MS,
   DEFAULT_RATE_LIMIT_REQUESTS,
   RateLimitError,
+  GroqNetworkError,
 } from "./groq-provider"
 import type { AudioFrame, TranscriptResult } from "../../../packages/contracts"
 import { Logger } from "../../../packages/shared/logger"
@@ -694,22 +695,65 @@ test("GroqProvider: an empty transcript response is dropped without emitting a f
   assert.equal(results.length, 0)
 })
 
-test("GroqProvider: a network failure (fetch rejects) reports via onError, without throwing", async () => {
+test("GroqProvider: a network failure is reported and rejected without retrying or emitting a transcript", async () => {
+  const { logger, lines } = capturingLogger()
+  let requests = 0
   const provider = new GroqProvider({
     apiKey: "test-key",
     chunkDurationMs: 1000,
     fetchImpl: (async () => {
+      requests += 1
       throw new Error("network down")
     }) as typeof fetch,
+    logger,
   })
   const errors: Error[] = []
+  const results: TranscriptResult[] = []
   provider.onError((e) => errors.push(e))
-  provider.onTranscript(() => {})
+  provider.onTranscript((result) => results.push(result))
 
   await provider.start()
-  await assert.doesNotReject(() => provider.sendAudio(oneSecondFrame(0)))
+  await assert.rejects(() => provider.sendAudio(oneSecondFrame(0)), GroqNetworkError)
   assert.equal(errors.length, 1)
   assert.match(errors[0]?.message ?? "", /network down/)
+  assert.equal(requests, 1)
+  assert.equal(results.length, 0)
+  assert.ok(lines.some((line) =>
+    (line as { event: string; metadata?: { reason?: string; retryAttempted?: boolean } }).event === "asr.audio-discarded" &&
+    (line as { metadata?: { reason?: string; retryAttempted?: boolean } }).metadata?.reason === "groq-network" &&
+    (line as { metadata?: { retryAttempted?: boolean } }).metadata?.retryAttempted === false
+  ))
+})
+
+test("GroqProvider: stop during rate limiting reports and drops its bounded tail instead of resolving as a successful flush", async () => {
+  const captured: CapturedRequest[] = []
+  const { logger, lines } = capturingLogger()
+  const provider = new GroqProvider({
+    apiKey: "test-key",
+    chunkDurationMs: 1000,
+    now: () => 0,
+    fetchImpl: fakeFetch(() => jsonResponse({ text: "ok" }), captured),
+    logger,
+  })
+  const errors: Error[] = []
+  const results: TranscriptResult[] = []
+  provider.onError((error) => errors.push(error))
+  provider.onTranscript((result) => results.push(result))
+  await provider.start()
+  for (let i = 0; i < DEFAULT_RATE_LIMIT_REQUESTS; i++) {
+    await provider.sendAudio(oneSecondFrame(i))
+  }
+  await provider.sendAudio(oneSecondFrame(DEFAULT_RATE_LIMIT_REQUESTS))
+
+  await assert.rejects(() => provider.stop(), /could not transcribe buffered audio/)
+  assert.equal(captured.length, DEFAULT_RATE_LIMIT_REQUESTS)
+  assert.ok(errors.some((error) => error instanceof RateLimitError))
+  assert.equal((provider as unknown as { bufferedSampleCount: number }).bufferedSampleCount, 0)
+  assert.ok(lines.some((line) =>
+    (line as { event: string; metadata?: { reason?: string; durationMs?: number } }).event === "asr.audio-discarded" &&
+    (line as { metadata?: { reason?: string } }).metadata?.reason === "stop-undelivered"
+  ))
+  assert.equal(results.length, DEFAULT_RATE_LIMIT_REQUESTS)
 })
 
 test("GroqProvider: 25 closely spaced utterances make at most DEFAULT_RATE_LIMIT_REQUESTS fetch calls in one 60-second window", async () => {
@@ -903,21 +947,56 @@ function hangingFetch(): typeof fetch {
   }) as typeof fetch
 }
 
-test("GroqProvider: a request that never resolves is aborted after requestTimeoutMs and reports a clear error", async () => {
+test("GroqProvider: a request that never resolves is aborted, reported, rejected, and never emits a transcript", async () => {
+  const { logger, lines } = capturingLogger()
   const provider = new GroqProvider({
     apiKey: "test-key",
     chunkDurationMs: 1000,
     requestTimeoutMs: 20,
     fetchImpl: hangingFetch(),
+    logger,
   })
   const errors: Error[] = []
+  const results: TranscriptResult[] = []
   provider.onError((error) => errors.push(error))
+  provider.onTranscript((result) => results.push(result))
 
   await provider.start()
-  await provider.sendAudio(oneSecondFrame())
+  await assert.rejects(() => provider.sendAudio(oneSecondFrame()), GroqNetworkError)
 
   assert.equal(errors.length, 1)
   assert.match(errors[0]?.message ?? "", /timed out after 20ms/)
+  assert.equal(results.length, 0)
+  assert.ok(lines.some((line) =>
+    (line as { event: string; metadata?: { reason?: string; retryAttempted?: boolean } }).event === "asr.audio-discarded" &&
+    (line as { metadata?: { reason?: string; retryAttempted?: boolean } }).metadata?.reason === "groq-timeout" &&
+    (line as { metadata?: { retryAttempted?: boolean } }).metadata?.retryAttempted === false
+  ))
+})
+
+test("GroqProvider: request timeout also covers a stalled response body", async () => {
+  const fetchImpl = (async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    const response = new Response()
+    Object.defineProperty(response, "text", {
+      value: () => new Promise<unknown>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(new DOMException("The operation was aborted.", "AbortError"))
+        })
+      }),
+    })
+    return response
+  }) as typeof fetch
+  const provider = new GroqProvider({
+    apiKey: "test-key",
+    chunkDurationMs: 1000,
+    requestTimeoutMs: 20,
+    fetchImpl,
+  })
+  const results: TranscriptResult[] = []
+  provider.onTranscript((result) => results.push(result))
+  await provider.start()
+  await assert.rejects(() => provider.sendAudio(oneSecondFrame()), GroqNetworkError)
+  assert.deepEqual(results, [])
 })
 
 test("GroqProvider: three consecutive timed-out requests invoke onRateLimitedSustained once, same as sustained 429s", async () => {
@@ -933,9 +1012,9 @@ test("GroqProvider: three consecutive timed-out requests invoke onRateLimitedSus
   })
 
   await provider.start()
-  await provider.sendAudio(oneSecondFrame(0))
-  await provider.sendAudio(oneSecondFrame(1))
-  await provider.sendAudio(oneSecondFrame(2))
+  await assert.rejects(() => provider.sendAudio(oneSecondFrame(0)), GroqNetworkError)
+  await assert.rejects(() => provider.sendAudio(oneSecondFrame(1)), GroqNetworkError)
+  await assert.rejects(() => provider.sendAudio(oneSecondFrame(2)), GroqNetworkError)
 
   assert.equal(sustainedCalls, 1)
 })
@@ -968,7 +1047,9 @@ test("GroqProvider: a successful request resets the consecutive-network-error co
 
   await provider.start()
   for (let i = 0; i < shouldHang.length; i++) {
-    await provider.sendAudio(oneSecondFrame(i))
+    const send = provider.sendAudio(oneSecondFrame(i))
+    if (shouldHang[i]) await assert.rejects(() => send, GroqNetworkError)
+    else await send
   }
 
   assert.equal(errors.length, 4, "4 of the 5 requests time out")

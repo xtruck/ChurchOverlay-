@@ -12,6 +12,10 @@
 // sent correctly via Sec-WebSocket-Protocol, below, exactly as required).
 (function () {
   const params = new URLSearchParams(window.location.search)
+  const natureBackgroundVideo = document.getElementById("nature-background-video")
+  const natureBackgroundRequested = params.get("background") === "nature"
+  const isGalleryPreview = new URLSearchParams(window.location.hash.slice(1)).get("token") === "gallery"
+  let galleryNatureBackgroundRequested = false
   // The token is in the URL fragment (#token=..., never sent to a server); ?token= is the older form.
   const token = new URLSearchParams(window.location.hash.slice(1)).get("token") || params.get("token")
   const wsPort = params.get("wsPort") || window.location.port
@@ -180,6 +184,59 @@
   const SECONDARY_FONT_RATIO = 0.55 // matches the visual hierarchy already set in CSS's own clamp() sizing
   const MIN_SECONDARY_FONT_PX = 10
 
+  function syncNatureBackground() {
+    const root = document.documentElement
+    const enabled = natureBackgroundRequested || galleryNatureBackgroundRequested
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    root.classList.toggle("nature-background", enabled)
+    root.classList.toggle("nature-background-fallback", enabled && reducedMotion)
+    root.classList.remove("nature-video-ready")
+    if (!enabled || reducedMotion) {
+      natureBackgroundVideo.pause()
+      natureBackgroundVideo.removeAttribute("src")
+      delete natureBackgroundVideo.dataset.localSource
+      natureBackgroundVideo.load()
+      return
+    }
+    if (natureBackgroundVideo.dataset.localSource === "loaded") return
+    const source = typeof window.__galleryNatureVideoSrc === "string"
+      ? window.__galleryNatureVideoSrc
+      : "backgrounds/nature-loop.mp4"
+    const url = new URL(source, document.baseURI)
+    const sameProtocol = url.protocol === window.location.protocol
+    if (!sameProtocol || (url.protocol !== "file:" && url.origin !== window.location.origin)) {
+      root.classList.add("nature-background-fallback")
+      return
+    }
+    natureBackgroundVideo.dataset.localSource = "loaded"
+    natureBackgroundVideo.src = url.href
+    natureBackgroundVideo.load()
+    const markReady = () => {
+      if (natureBackgroundRequested || galleryNatureBackgroundRequested) {
+        root.classList.add("nature-video-ready")
+        root.classList.remove("nature-background-fallback")
+      }
+    }
+    natureBackgroundVideo.addEventListener("playing", markReady, { once: true })
+    natureBackgroundVideo.addEventListener("error", () => {
+      root.classList.remove("nature-video-ready")
+      root.classList.add("nature-background-fallback")
+    }, { once: true })
+    const playback = natureBackgroundVideo.play()
+    if (playback && typeof playback.catch === "function") {
+      playback.catch(() => root.classList.add("nature-background-fallback"))
+    }
+  }
+  if (isGalleryPreview) {
+    window.__setGalleryNatureBackground = (enabled) => {
+      galleryNatureBackgroundRequested = enabled === true
+      syncNatureBackground()
+    }
+  }
+  const natureMotionPreference = window.matchMedia("(prefers-reduced-motion: reduce)")
+  if (natureMotionPreference.addEventListener) natureMotionPreference.addEventListener("change", syncNatureBackground)
+  syncNatureBackground()
+
   function clearVerseSizing() {
     textEl.style.fontSize = ""
     secondaryTextEl.style.fontSize = ""
@@ -196,7 +253,17 @@
   }
 
   // The measuring half of the auto-fit. Runs only while no reveal animation is
-  // in flight: transformed words would inflate the card's scroll size.
+  // in flight: transformed words would inflate the card's scroll size. Measure
+  // text, not the card itself: decorative pseudo-elements (for example the
+  // halo's outer glow) may intentionally extend beyond the full-width band.
+  function contentScrollWidth() {
+    return Math.max(
+      textEl.scrollWidth,
+      secondaryTextEl.classList.contains("visible") ? secondaryTextEl.scrollWidth : 0,
+      refEl.scrollWidth,
+    )
+  }
+
   function measureFit() {
     const limits = Motion.fitLimits(verseEl.classList.contains("fullscreen"), currentCard)
     const maxWidth = window.innerWidth * limits.maxWidthFraction
@@ -204,7 +271,7 @@
     clearVerseSizing()
     let fontSize = limits.maxFontPx
     setFontSize(fontSize)
-    while ((verseCardEl.scrollWidth > maxWidth || verseCardEl.scrollHeight > maxHeight) && fontSize > limits.minFontPx) {
+    while ((contentScrollWidth() > maxWidth || verseCardEl.scrollHeight > maxHeight) && fontSize > limits.minFontPx) {
       fontSize -= 1
       setFontSize(fontSize)
     }
@@ -212,12 +279,11 @@
     // Extremely long bilingual passages can still exceed the viewport at the
     // legibility floor. Scale the complete card as a last resort rather than
     // clipping or allowing it to escape the screen.
-    const overflowWidth = verseCardEl.scrollWidth / maxWidth
+    const overflowWidth = contentScrollWidth() / maxWidth
     const overflowHeight = verseCardEl.scrollHeight / maxHeight
     const scale = Math.min(1, 1 / Math.max(overflowWidth, overflowHeight))
     if (scale < 1) verseCardEl.style.setProperty("--fit-scale", String(scale))
   }
-
   let refitAfterSettle = false
   function fitVerseText() {
     if (!verseEl.classList.contains("visible")) return
@@ -295,16 +361,22 @@
 
   function renderVerseContent(verse) {
     // The page is declared English; say so when the verse is French (screen readers, hyphenation).
-    textEl.lang = FRENCH_TRANSLATIONS.has(String(verse.translation || "").toLowerCase()) ? "fr" : "en"
+    const primaryLanguage = FRENCH_TRANSLATIONS.has(String(verse.translation || "").toLowerCase()) ? "fr" : "en"
+    textEl.lang = primaryLanguage
+    textEl.dataset.language = primaryLanguage
+    verseEl.classList.toggle("bilingual", Boolean(verse.secondary))
     wordEls = renderWords(textEl, String(verse.text))
     refEl.textContent = formatVerseReference(verse)
 
     if (verse.secondary) {
-      secondaryTextEl.lang = "en"
+      const secondaryLanguage = FRENCH_TRANSLATIONS.has(String(verse.secondary.translation || "").toLowerCase()) ? "fr" : "en"
+      secondaryTextEl.lang = secondaryLanguage
+      secondaryTextEl.dataset.language = secondaryLanguage
       secondaryTextEl.textContent = verse.secondary.text
       secondaryTextEl.classList.add("visible")
     } else {
       secondaryTextEl.classList.remove("visible")
+      secondaryTextEl.removeAttribute("data-language")
       secondaryTextEl.textContent = ""
     }
   }
@@ -431,8 +503,8 @@
   // branding:update is still received for older servers but no longer drives
   // anything visual: organization name and accent now live in the style.
   // Every non-classic design (classic is the class-less default look).
-  // Section 133 added cinema, manuscript, stained, poster, split and bold.
-  const CARD_DESIGNS = ["banner", "minimal", "elegant", "glass", "ribbon", "cinema", "manuscript", "stained", "poster", "split", "bold"]
+  // Section 133 added the cinematic set; its follow-up adds halo, signal and folio.
+  const CARD_DESIGNS = ["banner", "minimal", "elegant", "glass", "ribbon", "cinema", "manuscript", "stained", "poster", "split", "bold", "halo", "signal", "folio"]
   const CARD_CLASSES = CARD_DESIGNS.map((d) => "tpl-" + d)
   const BRAND_FONTS = {
     serif: '"Instrument Serif", Georgia, "Times New Roman", serif',

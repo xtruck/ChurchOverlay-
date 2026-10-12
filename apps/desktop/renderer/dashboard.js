@@ -3048,6 +3048,7 @@
   const MAX_RECENT_VERSES = 9
   const recentVersesEl = document.getElementById("recent-verses")
   let recentVerses = [] // [{ key, label, reference: { book, chapter, verse } }], newest first
+  let renderedRecentVersesKey = null
 
   function rememberRecentVerse(verse) {
     const ref = verse.reference
@@ -3067,30 +3068,46 @@
 
   function renderRecentVerses() {
     if (!recentVersesEl) return
-    recentVersesEl.innerHTML = ""
-    if (recentVerses.length === 0) {
-      const empty = document.createElement("span")
-      empty.className = "recent-empty"
-      empty.textContent = t("recent.empty")
-      recentVersesEl.appendChild(empty)
-      return
+    const renderKey = recentVerses.map((entry) => entry.key + ":" + entry.label).join("|")
+    if (renderKey !== renderedRecentVersesKey) {
+      renderedRecentVersesKey = renderKey
+      recentVersesEl.replaceChildren()
+      if (recentVerses.length === 0) {
+        const empty = document.createElement("span")
+        empty.className = "recent-empty"
+        empty.textContent = t("recent.empty")
+        recentVersesEl.appendChild(empty)
+        return
+      }
+      recentVerses.forEach((entry, index) => {
+        const chip = document.createElement("button")
+        chip.type = "button"
+        chip.className = "recent-chip"
+        chip.dataset.referenceKey = entry.key
+        chip.title = t("recent.recallHint", { reference: entry.label, key: String(index + 1) })
+        const num = document.createElement("span")
+        num.className = "recent-chip-key"
+        num.textContent = String(index + 1)
+        const label = document.createElement("span")
+        label.textContent = entry.label
+        chip.append(num, label)
+        chip.addEventListener("click", () => recallRecentVerse(index))
+        recentVersesEl.appendChild(chip)
+      })
     }
-    recentVerses.forEach((entry, index) => {
-      const chip = document.createElement("button")
-      chip.type = "button"
-      chip.className = "recent-chip" + (onScreen.verse === entry.label ? " live" : "")
-      if (onScreen.verse === entry.label) chip.setAttribute("aria-current", "true")
-      chip.title = t("recent.recallHint", { reference: entry.label, key: String(index + 1) })
-      const num = document.createElement("span")
-      num.className = "recent-chip-key"
-      num.textContent = String(index + 1)
-      const label = document.createElement("span")
-      label.textContent = entry.label
-      chip.append(num, label)
-      chip.addEventListener("click", () => recallRecentVerse(index))
-      recentVersesEl.appendChild(chip)
-    })
+
+    for (const chip of recentVersesEl.querySelectorAll(".recent-chip")) {
+      const isLive = recentVerses.find((entry) => entry.key === chip.dataset.referenceKey)?.label === onScreen.verse
+      chip.classList.toggle("live", isLive)
+      if (isLive) chip.setAttribute("aria-current", "true")
+      else chip.removeAttribute("aria-current")
+    }
   }
+
+  window.addEventListener("churchoverlay:languagechange", () => {
+    renderedRecentVersesKey = null
+    renderRecentVerses()
+  })
 
   // ---- Header clock and on-air timer ---------------------------------------
   const headerClockEl = document.getElementById("header-clock")

@@ -43,7 +43,7 @@ interface VerseMotionApi {
 const M = require(join(REPO_ROOT, "apps", "overlay", "public", "verse-motion.js")) as VerseMotionApi
 
 const NBSP = " "
-const DESIGNS = ["classic", "banner", "minimal", "elegant", "glass", "ribbon", "cinema", "manuscript", "stained", "poster", "split", "bold"]
+const DESIGNS = ["classic", "banner", "minimal", "elegant", "glass", "ribbon", "cinema", "manuscript", "stained", "poster", "split", "bold", "halo", "signal", "folio"]
 
 test("splitRevealUnits: words in order, joining them gives back the text with collapsed spacing", () => {
   const text = "Car Dieu a tant aimé le monde\nqu'il a donné  son Fils unique"
@@ -158,21 +158,23 @@ test("pickVerseTransition: first show, replacement, late join, gentle, reduced m
 })
 
 test("fitLimits: lower-third and fullscreen keep their historical caps; designs adjust only what they need", () => {
-  assert.deepEqual(M.fitLimits(false, "classic"), { maxWidthFraction: 0.9, maxHeightFraction: 0.84, maxFontPx: 44, minFontPx: 14 })
+  assert.deepEqual(M.fitLimits(false, "classic"), { maxWidthFraction: 1, maxHeightFraction: 0.46, maxFontPx: 64, minFontPx: 18 })
   assert.deepEqual(M.fitLimits(true, "classic"), { maxWidthFraction: 0.9, maxHeightFraction: 0.9, maxFontPx: 120, minFontPx: 18 })
-  for (const card of ["banner", "minimal", "elegant", "glass", "ribbon"]) {
+  for (const card of ["banner", "minimal", "elegant", "glass", "ribbon", "halo", "signal", "folio"]) {
     assert.deepEqual(M.fitLimits(false, card), M.fitLimits(false, "classic"), card)
     assert.deepEqual(M.fitLimits(true, card), M.fitLimits(true, "classic"), card)
   }
   // Cinema: the card must stay clear of both letterbox bars (10vh each).
   assert.ok(M.fitLimits(true, "cinema").maxHeightFraction <= 0.8 - 0.05)
-  assert.ok(M.fitLimits(false, "cinema").maxHeightFraction + 0.1 <= 0.9 - 0.1)
+  assert.ok(M.fitLimits(false, "cinema").maxHeightFraction <= 0.5)
+  assert.ok(M.fitLimits(false, "classic").maxFontPx >= 60)
   for (const card of DESIGNS) {
     for (const fs of [false, true]) {
       const l = M.fitLimits(fs, card)
       assert.ok(l.minFontPx >= 14 && l.minFontPx < l.maxFontPx, `${card} legibility floor`)
-      assert.ok(l.maxHeightFraction > 0.5 && l.maxHeightFraction <= 0.9, `${card} height`)
+      assert.ok(l.maxHeightFraction > 0.4 && l.maxHeightFraction <= 0.9, `${card} height`)
       assert.ok(l.maxWidthFraction > 0.5 && l.maxWidthFraction <= 1, `${card} width`)
+      if (!fs) assert.equal(l.maxWidthFraction, 1, `${card} lower third stays full width`)
     }
   }
 })

@@ -69,6 +69,7 @@ import { parseSermonPrep, type SermonPrepParseOutcome, type SermonPrepResult } f
 import { GlossaryDetector } from "../glossary/glossary-detector"
 import { SessionRecorder, type SessionEntry } from "./session-recorder"
 import type { SessionHistoryStore, SessionHistoryEntry } from "./session-history-store"
+import { AudioFrameSequenceTracker } from "../audio/audio-frame-sequence"
 import { AdaptiveGain } from "../audio/adaptive-gain"
 import { MicHealthMonitor } from "../audio/mic-health"
 import type { QuoteMatcher } from "../detector/quote-matcher"
@@ -591,6 +592,21 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
 
   let lastAudioFrameErrorLogTime = 0
   let suppressedAudioFrameErrors = 0
+  function reportAudioFrameFailure(err: unknown): void {
+    const now = Date.now()
+    suppressedAudioFrameErrors++
+    if (now - lastAudioFrameErrorLogTime >= 3000) {
+      lastAudioFrameErrorLogTime = now
+      const count = suppressedAudioFrameErrors
+      suppressedAudioFrameErrors = 0
+      logger.error({
+        component: "app-core",
+        event: "audio-frame.failed",
+        error: err instanceof Error ? err.message : String(err),
+        ...(count > 1 ? { metadata: { suppressedOccurrences: count - 1 } } : {}),
+      })
+    }
+  }
 
   const wsServer = new ChurchOverlayWsServer({
     host: options.host,
@@ -608,21 +624,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       )
     },
     onAudioFrame: (frame) => {
-      handleAudioFrame(frame).catch((err) => {
-        const now = Date.now()
-        suppressedAudioFrameErrors++
-        if (now - lastAudioFrameErrorLogTime >= 3000) {
-          lastAudioFrameErrorLogTime = now
-          const count = suppressedAudioFrameErrors
-          suppressedAudioFrameErrors = 0
-          logger.error({
-            component: "app-core",
-            event: "audio-frame.failed",
-            error: err instanceof Error ? err.message : String(err),
-            ...(count > 1 ? { metadata: { suppressedOccurrences: count - 1 } } : {}),
-          })
-        }
-      })
+      handleAudioFrame(frame).catch(reportAudioFrameFailure)
     },
     onRejected: (reason, role) => {
       logger.warn({ component: "ws", event: "message.rejected", metadata: { reason, role } })
@@ -1408,6 +1410,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   }
 
   async function handleAudioFrame(frame: AudioFrame): Promise<void> {
+    if (micSequenceSessionActive) observeAudioFrameSequence(frame.sequence)
     // ARCHITECTURE.md section 9 / AGENTS.md section 11: reduce unnecessary
     // ASR requests by not forwarding obvious silence. This must never
     // silently discard SPEECH without a trace, which is exactly why the
@@ -1435,7 +1438,11 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     micHealth.observe(frame, rms, isSpeech)
     micHealthAudioMs += (frame.samples.length / frame.sampleRate) * 1000
     if (forwarded) {
-      await asr.sendAudio(adaptiveGain.process(frame, rms, isSpeech))
+      try {
+        await asr.sendAudio(adaptiveGain.process(frame, rms, isSpeech))
+      } catch (err) {
+        reportAudioFrameFailure(err)
+      }
     }
     if (micHealthAudioMs >= MIC_HEALTH_INTERVAL_MS) {
       micHealthAudioMs = 0
@@ -1445,7 +1452,11 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     if (utteranceEnded) {
       // The asr is typed as AsrProvider but we know it's GroqProvider with onUtteranceEnd
       if ("onUtteranceEnd" in asr && typeof asr.onUtteranceEnd === "function") {
-        await (asr as { onUtteranceEnd: () => Promise<void> }).onUtteranceEnd()
+        try {
+          await (asr as { onUtteranceEnd: () => Promise<void> }).onUtteranceEnd()
+        } catch (err) {
+          reportAudioFrameFailure(err)
+        }
       }
     }
   }
@@ -1455,6 +1466,36 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   let previewQueued: WsMessage | null = null
   // True between a successful mic:start and mic:stop. Gates the health and echo observers.
   let micRunning = false
+  let micSequenceSessionActive = false
+  const audioFrameSequence = new AudioFrameSequenceTracker()
+  let micSessionId: string | null = null
+  let lastSequenceAnomalyLogTime = 0
+  let suppressedSequenceAnomalyLogs = 0
+
+  function observeAudioFrameSequence(sequence: number): void {
+    const observation = audioFrameSequence.observe(sequence)
+    if (observation.kind === "in-order") return
+
+    const now = Date.now()
+    if (now - lastSequenceAnomalyLogTime < 5000) {
+      suppressedSequenceAnomalyLogs = Math.min(Number.MAX_SAFE_INTEGER, suppressedSequenceAnomalyLogs + 1)
+      return
+    }
+    lastSequenceAnomalyLogTime = now
+    logger.warn({
+      component: "app-core",
+      event: "mic.audio-sequence-anomaly",
+      correlationId: micSessionId ?? undefined,
+      metadata: {
+        kind: observation.kind,
+        expectedSequence: observation.expectedSequence,
+        receivedSequence: observation.receivedSequence,
+        suppressedOccurrences: suppressedSequenceAnomalyLogs,
+        ...observation.stats,
+      },
+    })
+    suppressedSequenceAnomalyLogs = 0
+  }
 
   function takeQueuedPreview(): WsMessage | null {
     const queued = previewQueued
@@ -1519,8 +1560,18 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         adaptiveGain.reset()
         micHealth.reset()
         micHealthAudioMs = 0
+        audioFrameSequence.reset()
+        micSessionId = generateUlid()
+        lastSequenceAnomalyLogTime = 0
+        suppressedSequenceAnomalyLogs = 0
+        micSequenceSessionActive = true
         broadcastAsrStatus({ asrHealth: currentAsrHealth(), micCalibrating: true })
-        await asr.start()
+        try {
+          await asr.start()
+        } catch (error) {
+          micSequenceSessionActive = false
+          throw error
+        }
         micRunning = true
         logger.info({ component: "app-core", event: "mic.started" })
         return
@@ -1528,9 +1579,23 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       case "mic:stop":
         // Section 132: nothing is being heard any more; a warning must not outlive the mic.
         micRunning = false
+        const endedMicSessionId = micSequenceSessionActive ? micSessionId : null
+        micSequenceSessionActive = false
         serviceHealth.closeMic(Date.now())
         echoWatch.reset()
         syncEchoWarning(Date.now())
+        if (endedMicSessionId !== null) {
+          logger.info({
+            component: "app-core",
+            event: "mic.audio-sequence-summary",
+            correlationId: endedMicSessionId,
+            metadata: {
+              ...audioFrameSequence.snapshot(),
+              suppressedAnomalyLogs: suppressedSequenceAnomalyLogs,
+            },
+          })
+          micSessionId = null
+        }
         await asr.stop()
         logger.info({
           component: "app-core",

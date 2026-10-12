@@ -309,6 +309,74 @@ test("AppCore: a loud binary audio frame from the operator reaches the injected 
   }
 })
 
+test("AppCore: logs bounded audio sequence-gap telemetry separately for each mic session", async () => {
+  const lines: unknown[] = []
+  const logger = new Logger({ minLevel: "info", write: (line) => lines.push(JSON.parse(line)) })
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}),
+    logger,
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const socket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const sendCommand = (id: string, type: "mic:start" | "mic:stop") =>
+      socket.send(JSON.stringify({ id, type, timestamp: Date.now(), payload: null }))
+    const sendFrame = (sequence: number) =>
+      socket.send(encodeAudioFrame({
+        samples: Int16Array.from(new Array(200).fill(5000)),
+        sampleRate: 16000,
+        sequence,
+      }))
+
+    sendCommand("01A", "mic:start")
+    await waitFor(() => asr.startCalls === 1)
+    sendFrame(5)
+    sendFrame(7)
+    sendFrame(7)
+    await waitFor(() => lines.some((line) => (line as { event: string }).event === "mic.audio-sequence-anomaly"))
+    sendCommand("01B", "mic:stop")
+    await waitFor(() => asr.stopCalls === 1)
+
+    const anomalies = lines.filter((line) => (line as { event: string }).event === "mic.audio-sequence-anomaly")
+    assert.equal(anomalies.length, 1, "anomaly logging is throttled")
+    assert.equal((anomalies[0] as { metadata: { missingFrames: number } }).metadata.missingFrames, 1)
+    const firstSummary = lines.find((line) => (line as { event: string }).event === "mic.audio-sequence-summary") as
+      { correlationId: string; metadata: { framesObserved: number; gapEvents: number; missingFrames: number; outOfOrderFrames: number } }
+    assert.deepEqual(firstSummary.metadata, {
+      framesObserved: 3,
+      gapEvents: 1,
+      missingFrames: 1,
+      outOfOrderFrames: 1,
+      suppressedAnomalyLogs: 1,
+    })
+
+    sendCommand("01C", "mic:start")
+    await waitFor(() => asr.startCalls === 2)
+    sendFrame(100)
+    sendCommand("01D", "mic:stop")
+    await waitFor(() => asr.stopCalls === 2)
+    const summaries = lines.filter((line) => (line as { event: string }).event === "mic.audio-sequence-summary") as
+      Array<{ correlationId: string; metadata: { framesObserved: number; gapEvents: number; missingFrames: number; outOfOrderFrames: number } }>
+    assert.equal(summaries.length, 2)
+    assert.notEqual(summaries[0]?.correlationId, summaries[1]?.correlationId)
+    assert.deepEqual(summaries[1]?.metadata, {
+      framesObserved: 1,
+      gapEvents: 0,
+      missingFrames: 0,
+      outOfOrderFrames: 0,
+      suppressedAnomalyLogs: 0,
+    })
+    socket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
 // This is the actual behavior ARCHITECTURE.md section 9's "silence
 // gating works" checklist item means — not just that SilenceGate's own
 // unit tests pass in isolation, but that AppCore genuinely applies it to

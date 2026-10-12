@@ -1,37 +1,40 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   <title>ChurchOverlay</title>
-  <!--
-    ChurchOverlay mark, detailed version (use at 64 px and above).
-    A gold cross over a lower-third caption pill carrying the red on-air dot:
-    the cross is the subject, the pill is what the app puts on screen, and the
-    dot is the same tally signal the operator console uses. Palette is the
-    console's own "Vespers" tokens (dashboard.css). Below 64 px use
-    logo-small.svg, which drops the fine detail.
-  -->
+  <!-- Open scripture beneath a warm cross, with a restrained live tally light. -->
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#22324a"/>
-      <stop offset="1" stop-color="#0c131d"/>
+      <stop offset="0" stop-color="#243a57"/>
+      <stop offset="1" stop-color="#0b1421"/>
     </linearGradient>
-    <radialGradient id="halo" gradientUnits="userSpaceOnUse" cx="512" cy="320" r="420">
-      <stop offset="0" stop-color="#e0a93b" stop-opacity=".30"/>
-      <stop offset="1" stop-color="#e0a93b" stop-opacity="0"/>
+    <radialGradient id="halo" gradientUnits="userSpaceOnUse" cx="512" cy="370" r="450">
+      <stop offset="0" stop-color="#e6c27a" stop-opacity=".24"/>
+      <stop offset="1" stop-color="#e6c27a" stop-opacity="0"/>
     </radialGradient>
-    <linearGradient id="gold" gradientUnits="userSpaceOnUse" x1="0" y1="120" x2="0" y2="628">
-      <stop offset="0" stop-color="#f7d27a"/>
-      <stop offset="1" stop-color="#dc9b22"/>
+    <linearGradient id="gold" gradientUnits="userSpaceOnUse" x1="0" y1="160" x2="0" y2="540">
+      <stop offset="0" stop-color="#ffe09a"/>
+      <stop offset="1" stop-color="#d99a35"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff9ed"/>
+      <stop offset="1" stop-color="#e8dcc4"/>
     </linearGradient>
   </defs>
-  <rect width="1024" height="1024" rx="232" fill="url(#bg)"/>
-  <rect width="1024" height="1024" rx="232" fill="url(#halo)"/>
-  <rect id="edge" x="3" y="3" width="1018" height="1018" rx="229" fill="none" stroke="#ffffff" stroke-opacity=".10" stroke-width="6"/>
+  <rect width="1024" height="1024" rx="228" fill="url(#bg)"/>
+  <rect width="1024" height="1024" rx="228" fill="url(#halo)"/>
+  <rect id="edge" x="4" y="4" width="1016" height="1016" rx="224" fill="none" stroke="#ffffff" stroke-opacity=".12" stroke-width="8"/>
+  <circle cx="812" cy="190" r="61" fill="#ef6262" fill-opacity=".14"/>
+  <circle cx="812" cy="190" r="35" fill="#f05a5a"/>
   <g fill="url(#gold)">
-    <rect x="444" y="120" width="136" height="508" rx="34"/>
-    <rect x="290" y="240" width="444" height="136" rx="34"/>
+    <rect x="464" y="154" width="96" height="382" rx="29"/>
+    <rect x="332" y="268" width="360" height="96" rx="29"/>
   </g>
-  <rect x="136" y="680" width="752" height="168" rx="84" fill="#ede6d8"/>
-  <circle cx="240" cy="764" r="52" fill="#ef4a4a" fill-opacity=".22"/>
-  <circle cx="240" cy="764" r="34" fill="#ef4a4a"/>
-  <rect x="320" y="728" width="480" height="28" rx="14" fill="#0f1722"/>
-  <rect x="320" y="774" width="320" height="28" rx="14" fill="#0f1722" fill-opacity=".45"/>
+  <path d="M512 631C410 564 284 564 168 611v216c119-37 241-27 344 43 103-70 225-80 344-43V611c-116-47-242-47-344 20Z" fill="#07111e" fill-opacity=".42" transform="translate(0 12)"/>
+  <path d="M512 620c-102-66-228-66-344-20v216c119-37 241-27 344 43 103-70 225-80 344-43V600c-116-46-242-46-344 20Z" fill="url(#paper)" stroke="#d6b976" stroke-width="10" stroke-linejoin="round"/>
+  <path d="M512 625v228" fill="none" stroke="#d5b76e" stroke-width="9" stroke-linecap="round"/>
+  <g fill="none" stroke="#87909a" stroke-linecap="round" stroke-width="10" opacity=".6">
+    <path d="M226 657c72-21 146-17 220 14"/>
+    <path d="M226 707c72-21 146-17 220 14"/>
+    <path d="M578 671c74-31 148-35 220-14"/>
+    <path d="M578 721c74-31 148-35 220-14"/>
+  </g>
 </svg>

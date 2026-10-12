@@ -28,7 +28,7 @@ ROOT = HERE.parent.parent
 DETAILED = (HERE / "logo.svg").read_text()
 SMALL = (HERE / "logo-small.svg").read_text()
 
-# Below this size the fine detail (caption text lines, halo) turns to mush.
+# Below this size, use the simplified cross-and-book mark to preserve its silhouette.
 SMALL_BELOW = 64
 
 

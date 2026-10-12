@@ -3,7 +3,7 @@
  * style system. Types only: no behaviour lives in contracts.
  */
 
-/** Section 133 appended cinema..bold; order is the dashboard picker's order. */
+/** Section 133 appends design families in order; this is the dashboard picker's closed-list order. */
 export const OVERLAY_CARD_DESIGNS = [
   "classic",
   "banner",
@@ -17,6 +17,9 @@ export const OVERLAY_CARD_DESIGNS = [
   "poster",
   "split",
   "bold",
+  "halo",
+  "signal",
+  "folio",
 ] as const
 export type OverlayCardDesign = (typeof OVERLAY_CARD_DESIGNS)[number]
 

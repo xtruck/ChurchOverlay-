@@ -21,6 +21,7 @@
   const verseCard = document.getElementById("stage-verse-card");
   const referenceEl = document.getElementById("stage-reference");
   const verseTextEl = document.getElementById("stage-verse-text");
+  const overflowWarning = document.getElementById("stage-overflow-warning");
   const wsDot = document.getElementById("ws-indicator");
   const wsText = document.getElementById("ws-status-text");
   const audioText = document.getElementById("audio-status-text");
@@ -61,14 +62,18 @@
   function fitVerseText() {
     if (!verseTextEl || !verseCard || verseCard.classList.contains("empty")) {
       if (verseTextEl) verseTextEl.style.fontSize = "";
+      if (overflowWarning) overflowWarning.hidden = true;
       return;
     }
     const box = verseTextEl.parentElement;
     verseTextEl.style.fontSize = "";
     let size = parseFloat(getComputedStyle(verseTextEl).fontSize) || 64;
     while (box && verseTextEl.scrollHeight > box.clientHeight + 1 && size > MIN_VERSE_PX) {
-      size -= 2;
+      size = Math.max(MIN_VERSE_PX, size - 2);
       verseTextEl.style.fontSize = size + "px";
+    }
+    if (overflowWarning) {
+      overflowWarning.hidden = Boolean(box && verseTextEl.scrollHeight > box.clientHeight + 1);
     }
   }
   let resizeTimer = 0;

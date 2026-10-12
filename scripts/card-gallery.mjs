@@ -6,7 +6,7 @@
 //                     verse-motion.js, overlay.js, fonts inlined as data URIs),
 //                     with a fake in-page WebSocket so it can be driven without a
 //                     server. The product files are copied verbatim, not edited.
-//   index.html        a gallery: every card design side by side (short and long
+//   index.html        a gallery: the current app icon plus every card design side by side (short and long
 //                     verse), palette / layout / transition / background pickers,
 //                     and Replay buttons for the enter, verse-to-verse and exit
 //                     choreography. No network: open it straight from disk.
@@ -15,7 +15,7 @@
 //   node scripts/card-gallery.mjs [outDir]
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs"
 import { createRequire } from "node:module"
-import { dirname, join, resolve } from "node:path"
+import { dirname, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..")
@@ -26,6 +26,8 @@ const { OVERLAY_CARD_DESIGNS, OVERLAY_TRANSITIONS } = require(join(ROOT, "dist",
 
 const PUB = join(ROOT, "apps", "overlay", "public")
 const read = (...p) => readFileSync(join(PUB, ...p), "utf8")
+const appIconPng = readFileSync(join(ROOT, "assets", "icons", "icon.png")).toString("base64")
+const appIconSmall = readFileSync(join(ROOT, "assets", "icons", "logo-small.svg")).toString("base64")
 
 // ---- fonts: fonts.css with every url() turned into a data URI ----
 const fontsCss = read("fonts", "fonts.css").replace(/url\("([^"]+\.woff2)"\)/g, (_m, file) => {
@@ -55,10 +57,12 @@ const SHIM = String.raw`
   var revision = 1
   var VERSES = __VERSES__
   var PALETTES = __PALETTES__
+  window.__galleryNatureVideoSrc = __NATURE_VIDEO_SRC__
   var SCENES = {
     stage: "radial-gradient(26% 42% at 28% 30%, rgba(255,206,140,.55), transparent 70%), radial-gradient(22% 36% at 74% 26%, rgba(150,180,255,.35), transparent 70%), repeating-linear-gradient(90deg, rgba(0,0,0,.18) 0 3vw, transparent 3vw 13vw), linear-gradient(180deg, #2a2e39 0%, #4b4038 58%, #1a1615 100%)",
     bright: "radial-gradient(40% 50% at 30% 30%, #ffffff, transparent 70%), linear-gradient(180deg, #e9e4d8 0%, #cfc6b4 60%, #9c907c 100%)",
-    none: "transparent"
+    none: "transparent",
+    nature: "transparent"
   }
   function send(type, payload) {
     var data = JSON.stringify({ type: type, payload: payload })
@@ -76,6 +80,7 @@ const SHIM = String.raw`
   window.__sim = {
     setup: function (o) {
       document.documentElement.style.background = SCENES[o.scene || "stage"] || SCENES.stage
+      if (window.__setGalleryNatureBackground) window.__setGalleryNatureBackground(o.scene === "nature")
       send("layout:update", { layout: o.layout === "fullscreen" ? "fullscreen" : "lower-third" })
       style(o.card || "classic", o.palette || "gilt-night", o.transition)
     },
@@ -115,7 +120,8 @@ const VERSES = {
 }
 
 const palettes = PALETTES.map((p) => ({ id: p.id, label: p.label.en, group: p.group, colors: p.colors }))
-const shim = SHIM.replace("__VERSES__", JSON.stringify(VERSES)).replace("__PALETTES__", JSON.stringify(palettes))
+const natureVideoPath = relative(OUT, join(PUB, "backgrounds", "nature-loop.mp4")).replace(/\\/g, "/")
+const shim = SHIM.replace("__VERSES__", JSON.stringify(VERSES)).replace("__PALETTES__", JSON.stringify(palettes)).replace("__NATURE_VIDEO_SRC__", JSON.stringify(natureVideoPath))
 
 let html = read("index.html")
 html = html.replace(/<meta\s+http-equiv="Content-Security-Policy"[\s\S]*?\/>/, "<!-- CSP removed for the offline gallery copy only -->")
@@ -127,7 +133,8 @@ if (/src="(verse-motion|overlay)\.js"/.test(html)) throw new Error("script tags 
 
 const DESIGN_NAMES = {
   classic: "Classic", banner: "Banner", minimal: "Minimal", elegant: "Elegant", glass: "Glass", ribbon: "Ribbon",
-  cinema: "Cinema (new)", manuscript: "Manuscript (new)", stained: "Stained glass (new)", poster: "Poster (new)", split: "Split (new)", bold: "Bold (new)",
+  cinema: "Cinema", manuscript: "Manuscript", stained: "Stained glass", poster: "Poster", split: "Split", bold: "Bold",
+  halo: "Halo", signal: "Signal", folio: "Folio",
 }
 
 const gallery = `<!DOCTYPE html>
@@ -153,8 +160,19 @@ const gallery = `<!DOCTYPE html>
   .frame { position: relative; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 6px; border: 1px solid var(--line); }
   .frame iframe { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px; border: 0; transform-origin: 0 0; }
   .cap { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .background-help { flex-basis: 100%; margin: 0; color: var(--muted); font-size: 12px; }
+  .background-help code { color: var(--text); }
   .btns { display: flex; gap: 6px; flex-wrap: wrap; }
   .btns button { padding: 3px 8px; font-size: 12px; }
+  .icon-showcase { display: flex; align-items: center; gap: 22px; margin: 16px; padding: 14px 18px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+  .icon-showcase h2 { margin: 0 0 4px; font-size: 15px; }
+  .icon-showcase p { margin: 0; color: var(--muted); font-size: 12px; }
+  .icon-views { display: flex; align-items: end; gap: 16px; margin-left: auto; }
+  .icon-views figure { display: grid; justify-items: center; gap: 5px; margin: 0; color: var(--muted); font-size: 11px; }
+  .icon-views img { display: block; border-radius: 15px; }
+  .app-icon-large { width: 104px; height: 104px; }
+  .app-icon-small { width: 56px; height: 56px; }
+  @media (max-width: 600px) { .icon-showcase { align-items: flex-start; flex-direction: column; } .icon-views { margin-left: 0; } }
 </style>
 </head>
 <body>
@@ -163,7 +181,8 @@ const gallery = `<!DOCTYPE html>
   <label>Palette <select id="palette"></select></label>
   <label>Layout <select id="layout"><option value="lower-third">Lower third</option><option value="fullscreen">Fullscreen</option></select></label>
   <label>Transition <select id="transition"></select></label>
-  <label>Background <select id="scene"><option value="stage">Stage (dark)</option><option value="bright">Bright</option><option value="none">Transparent</option></select></label>
+  <label>Background <select id="scene"><option value="stage">Stage (dark)</option><option value="bright">Bright</option><option value="none">Transparent</option><option value="nature">Nature loop (local)</option></select></label>
+  <p class="background-help">For the live overlay, append <code>?background=nature</code> to its URL. Playback uses only the local overlay asset and is disabled for reduced-motion preference.</p>
   <label>Second tile <select id="second"><option value="long">Long verse</option><option value="bilingual">Bilingual</option></select></label>
   <div class="btns">
     <button id="all-enter">Replay all: enter</button>
@@ -171,6 +190,13 @@ const gallery = `<!DOCTYPE html>
     <button id="all-exit">Replay all: exit</button>
   </div>
 </header>
+<section class="icon-showcase" aria-label="ChurchOverlay app icon">
+  <div><h2>App icon refresh</h2><p>One vector mark, tuned for small sizes; source SVGs, 512 px PNG, multi-size Windows ICO and macOS ICNS are packaged from this artwork.</p></div>
+  <div class="icon-views">
+    <figure><img class="app-icon-large" src="data:image/png;base64,${appIconPng}" alt="ChurchOverlay app icon at 512 px"><figcaption>512px / app icon</figcaption></figure>
+    <figure><img class="app-icon-small" src="data:image/svg+xml;base64,${appIconSmall}" alt="Simplified ChurchOverlay icon"><figcaption>Small-size source</figcaption></figure>
+  </div>
+</section>
 <main id="grid"></main>
 <script>
 (function () {

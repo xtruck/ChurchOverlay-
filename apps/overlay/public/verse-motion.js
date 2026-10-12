@@ -138,6 +138,12 @@
     split: { textStart: 200, lineStep: 80, wordStep: 12, wordDur: 560, refStart: 120 },
     // High energy: quick, tight, with overshoot.
     bold: { textStart: 120, swapTextStart: 30, lineStep: 60, wordStep: 18, maxSpread: 240, wordDur: 420, refGap: 40, refDur: 420, swapOut: 220 },
+    // A quiet focal bloom, with the words lingering into the light.
+    halo: { textStart: 180, lineStep: 110, wordStep: 10, maxSpread: 320, wordDur: 640, refGap: 90, refDur: 520, swapOut: 300 },
+    // Broadcast lower-third: compact reveal, with the scripture label leading.
+    signal: { textStart: 130, lineStep: 70, wordStep: 8, maxSpread: 240, wordDur: 500, refStart: 60, refDur: 440, swapOut: 240 },
+    // A measured archival page, setting the citation after the verse.
+    folio: { textStart: 180, lineStep: 90, wordStep: 6, maxSpread: 300, wordDur: 620, refGap: 120, refDur: 540, swapOut: 320 },
   }
 
   function profileFor(card) {
@@ -210,21 +216,21 @@
   function fitLimits(isFullscreen, card) {
     const l = isFullscreen
       ? { maxWidthFraction: 0.9, maxHeightFraction: 0.9, maxFontPx: 120, minFontPx: 18 }
-      : { maxWidthFraction: 0.9, maxHeightFraction: 0.84, maxFontPx: 44, minFontPx: 14 }
+      : { maxWidthFraction: 1, maxHeightFraction: 0.46, maxFontPx: 64, minFontPx: 18 }
     if (card === "cinema") {
       // The card is a full-width band (its width never shrinks with the
       // type), so only the height may drive the fit.
-      l.maxHeightFraction = isFullscreen ? 0.7 : 0.64
+      l.maxHeightFraction = isFullscreen ? 0.7 : 0.46
       l.maxWidthFraction = 1
     } else if (card === "manuscript") {
       // A page, not a billboard: keep fullscreen type book-like.
       if (isFullscreen) l.maxFontPx = 96
     } else if (card === "poster") {
-      l.maxFontPx = isFullscreen ? 136 : 60
+      l.maxFontPx = isFullscreen ? 136 : 64
     } else if (card === "bold") {
-      l.maxFontPx = isFullscreen ? 112 : 46
+      l.maxFontPx = isFullscreen ? 112 : 64
     } else if (card === "split") {
-      l.maxWidthFraction = isFullscreen ? 0.92 : 0.94
+      l.maxWidthFraction = isFullscreen ? 0.92 : 1
     }
     return l
   }

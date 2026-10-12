@@ -85,7 +85,7 @@ export class SessionHistoryStore {
 
   record(verse: Verse, timestamp: number): Promise<void> {
     this.entries.push({
-      reference: verse.reference,
+      reference: { ...verse.reference },
       text: verse.text,
       translation: verse.translation,
       timestamp,
@@ -107,7 +107,10 @@ export class SessionHistoryStore {
 
   /** A fresh copy each call — same "caller unaffected by a later record()" guarantee SessionRecorder's own getEntries() gives. */
   getEntries(): readonly SessionHistoryEntry[] {
-    return [...this.entries]
+    return this.entries.map((entry) => ({
+      ...entry,
+      reference: { ...entry.reference },
+    }))
   }
 
   private async persist(): Promise<void> {

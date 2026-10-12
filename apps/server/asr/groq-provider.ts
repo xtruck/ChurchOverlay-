@@ -61,8 +61,8 @@ export const RATE_LIMIT_RETRY_BASE_MS = 2000
 // nothing here bounds concurrent in-flight requests — repeated stalls
 // could accumulate silently for the rest of the service. This bounds
 // every request to a hard ceiling so a stall fails fast and recovers
-// through the exact same error/retry path a real 429 or network error
-// already uses, instead of hanging indefinitely.
+// through the error path instead of hanging indefinitely. Network errors
+// are deliberately not retried because the server may have processed them.
 export const DEFAULT_REQUEST_TIMEOUT_MS = 15_000
 export const SUSTAINED_NETWORK_ERROR_THRESHOLD = 3
 
@@ -75,6 +75,16 @@ export class RateLimitError extends Error {
     this.name = "RateLimitError"
     this.retryAfterMs = retryAfterMs
     this.type = type
+  }
+}
+
+export class GroqNetworkError extends Error {
+  readonly kind: "timeout" | "network"
+
+  constructor(kind: "timeout" | "network", message: string) {
+    super(message)
+    this.name = "GroqNetworkError"
+    this.kind = kind
   }
 }
 
@@ -337,20 +347,28 @@ export class GroqProvider implements AsrProvider {
   }
 
   async stop(): Promise<void> {
-    if (this.active && this.bufferedSampleCount > 0) {
-      await this.flush()
+    if (!this.active) return
+    try {
+      if (this.bufferedSampleCount > 0) {
+        await this.flush()
+      }
+      if (this.bufferedSampleCount > 0) {
+        throw new Error("GroqProvider.stop() could not transcribe buffered audio because requests are throttled")
+      }
+    } finally {
+      if (this.bufferedSampleCount > 0) this.discardBufferedAudio("stop-undelivered")
+      this.active = false
     }
-    this.active = false
   }
 
   /** Used by failover: discard buffered batch audio without issuing another request. */
-  discardBufferedAudio(): void {
+  discardBufferedAudio(reason = "failover"): void {
     // AGENTS.md sections 11 and 46: audio thrown away on failover must be observable, not silent.
     if (this.bufferedSampleCount > 0) {
       this.logger?.warn({
         component: "asr",
         event: "asr.audio-discarded",
-        metadata: { durationMs: Math.round((this.bufferedSampleCount / SAMPLE_RATE) * 1000) },
+        metadata: { durationMs: Math.round((this.bufferedSampleCount / SAMPLE_RATE) * 1000), reason },
       })
     }
     this.bufferedFrames = []
@@ -514,7 +532,23 @@ export class GroqProvider implements AsrProvider {
       // resume, so the chunk that was refused goes back in front of newer audio.
       // Without this its speech (possibly a verse reference) was silently lost.
       if (err instanceof RateLimitError && err.type === "429") this.requeueRefusedChunk(samples)
-      this.errorCallback?.(err instanceof Error ? err : new Error(String(err)))
+      const error = err instanceof Error ? err : new Error(String(err))
+      if (error instanceof GroqNetworkError) {
+        this.logger?.warn({
+          component: "asr",
+          event: "asr.audio-discarded",
+          metadata: {
+            durationMs: Math.round((samples.length / SAMPLE_RATE) * 1000),
+            reason: `groq-${error.kind}`,
+            retryAttempted: false,
+          },
+        })
+      }
+      this.errorCallback?.(error)
+      // The remote service may have completed an upload before the
+      // connection failed. Do not replay that audio: surface the failed
+      // send to the caller instead of implying successful transcription.
+      if (error instanceof GroqNetworkError) throw error
     }
   }
 
@@ -656,29 +690,27 @@ export class GroqProvider implements AsrProvider {
         signal: controller.signal,
       })
     } catch (err) {
+      clearTimeout(timeoutId)
       // Network failure or our own abort — either way, fetch() itself
       // never produced a response, so this is a connectivity failure
       // class distinct from a documented Groq error response below.
       const isTimeout = err instanceof Error && err.name === "AbortError"
       this.consecutiveNetworkErrors++
-      if (this.consecutiveNetworkErrors >= SUSTAINED_NETWORK_ERROR_THRESHOLD && this.rateLimitedSustainedCallback) {
+      if (this.consecutiveNetworkErrors === SUSTAINED_NETWORK_ERROR_THRESHOLD && this.rateLimitedSustainedCallback) {
         this.rateLimitedSustainedCallback()
       }
-      throw new Error(
+      throw new GroqNetworkError(
+        isTimeout ? "timeout" : "network",
         isTimeout
           ? `Groq request timed out after ${this.requestTimeoutMs}ms`
           : `Groq request failed: ${err instanceof Error ? err.message : String(err)}`
       )
-    } finally {
-      clearTimeout(timeoutId)
     }
 
-    // A response — even an error one — means the connection itself is
-    // fine; only fetch() rejecting above counts as a network failure.
-    this.consecutiveNetworkErrors = 0
-
+    try {
     if (!response.ok) {
-      const errorBody = await safeReadJson(response)
+      const errorBody = await safeReadJson(response, controller.signal)
+      this.consecutiveNetworkErrors = 0
       const errorMessage = extractGroqErrorMessage(errorBody) ?? `Groq request failed with status ${response.status}`
       // TASK 2: detect 429 and parse retry-after delay
       if (response.status === 429) {
@@ -711,7 +743,8 @@ export class GroqProvider implements AsrProvider {
     // Reset consecutive 429 counter on successful request
     this.consecutive429s = 0
 
-    const body = await safeReadJson(response)
+    const body = await safeReadJson(response, controller.signal)
+    this.consecutiveNetworkErrors = 0
     const text = isPlainObject(body) ? body.text : undefined
     if (typeof text !== "string") {
       throw new Error("Groq response did not include a text field")
@@ -733,6 +766,27 @@ export class GroqProvider implements AsrProvider {
     }
 
     return text.trim()
+    } catch (err) {
+      if (controller.signal.aborted || (err instanceof Error && err.name === "AbortError")) {
+        this.consecutiveNetworkErrors++
+        if (this.consecutiveNetworkErrors === SUSTAINED_NETWORK_ERROR_THRESHOLD && this.rateLimitedSustainedCallback) {
+          this.rateLimitedSustainedCallback()
+        }
+        throw new GroqNetworkError("timeout", `Groq request timed out after ${this.requestTimeoutMs}ms`)
+      }
+      if (err instanceof GroqNetworkError) {
+        if (err.kind === "network") {
+          this.consecutiveNetworkErrors++
+          if (this.consecutiveNetworkErrors === SUSTAINED_NETWORK_ERROR_THRESHOLD && this.rateLimitedSustainedCallback) {
+            this.rateLimitedSustainedCallback()
+          }
+        }
+        throw err
+      }
+      throw err
+    } finally {
+      clearTimeout(timeoutId)
+    }
   }
 }
 
@@ -803,9 +857,19 @@ function writeAscii(view: DataView, offset: number, text: string): void {
   }
 }
 
-async function safeReadJson(response: Response): Promise<unknown> {
+async function safeReadJson(response: Response, signal?: AbortSignal): Promise<unknown> {
+  let text: string
   try {
-    return await response.json()
+    text = await response.text()
+  } catch (err) {
+    if (signal?.aborted || (err instanceof Error && err.name === "AbortError")) throw err
+    throw new GroqNetworkError(
+      "network",
+      `Groq response body failed: ${err instanceof Error ? err.message : String(err)}`
+    )
+  }
+  try {
+    return JSON.parse(text) as unknown
   } catch {
     return null
   }

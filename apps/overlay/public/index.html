@@ -95,6 +95,17 @@
     -webkit-font-smoothing: antialiased;
   }
 
+  /* Optional, local-only scenic plate. Loaded only after explicit opt-in. */
+  #nature-backdrop { position: fixed; inset: 0; z-index: 0; display: none; overflow: hidden; pointer-events: none; background: #101923; }
+  html.nature-background #nature-backdrop { display: block; }
+  #nature-background-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; }
+  #nature-background-scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(5, 10, 17, 0.2), rgba(5, 10, 17, 0.5)); }
+  html.nature-video-ready #nature-background-video { opacity: 1; }
+  html.nature-background-fallback #nature-background-scrim {
+    background: radial-gradient(ellipse at 50% 36%, rgba(177, 198, 204, 0.22), transparent 42%), linear-gradient(180deg, #536b77 0%, #263d4a 47%, #101923 100%);
+  }
+  @media (prefers-reduced-motion: reduce) { #nature-background-video { display: none; } }
+
   /*
     Connection chrome: a diagnostic, never content. It starts hidden (no
     flash on load), stays hidden while connected, and appears only when
@@ -170,7 +181,7 @@
   #status.status-hidden { opacity: 0; visibility: hidden; transition: opacity var(--ov-exit) var(--ov-ease), visibility 0s linear var(--ov-exit); }
 
   /*
-    Lower-third base: bottom-anchored inside a ~7% title-safe margin.
+    Lower-third base: full-width lower-screen band with generous interior padding;
     Exit (200ms, accelerate) is faster than enter (320ms, decelerate);
     only opacity/transform animate, so nothing reflows on air.
   */
@@ -196,6 +207,19 @@
     /* The container only fades and lifts a little: the card, the words and
        the reference carry the choreography (see "Section 133" below). */
     transition: opacity 380ms var(--vc-ease-out), transform 800ms var(--vc-ease-out);
+  }
+  /* A broadcast lower-third spans the frame's lower band so scripture can
+     use large type while keeping the live picture visible above it. */
+  #verse:not(.fullscreen) { bottom: 0; align-items: stretch; padding: 0 0 2vh; }
+  #verse:not(.fullscreen) #verse-card.no-card { background: transparent; border-color: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  #verse:not(.fullscreen) #verse-card {
+    width: 100%; max-width: none; max-height: 48vh;
+    padding: clamp(18px, 2.6vh, 34px) clamp(22px, 4vw, 68px);
+    background: linear-gradient(180deg, rgba(var(--ov-card-rgb), calc(0.42 + var(--ov-card-a) * 0.52)), rgba(var(--ov-card-rgb), calc(0.54 + var(--ov-card-a) * 0.44)));
+  }
+  @media (max-width: 640px) {
+    #verse:not(.fullscreen) { padding: 0 0 10px; }
+    #verse:not(.fullscreen) #verse-card { max-height: 58vh; padding: 16px 18px; }
   }
   #verse.vc-fade.visible { transition: opacity var(--vc-fade) ease-out, transform var(--vc-fade) ease-out; }
   #verse.vc-cut, #verse.vc-cut #verse-text, #verse.vc-cut #verse-secondary-text { transition: none; }
@@ -302,6 +326,7 @@
       radial-gradient(90% 60% at 50% 125%, rgba(46, 78, 128, 0.28), transparent 70%),
       linear-gradient(180deg, var(--ov-backdrop), var(--ov-backdrop-2));
   }
+  html.nature-background #verse.fullscreen { background: linear-gradient(180deg, rgba(3, 8, 14, 0.34), rgba(3, 8, 14, 0.58)); }
   #verse.fullscreen #verse-text { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5); line-height: 1.28; max-width: 26em; }
   /* The full-bleed backdrop never slides: it only fades, so the frame edge
      never shows video through a moving gap. The words inside still settle
@@ -344,6 +369,14 @@
     text-wrap: balance;
   }
   #verse-secondary-text.visible { display: block; }
+  /* English is italic in the same serif family as French; French retains
+     its existing, unmodified primary-block styling. */
+  #verse.bilingual #verse-text[data-language="en"],
+  #verse.bilingual #verse-secondary-text[data-language="en"] {
+    font-family: "Instrument Serif", Georgia, "Times New Roman", serif;
+    font-style: italic;
+    font-weight: 400;
+  }
 
   #verse-ref-row {
     display: flex;
@@ -1124,6 +1157,212 @@
   #verse.fullscreen #verse-card.tpl-bold::before { height: 12px; }
   #verse.fullscreen #verse-card.tpl-bold #verse-reference { font-size: clamp(16px, 1.6vw, 30px); }
 
+  /* ---------------------------------------------------------------
+     Section 133 follow-up: halo. A quiet, centered focal light with a
+     restrained surface scrim for dependable contrast over live video.
+     The light bloom settles before the verse is left perfectly still.
+     --------------------------------------------------------------- */
+  #verse-card.tpl-halo {
+    --rv-dy: 0.28em;
+    --rv-blur: 8px;
+    --card-dy: 10px;
+    --card-s: 0.985;
+    --card-dur: 860ms;
+    max-width: 1180px;
+    padding: clamp(26px, 4vh, 54px) clamp(28px, 5vw, 82px) clamp(24px, 3.5vh, 44px);
+    border: 1px solid rgba(var(--accent-rgb), 0.34);
+    border-radius: 28px;
+    background:
+      radial-gradient(ellipse 78% 120% at 50% 0%, rgba(var(--accent-rgb), 0.1), transparent 74%),
+      linear-gradient(180deg, rgba(var(--ov-card-rgb), calc(0.34 + var(--ov-card-a) * 0.58)), rgba(var(--ov-card-rgb), calc(0.45 + var(--ov-card-a) * 0.5)));
+    box-shadow: 0 24px 80px rgba(var(--ov-card-rgb), 0.38), inset 0 1px 0 rgba(var(--ov-text2-rgb), 0.12);
+  }
+  #verse-card.tpl-halo::before {
+    content: "";
+    position: absolute;
+    inset: -16% -8%;
+    z-index: -1;
+    pointer-events: none;
+    border-radius: 50%;
+    background: radial-gradient(ellipse at 50% 48%, rgba(var(--accent-rgb), 0.25), rgba(var(--accent-rgb), 0.08) 38%, transparent 72%);
+    transform-origin: center;
+  }
+  @keyframes vc-halo-bloom { from { opacity: 0; transform: scale(0.82); } }
+  #verse.vc-enter #verse-card.tpl-halo::before,
+  #verse.vc-swap-in #verse-card.tpl-halo::before { animation: vc-halo-bloom 980ms var(--vc-ease-out) both; }
+  #verse-card.tpl-halo #verse-text { max-width: 28em; line-height: 1.3; }
+  #verse-card.tpl-halo #verse-secondary-text { margin-top: 14px; border-top-color: rgba(var(--accent-rgb), 0.28); }
+  #verse-card.tpl-halo #verse-ref-row { margin-top: 24px; gap: 16px; }
+  #verse-card.tpl-halo #verse-ref-row::before,
+  #verse-card.tpl-halo #verse-ref-row::after { width: clamp(26px, 4vw, 62px); opacity: 0.72; }
+  #verse-card.tpl-halo #verse-reference {
+    font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+    font-style: normal;
+    font-weight: 600;
+    font-size: clamp(13px, 1.35vw, 22px);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+  #verse.fullscreen #verse-card.tpl-halo {
+    width: auto;
+    max-width: min(90%, 1400px);
+    padding: clamp(36px, 7vh, 88px) clamp(36px, 7vw, 120px) clamp(30px, 5vh, 64px);
+    border: 1px solid rgba(var(--accent-rgb), 0.4);
+    border-radius: 32px;
+    background:
+      radial-gradient(ellipse 78% 120% at 50% 0%, rgba(var(--accent-rgb), 0.1), transparent 74%),
+      linear-gradient(180deg, rgba(var(--ov-card-rgb), calc(0.34 + var(--ov-card-a) * 0.58)), rgba(var(--ov-card-rgb), calc(0.45 + var(--ov-card-a) * 0.5)));
+    box-shadow: 0 30px 100px rgba(var(--ov-card-rgb), 0.42), inset 0 1px 0 rgba(var(--ov-text2-rgb), 0.12);
+  }
+
+  /* ---------------------------------------------------------------
+     Section 133 follow-up: signal. A broadcast-ready lower-third strip,
+     left keyed, with the citation as a clear lead-in above the verse.
+     --------------------------------------------------------------- */
+  #verse[data-card="signal"]:not(.fullscreen) { align-items: stretch; padding: 0 4%; }
+  #verse-card.tpl-signal {
+    --rv-dx: -0.22em;
+    --rv-dy: 0.12em;
+    --rv-blur: 4px;
+    --card-dx: -22px;
+    --card-dy: 0px;
+    --card-s: 1;
+    --card-dur: 620ms;
+    width: 100%;
+    max-width: 1480px;
+    align-items: flex-start;
+    padding: clamp(22px, 3vh, 38px) clamp(24px, 4vw, 58px);
+    border: 1px solid var(--ov-border);
+    border-left: 8px solid var(--accent);
+    border-radius: 4px 18px 18px 4px;
+    background:
+      linear-gradient(90deg, rgba(var(--accent-rgb), 0.08), transparent 36%),
+      linear-gradient(180deg, rgba(var(--ov-card-rgb), calc(0.32 + var(--ov-card-a) * 0.6)), rgba(var(--ov-card-rgb), calc(0.42 + var(--ov-card-a) * 0.52)));
+    box-shadow: 0 18px 52px rgba(var(--ov-card-rgb), 0.4);
+  }
+  #verse-card.tpl-signal::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    pointer-events: none;
+    background: linear-gradient(90deg, var(--accent), rgba(var(--accent-rgb), 0.16) 58%, transparent);
+    transform-origin: 0 50%;
+  }
+  @keyframes vc-signal-rule { from { transform: scaleX(0); opacity: 0; } }
+  #verse.vc-enter #verse-card.tpl-signal::before,
+  #verse.vc-swap-in #verse-card.tpl-signal::before { animation: vc-signal-rule 560ms var(--vc-ease-out) both; }
+  #verse-card.tpl-signal #verse-text,
+  #verse-card.tpl-signal #verse-secondary-text { max-width: 42em; text-align: left; text-wrap: pretty; }
+  #verse-card.tpl-signal #verse-text {
+    font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+    font-weight: 600;
+    letter-spacing: -0.012em;
+    line-height: 1.24;
+  }
+  #verse-card.tpl-signal #verse-secondary-text { margin-top: 10px; padding-top: 10px; border-top-color: rgba(var(--ov-text2-rgb), 0.22); }
+  #verse-card.tpl-signal #verse-ref-row { order: -1; margin: 0 0 12px; gap: 0; }
+  #verse-card.tpl-signal #verse-ref-row::before,
+  #verse-card.tpl-signal #verse-ref-row::after { display: none; }
+  #verse-card.tpl-signal #verse-reference {
+    padding: 0.28em 0.7em 0.24em;
+    border: 1px solid rgba(var(--accent-rgb), 0.62);
+    border-radius: 3px;
+    font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
+    font-style: normal;
+    font-size: clamp(12px, 1.05vw, 18px);
+    font-weight: 600;
+    letter-spacing: 0.075em;
+    text-transform: uppercase;
+  }
+  #verse.fullscreen #verse-card.tpl-signal {
+    width: auto;
+    max-width: min(94%, 1480px);
+    border: 1px solid var(--ov-border);
+    border-left: 8px solid var(--accent);
+    border-radius: 4px 18px 18px 4px;
+    background:
+      linear-gradient(90deg, rgba(var(--accent-rgb), 0.08), transparent 36%),
+      linear-gradient(180deg, rgba(var(--ov-card-rgb), calc(0.32 + var(--ov-card-a) * 0.6)), rgba(var(--ov-card-rgb), calc(0.42 + var(--ov-card-a) * 0.52)));
+    box-shadow: 0 24px 72px rgba(var(--ov-card-rgb), 0.4);
+  }
+  @media (max-width: 640px) {
+    #verse-card.tpl-signal { padding: 18px 20px; border-left-width: 5px; }
+    #verse.fullscreen #verse-card.tpl-signal { padding: 22px 22px; border-left-width: 5px; }
+  }
+
+  /* ---------------------------------------------------------------
+     Section 133 follow-up: folio. A precise archival page: inset frame,
+     ragged-right serif text and a quiet mono citation, without a drop cap.
+     --------------------------------------------------------------- */
+  #verse-card.tpl-folio {
+    --rv-dx: 0;
+    --rv-dy: 0.18em;
+    --rv-blur: 5px;
+    --card-dy: 12px;
+    --card-s: 0.99;
+    --card-dur: 760ms;
+    max-width: 1120px;
+    align-items: stretch;
+    padding: clamp(30px, 4.5vh, 60px) clamp(30px, 5vw, 78px) clamp(24px, 3.5vh, 44px);
+    border: 1px solid rgba(var(--ov-border-rgb), 0.95);
+    border-radius: 6px;
+    background:
+      linear-gradient(135deg, rgba(var(--accent-rgb), 0.06), transparent 46%),
+      linear-gradient(180deg, rgba(var(--ov-card-rgb), calc(0.32 + var(--ov-card-a) * 0.62)), rgba(var(--ov-card-rgb), calc(0.44 + var(--ov-card-a) * 0.5)));
+    box-shadow: 0 22px 66px rgba(var(--ov-card-rgb), 0.4);
+  }
+  #verse-card.tpl-folio::before {
+    content: "";
+    position: absolute;
+    inset: 9px;
+    z-index: -1;
+    pointer-events: none;
+    border: 1px solid rgba(var(--accent-rgb), 0.3);
+    border-radius: 2px;
+    transform-origin: center;
+  }
+  @keyframes vc-folio-frame { from { opacity: 0; transform: scale(0.985); } }
+  #verse.vc-enter #verse-card.tpl-folio::before,
+  #verse.vc-swap-in #verse-card.tpl-folio::before { animation: vc-folio-frame 760ms var(--vc-ease-out) both; }
+  #verse-card.tpl-folio #verse-text,
+  #verse-card.tpl-folio #verse-secondary-text { align-self: stretch; max-width: none; text-align: left; text-wrap: pretty; }
+  #verse-card.tpl-folio #verse-text { line-height: 1.4; }
+  #verse-card.tpl-folio #verse-secondary-text { margin-top: 16px; border-top-color: rgba(var(--accent-rgb), 0.28); }
+  #verse-card.tpl-folio #verse-ref-row { align-self: flex-end; margin-top: 22px; gap: 0; }
+  #verse-card.tpl-folio #verse-ref-row::before,
+  #verse-card.tpl-folio #verse-ref-row::after { display: none; }
+  #verse-card.tpl-folio #verse-reference {
+    padding: 0.32em 0.72em;
+    border: 1px solid rgba(var(--accent-rgb), 0.42);
+    color: var(--ov-text2);
+    font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
+    font-style: normal;
+    font-size: clamp(12px, 1vw, 17px);
+    font-weight: 500;
+    letter-spacing: 0.08em;
+  }
+  #verse.fullscreen #verse-card.tpl-folio {
+    width: auto;
+    max-width: min(90%, 1340px);
+    padding: clamp(38px, 7vh, 92px) clamp(38px, 6vw, 96px) clamp(30px, 5vh, 64px);
+    border: 1px solid rgba(var(--ov-border-rgb), 0.95);
+    border-radius: 6px;
+    background:
+      linear-gradient(135deg, rgba(var(--accent-rgb), 0.06), transparent 46%),
+      linear-gradient(180deg, rgba(var(--ov-card-rgb), calc(0.32 + var(--ov-card-a) * 0.62)), rgba(var(--ov-card-rgb), calc(0.44 + var(--ov-card-a) * 0.5)));
+  }
+  @media (max-width: 640px) {
+    #verse-card.tpl-halo { padding: 24px 22px 20px; border-radius: 22px; }
+    #verse.fullscreen #verse-card.tpl-halo { padding: 28px 24px 24px; }
+    #verse-card.tpl-folio { padding: 28px 26px 22px; }
+    #verse-card.tpl-folio::before { inset: 6px; }
+    #verse.fullscreen #verse-card.tpl-folio { padding: 30px 28px 24px; }
+  }
+
   /* No card (clear-text palettes) still wins over every design, including
      the new ones declared after the original .no-card rule ([class] only
      lifts specificity). Their own surface layers go too. */
@@ -1136,7 +1375,10 @@
     backdrop-filter: none;
   }
   #verse-card.tpl-stained.no-card::before,
-  #verse-card.tpl-manuscript.no-card::before { display: none; }
+  #verse-card.tpl-manuscript.no-card::before,
+  #verse-card.tpl-halo.no-card::before,
+  #verse-card.tpl-signal.no-card::before,
+  #verse-card.tpl-folio.no-card::before { display: none; }
   #verse-card.tpl-bold.no-card #verse-reference { text-shadow: none; }
 
   @media (prefers-reduced-motion: reduce) {
@@ -1419,6 +1661,7 @@
 </style>
 </head>
 <body>
+  <div id="nature-backdrop" aria-hidden="true"><video id="nature-background-video" autoplay muted loop playsinline preload="none" tabindex="-1"></video><div id="nature-background-scrim"></div></div>
   <div id="status" class="status-hidden" role="status">connecting…</div>
   <div id="brand-name" class="brand-item"></div>
   <img id="brand-logo" class="brand-item" alt="" />
