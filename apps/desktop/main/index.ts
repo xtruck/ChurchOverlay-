@@ -369,7 +369,7 @@ async function startServices(
   const frenchTranslation = config.frenchTranslation ?? "ls1910"
   const frenchSource = await buildFrenchSource(frenchTranslation)
   localizedVerseSource = new LocalizedVerseSource(
-    new FreeApiSource(),
+    new FreeApiSource(undefined, config.customBibleApiUrl),
     frenchSource,
     config.displayMode,
     logger,
@@ -1541,6 +1541,16 @@ ipcMain.handle("get-pipeline-latency", () => {
 })
 
 /**
+ * The set of connected WebSocket clients and their per-client round-trip
+ * latency history, read by the dashboard's network diagnostics panel over
+ * Electron IPC. Same "main process only, renderer reads only" boundary as
+ * get-pipeline-latency.
+ */
+ipcMain.handle("get-ws-client-latency", () => {
+  return appCoreHandle?.getWsClientLatency() ?? []
+})
+
+/**
  * ARCHITECTURE.md section 130: sermon-prep import. The renderer sends only
  * the pasted text; parsing, bounding and known-valid validation happen in
  * AppCore. The result is references only — showing one is an ordinary
@@ -1763,6 +1773,34 @@ ipcMain.handle("generate-service-extras", async (_event, sermonNotesText: unknow
     return { error: message }
   } finally {
     serviceExtrasBusy = false
+  }
+})
+
+/** Export the current session transcript as Markdown for post-service review. */
+ipcMain.handle("export-session-transcript", async () => {
+  if (!appCoreHandle) {
+    throw new Error("services are not started yet")
+  }
+  const markdown = appCoreHandle.getSessionTranscriptMarkdown()
+  if (!dashboardWindow) {
+    throw new Error("dashboard window is not available")
+  }
+  const result = await dialog.showSaveDialog(dashboardWindow, {
+    title: "Export Session Transcript",
+    defaultPath: `church-overlay-transcript-${new Date().toISOString().split("T")[0]}.md`,
+    filters: [{ name: "Markdown", extensions: ["md"] }],
+  })
+  if (result.canceled || !result.filePath) {
+    return { canceled: true as const }
+  }
+  try {
+    await writeFile(result.filePath, markdown, "utf8")
+    logger.info({ component: "main", event: "transcript.exported", metadata: { path: result.filePath } })
+    return { canceled: false as const, path: result.filePath }
+  } catch (err) {
+    const message = scrubSecrets(err instanceof Error ? err.message : String(err))
+    logger.error({ component: "main", event: "transcript.export.failed", error: message })
+    return { canceled: false as const, error: message }
   }
 })
 

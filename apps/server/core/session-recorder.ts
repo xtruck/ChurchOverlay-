@@ -43,4 +43,30 @@ export class SessionRecorder {
   getEntries(): readonly SessionEntry[] {
     return [...this.entries]
   }
+
+  /**
+   * Export the session transcript as Markdown format.
+   * Includes timestamps, verse references, and verse text.
+   * Useful for post-service review and documentation.
+   */
+  exportMarkdown(): string {
+    if (this.entries.length === 0) {
+      return "# Service Transcript\n\nNo verses were shown during this session.\n"
+    }
+
+    const lines = ["# Service Transcript\n"]
+    lines.push(`Generated: ${new Date().toISOString()}\n`)
+    lines.push(`Total verses shown: ${this.entries.length}\n\n`)
+    lines.push("---\n\n")
+
+    for (const entry of this.entries) {
+      const time = new Date(entry.timestamp).toLocaleTimeString()
+      const ref = `${entry.reference.book} ${entry.reference.chapter}:${entry.reference.verse}`
+      lines.push(`## [${time}] ${ref} (${entry.translation})\n\n`)
+      lines.push(`${entry.text}\n\n`)
+    }
+
+    return lines.join("")
+  }
 }
+

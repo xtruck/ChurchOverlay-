@@ -44,7 +44,7 @@ import { AiSuggestionCoordinator } from "./ai-suggestion-coordinator"
 import { VerseCache } from "../verse/verse-cache"
 import { CircuitBreaker } from "../verse/circuit-breaker"
 import { SilenceGate } from "../audio/silence-gate"
-import { ChurchOverlayWsServer, type ServerTokens } from "../ws/server"
+import { ChurchOverlayWsServer, type ServerTokens, type WsClientLatencySnapshot } from "../ws/server"
 import { resolveTranscriptVerses } from "./resolve-transcript-verses"
 import { resolveVerse, translationIdFor } from "../verse/resolve-verse"
 import { passesTranscriptGate } from "./transcript-gate"
@@ -326,6 +326,11 @@ export type AppCoreHandle = {
    */
   getSessionEntries(): readonly SessionEntry[]
   /**
+   * Export the current session transcript as Markdown format.
+   * Includes timestamps, verse references, and verse text.
+   */
+  getSessionTranscriptMarkdown(): string
+  /**
    * ARCHITECTURE.md section 132: passive log of dropped transcripts, mic
    * dropouts and echo warnings, merged with the verses and latency into the
    * post-service health report by the Electron main process.
@@ -353,6 +358,13 @@ export type AppCoreHandle = {
    * a WS event, so the public protocol and the read-only overlay are unchanged.
    */
   getPipelineLatency(): LatencySnapshot
+  /**
+   * The set of connected WebSocket clients and their per-client round-trip
+   * latency history. Read by the dashboard through Electron IPC to update
+   * the network diagnostics panel; not a WS event, so the public protocol
+   * and the read-only overlay are unchanged.
+   */
+  getWsClientLatency(): readonly WsClientLatencySnapshot[]
   /**
    * ARCHITECTURE.md section 130: parses pasted sermon notes (plain text) into
    * validated references and adds their books to the ASR planned-book bias.
@@ -2608,6 +2620,9 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     getSessionEntries() {
       return sessionRecorder.getEntries()
     },
+    getSessionTranscriptMarkdown() {
+      return sessionRecorder.exportMarkdown()
+    },
     getServiceHealth() {
       return serviceHealth.snapshot()
     },
@@ -2626,6 +2641,12 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     },
     getPipelineLatency() {
       return pipelineLatency.snapshot()
+    },
+    getWsClientLatency() {
+      // Plain-data snapshot owned by the WS server (roles labeled, no
+      // socket references), safe to cross the Electron IPC boundary to
+      // the dashboard.
+      return wsServer.getClientLatency()
     },
     importSermonPrep(text: unknown) {
       const outcome = parseSermonPrep(text, index)

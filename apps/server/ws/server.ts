@@ -4,13 +4,47 @@ import type { AddressInfo } from "node:net"
 import type { AudioFrame, WsMessage, WsRole } from "../../../packages/contracts"
 import { decodeAudioFrame } from "../../../packages/shared/audio-frame-codec"
 import { validateWsMessage } from "./action-registry"
-import { createHash, timingSafeEqual } from "node:crypto"
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto"
 
 /** Constant-time token comparison (hashing first makes the lengths equal), as the HTTP API already does. */
 function tokenEquals(offered: string, expected: string): boolean {
   const a = createHash("sha256").update(offered).digest()
   const b = createHash("sha256").update(expected).digest()
   return timingSafeEqual(a, b)
+}
+
+/** Per-connection round-trip latency state. Internal to the server: the
+ * timestamp of the last latency ping (null when none is in flight) stays
+ * inside this process and is never exposed through a snapshot. */
+type ClientLatencyState = {
+  /** Latest round-trip duration in milliseconds, null while the client has not answered a ping yet. */
+  lastMs: number | null
+  /** Sliding-window samples of round-trip duration, oldest first. */
+  samples: number[]
+  /** Number of samples that caused the window to drop the oldest when full. */
+  drops: number
+  /** Sliding window capacity for this client's latency samples. */
+  capacity: number
+  /** Send time of the in-flight latency ping, null when none is in flight. */
+  sentAt: number | null
+}
+
+/**
+ * Plain-data latency snapshot for ONE connected client, returned by
+ * ChurchOverlayWsServer#getClientLatency. Contains no socket references, so
+ * it is safe to hand across the Electron IPC boundary to the dashboard.
+ */
+export type WsClientLatencySnapshot = {
+  /** The connection's negotiated role, for labeling the dashboard panel. */
+  readonly role: WsRole
+  /** Latest round-trip duration in milliseconds, null while unanswered. */
+  readonly lastMs: number | null
+  /** Sliding-window samples of round-trip duration, oldest first. */
+  readonly samples: readonly number[]
+  /** Number of samples that caused the window to drop the oldest when full. */
+  readonly drops: number
+  /** Sliding window capacity for this client's latency samples. */
+  readonly capacity: number
 }
 
 export type ServerTokens = {
@@ -89,6 +123,13 @@ export type ChurchOverlayWsServerOptions = {
    * Defaults to 100. `0` disables the limit.
    */
   readonly maxCommandsPerSecond?: number
+
+  /**
+   * How many round-trip samples to keep per connected client for latency history. Defaults to 60 (one second of samples at a 10 Hz poll). Bounded by AGENTS.md section 36.
+   */
+  readonly wsLatencyCapacity?: number
+  /** How often to sample each client's round-trip latency (a ping is sent and the pong arrival minus ping send time is measured). Defaults to 10 Hz. `0` disables client-side latency sampling (the server-side heartbeat still runs, but per-client measurements stop). */
+  readonly wsLatencySampleIntervalMs?: number
 }
 
 const DEFAULT_HOST = "127.0.0.1"
@@ -96,6 +137,16 @@ const DEFAULT_HEARTBEAT_INTERVAL_MS = 30_000
 const DEFAULT_MAX_BUFFERED_BYTES = 4 * 1024 * 1024
 const DEFAULT_MAX_CONNECTIONS = 64
 const DEFAULT_MAX_COMMANDS_PER_SECOND = 100
+const DEFAULT_WS_LATENCY_SAMPLE_INTERVAL_MS = 100
+const DEFAULT_WS_LATENCY_CAPACITY = 60
+
+/**
+ * Random payload attached to every latency ping. `ws` clients echo a ping's
+ * payload back verbatim in their pong, which is how the pong handler tells
+ * a latency pong apart from the heartbeat's payload-less ping (and from any
+ * unsolicited pong a rogue client might send).
+ */
+const PING_PONG_TOKEN = randomBytes(8)
 
 /**
  * Hard cap on a single inbound WebSocket message. `ws` defaults to 100 MiB,
@@ -145,6 +196,20 @@ export class ChurchOverlayWsServer {
   private readonly maxCommandsPerSecond: number
   /** Per-connection one-second command window. */
   private readonly commandWindows = new WeakMap<WebSocket, { start: number; count: number }>()
+  /**
+   * Per-connection round-trip latency history: the time between a latency
+   * ping we sent and the pong that echoed its payload back. A Map (not a
+   * WeakMap) because the public snapshot must iterate it; entries are
+   * deleted in the socket's close handler, so it can never outlive its
+   * connection or grow past maxConnections (AGENTS.md section 36).
+   */
+  private readonly clientLatency = new Map<WebSocket, ClientLatencyState>()
+  /** Sliding-window capacity for each client's latency samples. */
+  private readonly clientLatencyCapacity: number
+  /** The interval used to sample per-client round-trip latency. `0` = paused. */
+  private readonly wsLatencySampleIntervalMs: number
+  /** Repeating timer sending latency pings; cleared in close(). */
+  private wsLatencyTimer: ReturnType<typeof setInterval> | undefined
   private heartbeatTimer: ReturnType<typeof setInterval> | undefined
 
   /** Resolves once the server is actually listening. */
@@ -159,6 +224,8 @@ export class ChurchOverlayWsServer {
     this.maxBufferedBytes = options.maxBufferedBytes ?? DEFAULT_MAX_BUFFERED_BYTES
     this.maxConnections = options.maxConnections ?? DEFAULT_MAX_CONNECTIONS
     this.maxCommandsPerSecond = options.maxCommandsPerSecond ?? DEFAULT_MAX_COMMANDS_PER_SECOND
+    this.clientLatencyCapacity = options.wsLatencyCapacity ?? DEFAULT_WS_LATENCY_CAPACITY
+    this.wsLatencySampleIntervalMs = options.wsLatencySampleIntervalMs ?? DEFAULT_WS_LATENCY_SAMPLE_INTERVAL_MS
 
     this.wss = options.server
       ? new WebSocketServer({
@@ -194,6 +261,12 @@ export class ChurchOverlayWsServer {
       this.heartbeatTimer = setInterval(() => this.sweepDeadConnections(), heartbeatIntervalMs)
       // The heartbeat must never be the thing keeping the process alive.
       this.heartbeatTimer.unref()
+    }
+
+    const sampleIntervalMs = options.wsLatencySampleIntervalMs ?? DEFAULT_WS_LATENCY_SAMPLE_INTERVAL_MS
+    if (sampleIntervalMs > 0) {
+      this.wsLatencyTimer = setInterval(() => this.sampleClientLatency(), sampleIntervalMs)
+      this.wsLatencyTimer.unref()
     }
   }
 
@@ -255,6 +328,10 @@ export class ChurchOverlayWsServer {
       clearInterval(this.heartbeatTimer)
       this.heartbeatTimer = undefined
     }
+    if (this.wsLatencyTimer) {
+      clearInterval(this.wsLatencyTimer)
+      this.wsLatencyTimer = undefined
+    }
     return new Promise((resolve, reject) => {
       // wss.close() only stops accepting NEW connections and then waits for
       // every EXISTING client socket to close on its own. Any client that
@@ -303,6 +380,76 @@ export class ChurchOverlayWsServer {
     }
   }
 
+  /**
+   * Plain-data snapshot of every admitted client's round-trip latency
+   * window, oldest sample first (most recent last). A client that has not
+   * answered a latency ping yet reports lastMs = null. No socket
+   * references leave this class, so the result is safe to cross the
+   * Electron IPC boundary to the dashboard (AGENTS.md section 28); the
+   * entries are dropped when their connection closes, so the array can
+   * never grow past maxConnections (AGENTS.md section 36).
+   */
+  getClientLatency(): WsClientLatencySnapshot[] {
+    const snapshots: WsClientLatencySnapshot[] = []
+    for (const [socket, latency] of this.clientLatency) {
+      const role = this.clientRoles.get(socket)
+      if (role === undefined) continue
+      snapshots.push({
+        role,
+        lastMs: latency.lastMs,
+        samples: [...latency.samples],
+        drops: latency.drops,
+        capacity: latency.capacity,
+      })
+    }
+    return snapshots
+  }
+
+  private sampleClientLatency(): void {
+    // Ping every open, admitted client with a token payload. `ws` echoes a
+    // ping's payload back verbatim in the pong, which is how the pong
+    // handler distinguishes this measurement ping from the heartbeat's
+    // payload-less ping. Only the send time is recorded here; the
+    // round-trip time is computed when the matching pong arrives.
+    const now = Date.now()
+    for (const client of this.wss.clients) {
+      const latency = this.clientLatency.get(client)
+      if (latency === undefined) continue
+      if (client.readyState !== client.OPEN) continue
+      latency.sentAt = now
+      client.ping(PING_PONG_TOKEN)
+    }
+  }
+
+  /**
+   * Record one ping/pong exchange. Any pong counts as a sign of life for
+   * the heartbeat (exactly as before latency tracking existed); only a
+   * pong echoing our token is also recorded as a measurement, using the
+   * per-client send time, so a late or unsolicited pong can never be
+   * recorded as a fresh round trip.
+   */
+  private recordClientLatency(socket: WebSocket, pong: Buffer): void {
+    this.aliveClients.add(socket)
+    const latency = this.clientLatency.get(socket)
+    if (latency === undefined) return
+    if (latency.sentAt === null) return
+    if (pong.length !== PING_PONG_TOKEN.length) return
+    for (let i = 0; i < pong.length; i++) {
+      if (pong[i] !== PING_PONG_TOKEN[i]) return
+    }
+    const rtt = Date.now() - latency.sentAt
+    latency.sentAt = null
+    // Cap the recorded latency so a one-off stall doesn't dominate the
+    // window the operator sees; 2 s is a long time for a loopback or LAN
+    // client.
+    latency.lastMs = rtt > 2000 ? 2000 : rtt
+    latency.samples.push(latency.lastMs)
+    while (latency.samples.length > latency.capacity) {
+      latency.samples.shift()
+      latency.drops++
+    }
+  }
+
   private handleConnection(socket: WebSocket): void {
     // `ws` emits protocol violations (oversized or malformed frames, invalid
     // UTF-8) as an 'error' event on the socket. With no listener, Node throws
@@ -334,14 +481,30 @@ export class ChurchOverlayWsServer {
     this.clientRoles.set(socket, role)
     this.aliveClients.add(socket)
 
-    socket.on("pong", () => this.aliveClients.add(socket))
+    // Initialize round-trip latency tracking for this connection.
+    const latency: ClientLatencyState = {
+      lastMs: null,
+      samples: [],
+      drops: 0,
+      capacity: this.clientLatencyCapacity,
+      sentAt: null,
+    }
+    this.clientLatency.set(socket, latency)
+
+    socket.on("pong", (pong: Buffer) => this.recordClientLatency(socket, pong))
     socket.on("message", (data, isBinary) => {
       // Any inbound traffic proves the connection is alive, so a busy
       // operator streaming audio can never be dropped for a late pong.
       this.aliveClients.add(socket)
       this.handleMessage(socket, role, data, isBinary)
     })
-    socket.on("close", () => this.clientRoles.delete(socket))
+    socket.on("close", () => {
+      this.clientRoles.delete(socket)
+      // Bounded per-connection state: a finished connection must not keep
+      // its latency window reachable through the snapshot Map
+      // (AGENTS.md section 36).
+      this.clientLatency.delete(socket)
+    })
 
     if (role === "viewer") {
       this.guarded("onViewerConnected", role, () =>

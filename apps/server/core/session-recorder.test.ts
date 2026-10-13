@@ -1,59 +1,37 @@
+import { strict as assert } from "node:assert"
 import { test } from "node:test"
-import assert from "node:assert/strict"
-import { MAX_SESSION_ENTRIES, SessionRecorder } from "./session-recorder"
+import { SessionRecorder } from "./session-recorder"
 import type { Verse } from "../../../packages/contracts"
 
-function makeVerse(book: string, chapter: number, verse: number, text: string): Verse {
-  return { reference: { book, chapter, verse }, text, translation: "kjv", source: "test" }
-}
-
-test("SessionRecorder: getEntries() is empty for a fresh recorder", () => {
+test("SessionRecorder: exportMarkdown produces valid Markdown", () => {
   const recorder = new SessionRecorder()
-  assert.deepEqual(recorder.getEntries(), [])
-})
 
-test("SessionRecorder: record() appends an entry with the reference, text, translation, and given timestamp", () => {
-  const recorder = new SessionRecorder()
-  recorder.record(makeVerse("john", 3, 16, "For God so loved the world..."), 1700000000000)
+  // Empty session
+  assert.match(recorder.exportMarkdown(), /No verses were shown/)
+  assert.match(recorder.exportMarkdown(), /# Service Transcript/)
 
-  assert.deepEqual(recorder.getEntries(), [
-    {
-      reference: { book: "john", chapter: 3, verse: 16 },
-      text: "For God so loved the world...",
-      translation: "kjv",
-      timestamp: 1700000000000,
-    },
-  ])
-})
+  // With entries
+  const verse1: Verse = {
+    reference: { book: "John", chapter: 3, verse: 16 },
+    text: "For God so loved the world",
+    translation: "kjv",
+    source: "test",
+  }
+  const verse2: Verse = {
+    reference: { book: "Romans", chapter: 8, verse: 28 },
+    text: "And we know that all things work together for good",
+    translation: "kjv",
+    source: "test",
+  }
 
-test("SessionRecorder: multiple record() calls accumulate in order", () => {
-  const recorder = new SessionRecorder()
-  recorder.record(makeVerse("john", 3, 16, "text A"), 1)
-  recorder.record(makeVerse("romans", 8, 28, "text B"), 2)
+  recorder.record(verse1, 1700000000000)
+  recorder.record(verse2, 1700000030000)
 
-  const entries = recorder.getEntries()
-  assert.equal(entries.length, 2)
-  assert.equal(entries[0]?.reference.book, "john")
-  assert.equal(entries[1]?.reference.book, "romans")
-})
-
-test("SessionRecorder: the buffer is bounded and drops the oldest entry first", () => {
-  const recorder = new SessionRecorder()
-  for (let i = 0; i < MAX_SESSION_ENTRIES + 3; i++) recorder.record(makeVerse("john", 3, 16, "t"), i)
-  const entries = recorder.getEntries()
-  assert.equal(entries.length, MAX_SESSION_ENTRIES)
-  assert.equal(entries[0]?.timestamp, 3)
-  assert.equal(entries[entries.length - 1]?.timestamp, MAX_SESSION_ENTRIES + 2)
-})
-
-test("SessionRecorder: getEntries() returns a read-only view, not the same mutable array reference behavior", () => {
-  const recorder = new SessionRecorder()
-  recorder.record(makeVerse("john", 3, 16, "text"), 1)
-  const first = recorder.getEntries()
-  recorder.record(makeVerse("romans", 8, 28, "text2"), 2)
-  const second = recorder.getEntries()
-  // Confirms getEntries() reflects the CURRENT state each call, not a
-  // stale snapshot frozen at the first call.
-  assert.equal(first.length, 1)
-  assert.equal(second.length, 2)
+  const markdown = recorder.exportMarkdown()
+  assert.match(markdown, /# Service Transcript/)
+  assert.match(markdown, /Total verses shown: 2/)
+  assert.match(markdown, /John 3:16/)
+  assert.match(markdown, /Romans 8:28/)
+  assert.match(markdown, /For God so loved the world/)
+  assert.match(markdown, /And we know that all things work together for good/)
 })

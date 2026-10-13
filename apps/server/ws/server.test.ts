@@ -24,6 +24,8 @@ async function startServer(
     maxBufferedBytes: number
     maxConnections: number
     maxCommandsPerSecond: number
+    wsLatencySampleIntervalMs: number
+    wsLatencyCapacity: number
   }> = {}
 ): Promise<ChurchOverlayWsServer> {
   const server = new ChurchOverlayWsServer({ port: 0, tokens: TOKENS, ...overrides })
@@ -600,6 +602,39 @@ test("ChurchOverlayWsServer: broadcastToOperators() reaches operator-role client
 
     operatorSocket.close()
     viewerSocket.close()
+  } finally {
+    await server.close()
+  }
+})
+
+// ---- Per-client latency tracking (diagnostics) ----------------------------
+
+test("ChurchOverlayWsServer: per-client latency is measured through ping/pong and exposed as plain, IPC-safe data", async () => {
+  // The heartbeat is disabled here so only the latency sampler produces
+  // pings — this test isolates the measurement path from liveness.
+  const server = await startServer({ heartbeatIntervalMs: 0, wsLatencySampleIntervalMs: 20 })
+  try {
+    const socket = await connect(server.port, TOKENS.viewerToken)
+    // Wait for a few sample intervals so at least one ping/pong completes.
+    await new Promise((resolve) => setTimeout(resolve, 150))
+
+    const [first] = server.getClientLatency()
+    assert.ok(first, "an admitted client must appear in the latency snapshot")
+    assert.equal(first.role, "viewer")
+    assert.equal(typeof first.lastMs, "number")
+    assert.ok((first.lastMs ?? -1) >= 0, "a measured round trip is never negative")
+    assert.ok(first.samples.length > 0, "the sliding window must hold at least one measurement")
+    assert.ok(first.samples.every((value) => value >= 0 && value <= 2000))
+    // The snapshot must be plain, structured-cloneable data: the Electron
+    // IPC handler hands it to the renderer, and a socket reference would
+    // throw a DataCloneError at that point.
+    assert.doesNotThrow(() => structuredClone(server.getClientLatency()))
+
+    // Once the connection closes, its latency entry disappears too — the
+    // snapshot can never grow past the set of live connections.
+    socket.close()
+    await waitFor(() => server.getClientLatency().length === 0)
+    assert.deepEqual(server.getClientLatency(), [])
   } finally {
     await server.close()
   }

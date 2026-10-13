@@ -139,6 +139,11 @@ export type AppConfig = {
    * degrades field-by-field to defaults instead of failing the whole load.
    */
   readonly overlayStyle?: OverlayStyleSettings
+  /**
+   * Custom Bible API endpoint for churches with their own Bible data servers.
+   * Absent → use the default bible-api.com. Must be a valid HTTPS URL.
+   */
+  readonly customBibleApiUrl?: string
 }
 
 type StoredConfig = {
@@ -175,6 +180,7 @@ type StoredConfig = {
   readonly frenchTranslation?: string
   readonly overlayTemplate?: string
   readonly overlayStyle?: unknown
+  readonly customBibleApiUrl?: string
 }
 
 /**
@@ -280,6 +286,7 @@ export class ConfigStore {
       ...(config.frenchTranslation === undefined ? {} : { frenchTranslation: config.frenchTranslation }),
       ...(config.overlayTemplate === undefined ? {} : { overlayTemplate: config.overlayTemplate }),
       ...(config.overlayStyle === undefined ? {} : { overlayStyle: normalizeOverlayStyleSettings(config.overlayStyle) }),
+      ...(config.customBibleApiUrl === undefined ? {} : { customBibleApiUrl: config.customBibleApiUrl }),
     }
 
     await mkdir(dirname(this.filePath), { recursive: true })
@@ -335,6 +342,7 @@ export class ConfigStore {
       frenchTranslation,
       overlayTemplate,
       overlayStyle,
+      customBibleApiUrl,
     } = stored
 
     if (
@@ -419,6 +427,12 @@ export class ConfigStore {
     if (overlayTemplate !== undefined && !OVERLAY_TEMPLATES.includes(overlayTemplate as string)) {
       throw new Error(`ConfigStore: ${this.filePath} has an invalid overlayTemplate`)
     }
+    if (customBibleApiUrl !== undefined && typeof customBibleApiUrl !== "string") {
+      throw new Error(`ConfigStore: ${this.filePath} has an invalid customBibleApiUrl`)
+    }
+    if (customBibleApiUrl !== undefined && !customBibleApiUrl.startsWith("https://")) {
+      throw new Error(`ConfigStore: ${this.filePath} customBibleApiUrl must be an HTTPS URL`)
+    }
 
     return {
       groqApiKey: this.codec.decrypt(Buffer.from(groqApiKeyEncrypted, "base64")),
@@ -470,6 +484,7 @@ export class ConfigStore {
       // "classic" — the overlay's existing appearance, unchanged.
       overlayTemplate: (overlayTemplate as string | undefined) ?? "classic",
       ...(overlayStyle === undefined ? {} : { overlayStyle: normalizeOverlayStyleSettings(overlayStyle) }),
+      ...(customBibleApiUrl === undefined ? {} : { customBibleApiUrl }),
     }
   }
 }
