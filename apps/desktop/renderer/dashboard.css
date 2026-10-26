@@ -200,7 +200,7 @@ button .icon { width: 16px; height: 16px; }
 /* Destructive: visibly distinct (red outline + red label), filled on hover. */
 .btn-danger { background: transparent; color: var(--on-air-text); border-color: var(--on-air-line); }
 .btn-danger:hover:not(:disabled) { background: var(--on-air-fill); border-color: var(--on-air-fill); color: #ffffff; }
-.btn-small { min-height: 28px; padding: 4px 10px; font-size: var(--fs-12); }
+.btn-small { min-height: 32px; padding: 4px 10px; font-size: var(--fs-12); }
 .btn-lg { min-height: var(--control-h-lg); padding: 9px 18px; font-size: var(--fs-14); }
 .btn-block { flex: 1; }
 .btn-row { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
@@ -324,7 +324,7 @@ input[type="checkbox"].switch:disabled { opacity: 0.45; cursor: not-allowed; }
 }
 .card > .segmented { align-self: flex-start; }
 .segmented button {
-  min-height: 28px;
+  min-height: 32px;
   padding: 4px 10px;
   font-size: var(--fs-12);
   font-weight: 600;
@@ -865,7 +865,7 @@ header.topbar {
   padding: 1px 6px;
   border-radius: var(--radius-sm, 4px);
   border: 1px solid currentColor;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.06em;
   color: var(--text-muted, #8a8f98);

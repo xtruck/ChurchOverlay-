@@ -52,6 +52,11 @@
       alertWrap: "Wrap up",
       alertNursery: "Nursery",
       alertMic: "Mic check",
+      alertMsg2min: "2 Minutes Remaining",
+      alertMsgWrap: "Wrap Up Now",
+      alertMsgNursery: "Nursery #104 Needed",
+      alertMsgMic: "Check Mic Level",
+      timerSermonTitle: "Sermon",
       alertPlaceholder: "Custom stage message…",
       send: "Send",
       quickVersePlaceholder: "e.g. John 3:16 or Rom 8:28",
@@ -108,6 +113,11 @@
       alertWrap: "Conclure",
       alertNursery: "Garderie",
       alertMic: "Vérifier le micro",
+      alertMsg2min: "Il reste 2 minutes",
+      alertMsgWrap: "Conclure maintenant",
+      alertMsgNursery: "Pouponnière #104 demandée",
+      alertMsgMic: "Vérifier le niveau du micro",
+      timerSermonTitle: "Message",
       alertPlaceholder: "Message personnalisé…",
       send: "Envoyer",
       quickVersePlaceholder: "ex. Jean 3:16 ou Rom 8:28",
@@ -515,13 +525,13 @@
     document.querySelectorAll(".timer-preset-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         const min = parseInt(btn.getAttribute("data-min"), 10) || 30
-        sendJson(ws, { id: crypto.randomUUID(), type: "timer:start", timestamp: Date.now(), payload: { durationMinutes: min, title: "Sermon" } })
+        sendJson(ws, { id: crypto.randomUUID(), type: "timer:start", timestamp: Date.now(), payload: { durationMinutes: min, title: t("timerSermonTitle") } })
       })
     })
 
     document.querySelectorAll(".alert-quick-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
-        const msg = btn.getAttribute("data-msg")
+        const msg = t(btn.getAttribute("data-msg-key"))
         sendJson(ws, { id: crypto.randomUUID(), type: "stage:alert", timestamp: Date.now(), payload: { message: msg } })
       })
     })
