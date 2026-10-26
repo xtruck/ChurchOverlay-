@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, powerMonitor, safeStorage, shell } from "electron"
+import { validateCustomBibleApiUrl } from "./custom-bible-url"
 import { randomBytes } from "node:crypto"
 import { cpus, networkInterfaces } from "node:os"
 import { join } from "node:path"
@@ -369,7 +370,7 @@ async function startServices(
   const frenchTranslation = config.frenchTranslation ?? "ls1910"
   const frenchSource = await buildFrenchSource(frenchTranslation)
   localizedVerseSource = new LocalizedVerseSource(
-    new FreeApiSource(undefined, config.customBibleApiUrl),
+    new FreeApiSource(undefined, storedCustomBibleUrl(config.customBibleApiUrl)),
     frenchSource,
     config.displayMode,
     logger,
@@ -1031,17 +1032,26 @@ ipcMain.handle("set-french-translation", async (_event, payload: unknown) => {
   return { frenchTranslation: translation }
 })
 
+/** A custom URL saved by an older version is re-validated; an unsafe one is ignored, not used. */
+function storedCustomBibleUrl(stored: string | undefined): string | undefined {
+  if (!stored) return undefined
+  const checked = validateCustomBibleApiUrl(stored)
+  return checked.ok ? checked.url : undefined
+}
+
 /** Custom Bible API endpoint for English verse lookups. */
 ipcMain.handle("get-custom-bible-api-url", () => {
   return activeConfig?.customBibleApiUrl ?? ""
 })
 
 ipcMain.handle("set-custom-bible-api-url", async (_event, payload: unknown) => {
-  const url = typeof payload === "string" ? payload.trim() : ""
-  if (url !== "" && !url.startsWith("https://")) {
-    throw new Error("Custom Bible API URL must start with https://")
+  const input = typeof payload === "string" ? payload.trim() : ""
+  let customBibleApiUrl: string | undefined
+  if (input !== "") {
+    const checked = validateCustomBibleApiUrl(input)
+    if (!checked.ok) throw new Error(checked.reason)
+    customBibleApiUrl = checked.url
   }
-  const customBibleApiUrl = url === "" ? undefined : url
   if (activeConfig) {
     activeConfig = { ...activeConfig, customBibleApiUrl }
   }
@@ -1935,7 +1945,22 @@ app.on("web-contents-created", (_event, contents) => {
   })
 })
 
+// One instance only: a second launch would fight the first over the config
+// file and the server ports. Hand control to the running window and exit.
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+if (!gotSingleInstanceLock) {
+  app.quit()
+} else {
+  app.on("second-instance", () => {
+    if (dashboardWindow) {
+      if (dashboardWindow.isMinimized()) dashboardWindow.restore()
+      dashboardWindow.focus()
+    }
+  })
+}
+
 app.whenReady().then(async () => {
+  if (!gotSingleInstanceLock) return // quitting: never start services or open a window
   // The default File / Edit / View / Window bar is Electron's own, not part of the operator console: it
   // eats screen space on a live-production machine and offers items (reload, close, devtools) that
   // should not be one stray click away mid-service. Removed on Windows and Linux; macOS keeps its menu

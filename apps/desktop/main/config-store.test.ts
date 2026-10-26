@@ -175,6 +175,34 @@ test("ConfigStore: load() throws a clear error on invalid JSON rather than silen
   })
 })
 
+test("ConfigStore: an unreadable config is moved aside so the next save cannot destroy it", async () => {
+  await withTempDir(async (dir) => {
+    const path = join(dir, "config.json")
+    const store = new ConfigStore(path, new FakeSecretCodec())
+    await writeFile(path, "{ broken", "utf8")
+
+    await assert.rejects(() => store.load(), /invalid JSON/)
+    const files = await readdir(dir)
+    assert.equal(files.includes("config.json"), false)
+    const aside = files.find((name) => name.startsWith("config.json.corrupt-"))
+    assert.ok(aside, "the corrupt file is kept for recovery")
+    assert.equal(await readFile(join(dir, aside), "utf8"), "{ broken")
+  })
+})
+
+test("ConfigStore: a save keeps the previous good config as config.json.bak", async () => {
+  await withTempDir(async (dir) => {
+    const path = join(dir, "config.json")
+    const store = new ConfigStore(path, new FakeSecretCodec())
+    await store.save({ ...SAMPLE_CONFIG, organizationName: "First" })
+    await store.save({ ...SAMPLE_CONFIG, organizationName: "Second" })
+
+    const backup = new ConfigStore(`${path}.bak`, new FakeSecretCodec())
+    assert.equal((await backup.load())?.organizationName, "First")
+    assert.equal((await store.load())?.organizationName, "Second")
+  })
+})
+
 test("ConfigStore: load() throws a clear error when required fields are missing", async () => {
   await withTempDir(async (dir) => {
     const path = join(dir, "config.json")
@@ -535,7 +563,7 @@ test("ConfigStore: concurrent saves in the same millisecond all succeed and the 
     await Promise.all(saves)
 
     assert.equal((await store.load())?.organizationName, "Church 19")
-    assert.deepEqual(await readdir(dir), ["config.json"])
+    assert.deepEqual((await readdir(dir)).sort(), ["config.json", "config.json.bak"])
   })
 })
 
