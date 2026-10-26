@@ -272,6 +272,7 @@
   const exportSessionBtn = document.getElementById("export-session-btn")
   const exportRehearsalBtn = document.getElementById("export-rehearsal-btn")
   const exportDiagnosticsBtn = document.getElementById("export-diagnostics-btn")
+  const exportTranscriptBtn = document.getElementById("export-transcript-btn")
   const generateServiceSummaryBtn = document.getElementById("generate-service-summary-btn")
   const serviceSummaryResultEl = document.getElementById("service-summary-result")
   const sermonNotesToggleEl = document.getElementById("sermon-notes-toggle")
@@ -836,6 +837,9 @@
   const latencyLastEl = document.getElementById("latency-last")
   const latencyMedianEl = document.getElementById("latency-median")
   const latencyP95El = document.getElementById("latency-p95")
+  const wsLatencyClientsEl = document.getElementById("ws-latency-clients")
+  const wsLatencyRoundtripEl = document.getElementById("ws-latency-roundtrip")
+  const wsLatencyQualityEl = document.getElementById("ws-latency-quality")
   function formatLatency(ms) {
     if (typeof ms !== "number") return "–"
     return ms < 1000 ? Math.round(ms) + " ms" : (ms / 1000).toFixed(1) + " s"
@@ -850,6 +854,46 @@
         latencyP95El.textContent = formatLatency(snapshot && snapshot.p95Ms)
       })
       .catch((err) => console.error("pipeline latency unavailable", err))
+    if (window.churchOverlay && window.churchOverlay.getWsClientLatency) {
+      window.churchOverlay
+        .getWsClientLatency()
+        .then((clients) => {
+          if (!Array.isArray(clients) || clients.length === 0) {
+            if (wsLatencyClientsEl) wsLatencyClientsEl.textContent = "0"
+            if (wsLatencyRoundtripEl) wsLatencyRoundtripEl.textContent = "–"
+            if (wsLatencyQualityEl) {
+              wsLatencyQualityEl.textContent = "–"
+              wsLatencyQualityEl.style.color = ""
+            }
+            return
+          }
+          if (wsLatencyClientsEl) wsLatencyClientsEl.textContent = String(clients.length)
+          const measured = clients.filter((c) => typeof c.lastMs === "number")
+          if (measured.length === 0) {
+            if (wsLatencyRoundtripEl) wsLatencyRoundtripEl.textContent = "–"
+            if (wsLatencyQualityEl) {
+              wsLatencyQualityEl.textContent = "–"
+              wsLatencyQualityEl.style.color = ""
+            }
+            return
+          }
+          const avgMs = measured.reduce((acc, c) => acc + (c.lastMs || 0), 0) / measured.length
+          if (wsLatencyRoundtripEl) wsLatencyRoundtripEl.textContent = formatLatency(avgMs)
+          if (wsLatencyQualityEl) {
+            if (avgMs < 50) {
+              wsLatencyQualityEl.textContent = t("latency.qualityGood")
+              wsLatencyQualityEl.style.color = "var(--color-success, #22c55e)"
+            } else if (avgMs < 200) {
+              wsLatencyQualityEl.textContent = t("latency.qualityFair")
+              wsLatencyQualityEl.style.color = "var(--color-warning, #eab308)"
+            } else {
+              wsLatencyQualityEl.textContent = t("latency.qualitySlow")
+              wsLatencyQualityEl.style.color = "var(--color-danger, #ef4444)"
+            }
+          }
+        })
+        .catch((err) => console.error("ws client latency unavailable", err))
+    }
   }
   setInterval(refreshLatency, 5000)
 
@@ -3864,6 +3908,27 @@
       })
   })
 
+  if (exportTranscriptBtn) {
+    exportTranscriptBtn.addEventListener("click", () => {
+      exportTranscriptBtn.disabled = true
+      exportTranscriptBtn.textContent = t("session.exporting")
+      window.churchOverlay
+        ?.exportSessionTranscript?.()
+        .then((result) => {
+          if (!result || result.canceled) return
+          if (result.error) {
+            log(result.error, "error")
+          } else {
+            log(t("log.transcriptExported", { path: result.path }), "received", { toast: true })
+          }
+        })
+        .catch((err) => log(t("log.importFailed", { error: err.message }), "error"))
+        .finally(() => {
+          exportTranscriptBtn.disabled = false
+          exportTranscriptBtn.textContent = t("session.exportTranscriptButton")
+        })
+    })
+  }
   // ARCHITECTURE.md section 93: a strictly one-shot, operator-triggered
   // digest — reads the already-rendered sermon-notes feed text directly
   // (oldest first, since the feed itself prepends newest-first) rather
@@ -4033,6 +4098,50 @@
       .setFrenchTranslation(translation)
       .catch((err) => log(t("log.importFailed", { error: err.message }), "error"))
   })
+
+  const customBibleApiInput = document.getElementById("custom-bible-api-url")
+  const customBibleApiApplyBtn = document.getElementById("custom-bible-api-apply-btn")
+  const customBibleApiStatus = document.getElementById("custom-bible-api-status")
+
+  if (window.churchOverlay && window.churchOverlay.getCustomBibleApiUrl && customBibleApiInput) {
+    window.churchOverlay
+      .getCustomBibleApiUrl()
+      .then((url) => {
+        if (url) customBibleApiInput.value = url
+      })
+      .catch(() => {})
+  }
+
+  if (customBibleApiApplyBtn && customBibleApiInput) {
+    customBibleApiApplyBtn.addEventListener("click", () => {
+      const url = customBibleApiInput.value.trim()
+      if (url !== "" && !url.startsWith("https://")) {
+        if (customBibleApiStatus) {
+          customBibleApiStatus.textContent = t("bibleApi.invalidUrl")
+          customBibleApiStatus.style.color = "var(--color-danger, #ef4444)"
+        }
+        return
+      }
+      customBibleApiApplyBtn.disabled = true
+      window.churchOverlay
+        ?.setCustomBibleApiUrl?.(url)
+        .then(() => {
+          if (customBibleApiStatus) {
+            customBibleApiStatus.textContent = t("bibleApi.saved")
+            customBibleApiStatus.style.color = "var(--color-success, #22c55e)"
+          }
+        })
+        .catch((err) => {
+          if (customBibleApiStatus) {
+            customBibleApiStatus.textContent = err.message
+            customBibleApiStatus.style.color = "var(--color-danger, #ef4444)"
+          }
+        })
+        .finally(() => {
+          customBibleApiApplyBtn.disabled = false
+        })
+    })
+  }
   posterDurationApplyBtn.addEventListener("click", () => {
     const raw = posterDurationInputEl.value.trim()
     const minutes = raw === "" ? null : Number(raw)

@@ -645,3 +645,31 @@ test("ConfigStore: aiProvider round-trips, an older file loads without it, and a
     await assert.rejects(store.load(), /invalid aiProvider/)
   })
 })
+
+test("ConfigStore: customBibleApiUrl round-trips when present and valid HTTPS URL", async () => {
+  await withTempDir(async (dir) => {
+    const store = new ConfigStore(join(dir, "config.json"), new FakeSecretCodec())
+    await store.save({ ...SAMPLE_CONFIG, customBibleApiUrl: "https://my-bible-server.internal" })
+    const loaded = await store.load()
+    assert.equal(loaded?.customBibleApiUrl, "https://my-bible-server.internal")
+  })
+})
+
+test("ConfigStore: customBibleApiUrl throws on non-string or non-HTTPS URL", async () => {
+  await withTempDir(async (dir) => {
+    const path = join(dir, "config.json")
+    const codec = new FakeSecretCodec()
+    const store = new ConfigStore(path, codec)
+    await store.save(SAMPLE_CONFIG)
+
+    const { readFile, writeFile } = await import("node:fs/promises")
+    const raw = JSON.parse(await readFile(path, "utf8"))
+    raw.customBibleApiUrl = 12345
+    await writeFile(path, JSON.stringify(raw))
+    await assert.rejects(store.load(), /invalid customBibleApiUrl/)
+
+    raw.customBibleApiUrl = "http://insecure-bible.com"
+    await writeFile(path, JSON.stringify(raw))
+    await assert.rejects(store.load(), /must be an HTTPS URL/)
+  })
+})

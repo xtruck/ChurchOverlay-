@@ -364,6 +364,12 @@
                 <div class="mic-stat"><div class="mic-stat-label" data-i18n="latency.median">Typical</div><div id="latency-median" class="mic-stat-value">–</div></div>
                 <div class="mic-stat"><div class="mic-stat-label" data-i18n="latency.p95">Slowest 5%</div><div id="latency-p95" class="mic-stat-value">–</div></div>
               </div>
+              <div class="latency-title" data-i18n="latency.wsTitle">Network &amp; OBS Latency</div>
+              <div class="mic-stats" title="" data-i18n-title="latency.wsHint">
+                <div class="mic-stat"><div class="mic-stat-label" data-i18n="latency.wsClients">Clients</div><div id="ws-latency-clients" class="mic-stat-value">–</div></div>
+                <div class="mic-stat"><div class="mic-stat-label" data-i18n="latency.wsRoundtrip">Roundtrip</div><div id="ws-latency-roundtrip" class="mic-stat-value">–</div></div>
+                <div class="mic-stat"><div class="mic-stat-label" data-i18n="latency.wsQuality">Quality</div><div id="ws-latency-quality" class="mic-stat-value">–</div></div>
+              </div>
               <label class="switch-row" for="auto-gain-toggle">
                 <span data-i18n="micHealth.autoGain">Automatic gain</span>
                 <input id="auto-gain-toggle" type="checkbox" class="switch" checked />
@@ -395,6 +401,7 @@
                   <button id="export-session-btn" class="btn-secondary btn-small" data-i18n="session.exportButton">Export session</button>
                   <button id="export-rehearsal-btn" class="btn-secondary btn-small" data-i18n="session.exportRehearsalButton">Export rehearsal report</button>
                   <button id="export-diagnostics-btn" class="btn-secondary btn-small" data-i18n="session.exportDiagnosticsButton">Export diagnostics</button>
+                  <button id="export-transcript-btn" class="btn-secondary btn-small" data-i18n="session.exportTranscriptButton">Export transcript</button>
                 </div>
                 <div id="log"></div>
               </div>
@@ -1093,6 +1100,22 @@
             <div id="french-translation-toggle" class="segmented" role="group" data-i18n-aria-label="a11y.frenchTranslation" data-i18n-title="a11y.frenchTranslation">
               <button type="button" data-translation="ls1910" class="active" data-i18n="frenchTranslation.ls1910">Louis Segond (1910)</button>
               <button type="button" data-translation="darby" data-i18n="frenchTranslation.darby">Darby</button>
+            </div>
+          </div>
+
+          <!-- Custom Bible API endpoint (for churches running custom or local Bible servers) -->
+          <div class="card glass">
+            <div class="panel-head">
+              <svg class="icon panel-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16M9 4v16"/></svg>
+              <h2 class="card-title" data-i18n="bibleApi.title">Bible API Endpoint</h2>
+            </div>
+            <p class="settings-hint" data-i18n="bibleApi.hint">Custom HTTPS endpoint for English Bible verses. Leave empty to use the default (bible-api.com).</p>
+            <label for="custom-bible-api-url" data-i18n="bibleApi.customUrlLabel">API Base URL</label>
+            <div class="btn-row field-row">
+              <input id="custom-bible-api-url" type="url" placeholder="https://bible-api.com" autocomplete="off" spellcheck="false" />
+              <button id="custom-bible-api-apply-btn" class="btn-secondary btn-small" data-i18n="bibleApi.apply">Apply</button>
+            </div>
+            <p id="custom-bible-api-status" class="settings-hint settings-note"></p>
             </div>
           </div>
 

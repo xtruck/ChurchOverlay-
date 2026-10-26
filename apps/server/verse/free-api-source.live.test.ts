@@ -6,7 +6,7 @@
  */
 
 import { strict as assert } from "node:assert"
-import { test, before, after } from "node:test"
+import { test, before } from "node:test"
 import { FreeApiSource } from "./free-api-source"
 import type { VerseReference } from "../../../packages/contracts"
 

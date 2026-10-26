@@ -45,7 +45,6 @@ export class SermonCopilot {
 
 function cleanLine(value: unknown, max: number): string | null {
   if (typeof value !== "string") return null
-  // eslint-disable-next-line no-control-regex
   const text = value.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim()
   return text ? text.slice(0, max) : null
 }

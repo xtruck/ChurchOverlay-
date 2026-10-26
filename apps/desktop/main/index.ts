@@ -1031,6 +1031,42 @@ ipcMain.handle("set-french-translation", async (_event, payload: unknown) => {
   return { frenchTranslation: translation }
 })
 
+/** Custom Bible API endpoint for English verse lookups. */
+ipcMain.handle("get-custom-bible-api-url", () => {
+  return activeConfig?.customBibleApiUrl ?? ""
+})
+
+ipcMain.handle("set-custom-bible-api-url", async (_event, payload: unknown) => {
+  const url = typeof payload === "string" ? payload.trim() : ""
+  if (url !== "" && !url.startsWith("https://")) {
+    throw new Error("Custom Bible API URL must start with https://")
+  }
+  const customBibleApiUrl = url === "" ? undefined : url
+  if (activeConfig) {
+    activeConfig = { ...activeConfig, customBibleApiUrl }
+  }
+  await persistConfig((existing) => {
+    const copy = { ...existing }
+    if (customBibleApiUrl) {
+      copy.customBibleApiUrl = customBibleApiUrl
+    } else {
+      delete copy.customBibleApiUrl
+    }
+    return copy
+  })
+  if (localizedVerseSource) {
+    const frenchSource = await buildFrenchSource(currentFrenchTranslation)
+    localizedVerseSource = new LocalizedVerseSource(
+      new FreeApiSource(undefined, customBibleApiUrl),
+      frenchSource,
+      activeConfig?.displayMode ?? "english",
+      logger,
+      currentFrenchTranslation
+    )
+  }
+  return { customBibleApiUrl: customBibleApiUrl ?? null }
+})
+
 /**
  * ARCHITECTURE.md section 108 (superseded by section 110.4): the verse card
  * design now applies LIVE through the overlay style path, so the restart and

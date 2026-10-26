@@ -68,7 +68,6 @@ function bool(v: unknown, fallback: boolean): boolean {
 
 function cleanText(v: unknown): string {
   if (typeof v !== "string") return ""
-  // eslint-disable-next-line no-control-regex
   return v.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ").replace(/\s+/g, " ").trim().slice(0, BRAND_TEXT_MAX)
 }
 

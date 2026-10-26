@@ -28,7 +28,7 @@
     "@types/express": "^4.17.21",
     "@types/node": "^22.0.0",
     "@types/ws": "^8.18.2",
-    "electron": "^44.5.1",
+    "electron": "^44.9.3",
     "electron-builder": "^26.15.3",
     "eslint": "^9.39.5",
     "typescript": "^5.6.0",
@@ -98,6 +98,7 @@
     "@stagetimerio/grandiose@0.2.0": true
   },
   "overrides": {
-    "tmp": "^0.2.7"
+    "tmp": "^0.2.7",
+    "body-parser": "^1.20.9"
   }
 }
