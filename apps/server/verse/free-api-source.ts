@@ -39,6 +39,8 @@ import { isPlainObject } from "../../../packages/shared/type-guards"
  */
 const DEFAULT_BASE_URL = "https://bible-api.com"
 const V1_TRANSLATION = "kjv"
+// A stalled connection must not hang the live lookup path (AGENTS.md section 37).
+const FETCH_TIMEOUT_MS = 5000
 
 export class FreeApiSource implements VerseSource {
   private readonly fetchImpl: typeof fetch
@@ -54,7 +56,7 @@ export class FreeApiSource implements VerseSource {
 
     let response: Response
     try {
-      response = await this.fetchImpl(url)
+      response = await this.fetchImpl(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
     } catch (err) {
       // Network failure (offline, DNS, timeout, ...): a real failure, not
       // "not found" — let the caller's circuit breaker see it.
@@ -100,6 +102,16 @@ function parseVerseResponse(body: unknown, reference: VerseReference): Verse | n
 
   if (typeof text !== "string" || text.trim().length === 0) return null
   if (typeof translation !== "string" || translation.trim().length === 0) return null
+
+  // When the API reports which verses it returned, they must be exactly the
+  // one requested: a multi-verse blob or a different verse is never shown.
+  const verses = body.verses
+  if (Array.isArray(verses)) {
+    if (verses.length !== 1) return null
+    const only: unknown = verses[0]
+    if (!isPlainObject(only)) return null
+    if (only.chapter !== reference.chapter || only.verse !== reference.verse) return null
+  }
 
   return {
     reference,

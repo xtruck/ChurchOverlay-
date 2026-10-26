@@ -29,9 +29,11 @@ import { analyzeSermonFlow } from "../server/ai/sermon-flow-analyzer"
 import type { DisplayMode, VerseConfirmationMode, MediaCueKind } from "../../packages/contracts"
 import { buildPageUrls, buildStatusPayload, isDisplayMode, isUiLanguage, type UiLanguage } from "./status-payload"
 import { installApiGuard, isLoopbackHost, resolveWebHost, validateConfiguredTokens } from "./api-auth"
+import { buildHealthPayload } from "./health"
 
 export type { UiLanguage } from "./status-payload"
 
+const PROCESS_STARTED_AT = Date.now()
 const PORT = 3000
 // Loopback unless WEB_HOST is set on purpose (ARCHITECTURE.md sections 24 and 49).
 const HOST = resolveWebHost(process.env.WEB_HOST)
@@ -233,6 +235,12 @@ async function main() {
       enableSermonNotes,
       allowPhoneRemote,
     })
+
+  // Outside /api so it needs no token: liveness only, see health.ts.
+  app.get("/healthz", (_req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store")
+    res.json(buildHealthPayload(PROCESS_STARTED_AT, Date.now(), appCoreHandle !== null))
+  })
 
   app.get("/api/status", (_req: Request, res: Response) => {
     res.json(currentStatusPayload())
@@ -518,15 +526,30 @@ async function main() {
 
   const shutdown = async () => {
     logger.info({ component: "server", event: "server.stopping" })
+    // Open keep-alive or WebSocket connections must not hold the process
+    // open forever: give a clean stop a few seconds, then leave anyway.
+    setTimeout(() => process.exit(1), 5000).unref()
     if (appCoreHandle) {
       await appCoreHandle.stop().catch(() => {})
     }
     httpServer.close(() => {
       process.exit(0)
     })
+    httpServer.closeAllConnections()
   }
   process.on("SIGTERM", shutdown)
   process.on("SIGINT", shutdown)
+  process.on("unhandledRejection", (reason) => {
+    logger.error({
+      component: "server",
+      event: "process.unhandled-rejection",
+      error: reason instanceof Error ? reason.message : String(reason),
+    })
+  })
+  process.on("uncaughtException", (err) => {
+    logger.error({ component: "server", event: "process.uncaught-exception", error: err.message })
+    process.exit(1)
+  })
 }
 
 main().catch((err) => {

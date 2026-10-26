@@ -40,3 +40,21 @@ test("remote page: the Layout & Media card is translated, not hardcoded English"
     assert.ok(html.includes(`data-t="${key}"`), `index.html does not mark ${key} as translatable`)
   }
 })
+
+test("remote page: the verse-string parser accepts accented French book names", () => {
+  const match = script.match(/function parseVerseString[\s\S]*?\.match\((\/.+\/[a-z]*)\)/)
+  assert.ok(match, "could not find the parseVerseString regex")
+  const re = new Function(`return ${match[1]}`)() as RegExp
+  assert.ok(re.test("Genèse 1:1"))
+  assert.ok(re.test("Ésaïe 41:10"))
+  assert.ok(re.test("1 Corinthiens 13:4"))
+})
+
+test("remote page: quick stage alerts and the timer title are sent from the translation table", () => {
+  const keys = [...html.matchAll(/data-msg-key="([^"]+)"/g)].map((m) => m[1] as string)
+  assert.equal(keys.length, 4)
+  assert.deepEqual(keys.filter((key) => !en.has(key) || !fr.has(key)), [])
+  assert.ok(!/data-msg="/.test(html), "a hardcoded English data-msg is back")
+  assert.ok(en.has("timerSermonTitle") && fr.has("timerSermonTitle"))
+  assert.ok(!script.includes('title: "Sermon"'), "timer title must come from t()")
+})

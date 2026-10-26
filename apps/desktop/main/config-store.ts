@@ -1,4 +1,4 @@
-import { mkdir, open, readFile, rename, unlink } from "node:fs/promises"
+import { copyFile, mkdir, open, readFile, rename, unlink } from "node:fs/promises"
 import { dirname } from "node:path"
 import type { DisplayMode, VerseConfirmationMode, VerseLayout } from "../../../packages/contracts"
 import type { AudioProfile } from "../../server/audio/audio-profile"
@@ -222,10 +222,30 @@ export class ConfigStore {
     try {
       stored = JSON.parse(raw)
     } catch {
+      await this.quarantine()
       throw new Error(`ConfigStore: ${this.filePath} contains invalid JSON`)
     }
 
-    return this.decode(stored)
+    try {
+      return this.decode(stored)
+    } catch (err) {
+      await this.quarantine()
+      throw err
+    }
+  }
+
+  /**
+   * An unreadable config is moved aside, never left in place: the setup
+   * screen that follows writes a fresh file, and without this the old file
+   * (with its encrypted API keys) would be overwritten and lost.
+   */
+  private async quarantine(): Promise<void> {
+    const aside = `${this.filePath}.corrupt-${Date.now()}`
+    try {
+      await rename(this.filePath, aside)
+    } catch {
+      // Best effort: the original error is what the caller needs to see.
+    }
   }
 
   save(config: AppConfig): Promise<void> {
@@ -301,6 +321,8 @@ export class ConfigStore {
       } finally {
         await handle.close()
       }
+      // Keep the last good file; a failed copy (e.g. no previous file) must not block the save.
+      await copyFile(this.filePath, `${this.filePath}.bak`).catch(() => undefined)
       await rename(tempPath, this.filePath)
     } catch (err) {
       await unlink(tempPath).catch(() => undefined)
