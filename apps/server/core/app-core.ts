@@ -773,6 +773,10 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     if (trigger !== "detected") interpreterEchoGuard.forget()
     // Whatever was waiting for approval has now been dealt with (shown, overridden, rundown).
     suggestionArbiter.clearDetectedWaiting()
+    // Anything pending was just superseded by this verse; a late "Confirm"
+    // must not resurrect it. (Not done in clearVerse: the auto-clear timer
+    // ends the SHOWN verse and must not discard a verse awaiting approval.)
+    pendingVerse = null
     currentVersePosition = verse.reference
     announcedChapter = null
     // TASK B: Update ASR prompt with current verse reference for dynamic context
@@ -886,6 +890,9 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     if (transcript.state !== "final") return
     const hints = buildVolumeHints(plannedBookIds, currentVersePosition?.book ?? null)
     const inferred = applyVolumeHints(text, hints)
+    // Same stale-lookup rule as every other path that awaits a verse: a Clear
+    // or override that happens while the lookups run must not be undone.
+    const ticket = beginDisplayIntent()
     const isOnScreen = (verse: Verse): boolean =>
       currentVersePosition !== null &&
       currentVersePosition.book === verse.reference.book &&
@@ -894,6 +901,10 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
 
     if (inferred) {
       const verses = await resolveTranscriptVerses({ ...transcript, text: inferred }, detector, index, source, cache, circuitBreaker, logger)
+      if (verses.length > 0 && isSupersededIntent(ticket)) {
+        dropStaleLookup("volume-inference", transcript.correlationId)
+        return
+      }
       for (const verse of verses) {
         if (isOnScreen(verse)) continue
         logger.info({
@@ -919,6 +930,10 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     }
     const [first, ...others] = candidates
     if (!first) return
+    if (isSupersededIntent(ticket)) {
+      dropStaleLookup("volume-inference", transcript.correlationId)
+      return
+    }
     logger.info({
       component: "app-core",
       event: "volume.candidates",
@@ -1472,7 +1487,37 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     syncEchoWarning(now)
   }
 
+  // Bound on audio frames awaiting the ASR provider. A stalled provider
+  // (429 chain, reconnect) must not grow an unbounded pile of pending
+  // promises and buffers (AGENTS.md sections 35-36).
+  const MAX_AUDIO_FRAMES_IN_FLIGHT = 64
+  let audioFramesInFlight = 0
+  let audioFramesDropped = 0
+
   async function handleAudioFrame(frame: AudioFrame): Promise<void> {
+    // Frames that arrive while no mic session is active (after mic:stop, or
+    // before mic:start) never reach the ASR.
+    if (!micSequenceSessionActive) return
+    if (audioFramesInFlight >= MAX_AUDIO_FRAMES_IN_FLIGHT) {
+      audioFramesDropped += 1
+      if (audioFramesDropped === 1 || audioFramesDropped % 500 === 0) {
+        logger.warn({
+          component: "app-core",
+          event: "mic.audio-frame-dropped",
+          metadata: { reason: "asr-backpressure", dropped: audioFramesDropped, inFlight: audioFramesInFlight },
+        })
+      }
+      return
+    }
+    audioFramesInFlight += 1
+    try {
+      await processAudioFrame(frame)
+    } finally {
+      audioFramesInFlight -= 1
+    }
+  }
+
+  async function processAudioFrame(frame: AudioFrame): Promise<void> {
     if (micSequenceSessionActive) observeAudioFrameSequence(frame.sequence)
     // ARCHITECTURE.md section 9 / AGENTS.md section 11: reduce unnecessary
     // ASR requests by not forwarding obvious silence. This must never
@@ -1615,7 +1660,25 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     })
   }
 
+  // mic:start and mic:stop mutate shared session state across an await
+  // (asr.start / asr.stop). Run them strictly one after another so a stop
+  // that arrives while a start is pending cannot be overtaken (AGENTS.md
+  // section 49: server state is authoritative).
+  let micCommandChain: Promise<void> = Promise.resolve()
+  function runMicCommand(task: () => Promise<void>): Promise<void> {
+    const run = micCommandChain.then(task)
+    micCommandChain = run.catch(() => undefined)
+    return run
+  }
+
   async function handleCommand(message: WsMessage, role: WsRole): Promise<void> {
+    if (message.type === "mic:start" || message.type === "mic:stop") {
+      return runMicCommand(() => handleCommandUnserialized(message, role))
+    }
+    return handleCommandUnserialized(message, role)
+  }
+
+  async function handleCommandUnserialized(message: WsMessage, role: WsRole): Promise<void> {
     switch (message.type) {
       case "mic:start":
         // ARCHITECTURE.md section 76: a fresh threshold for THIS room,
@@ -1678,6 +1741,9 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       case "verse:clear":
         interpreterEchoGuard.forget()
         supersedeInFlightDisplay()
+        // The operator cleared on purpose: a pending verse must not outlive that.
+        pendingVerse = null
+        suggestionArbiter.clearDetectedWaiting()
         broadcastVerseClear(message.correlationId)
         return
 
@@ -2396,6 +2462,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         })
         if (assembledText && assembledText !== transcript.text && assembledText !== lastAssembledText) {
           lastAssembledText = assembledText
+          const assembledTicket = beginDisplayIntent()
           resolveTranscriptVerses(
             { ...transcript, text: assembledText },
             detector,
@@ -2406,6 +2473,11 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
             logger,
           )
             .then(async (verses) => {
+              if (verses.length > 0 && isSupersededIntent(assembledTicket)) {
+                dropStaleLookup("assembled-detection", transcript.correlationId)
+                return
+              }
+              if (verses.length > 0) markIntentApplied(assembledTicket)
               deliverDetectedVerses(verses, transcript)
               if (verses.length === 0) await inferVolumeVerses(assembledText, transcript)
             })

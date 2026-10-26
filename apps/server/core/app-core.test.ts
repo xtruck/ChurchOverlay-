@@ -283,6 +283,14 @@ test("AppCore: mic:start triggers calibration — nothing is forwarded to ASR un
   }
 })
 
+/** Starts a mic session and finishes the (shortened) calibration so later frames can be forwarded. */
+async function startMicAndCalibrate(socket: WebSocket, asr: FakeAsrProvider): Promise<void> {
+  socket.send(JSON.stringify({ id: "01MIC", type: "mic:start", timestamp: Date.now(), payload: null }))
+  await waitFor(() => asr.startCalls >= 1)
+  socket.send(encodeAudioFrame({ samples: Int16Array.from(new Array(200).fill(5000)), sampleRate: 16000, sequence: 0 }))
+  await new Promise((resolve) => setTimeout(resolve, 30))
+}
+
 test("AppCore: a loud binary audio frame from the operator reaches the injected AsrProvider", async () => {
   const asr = new FakeAsrProvider()
   const app = await startAppCore({
@@ -293,9 +301,11 @@ test("AppCore: a loud binary audio frame from the operator reaches the injected 
     logger: silentLogger(),
     port: 0,
     tokens: TOKENS,
+    silenceGate: new SilenceGate({ calibrationDurationMs: 10 }),
   })
   try {
     const socket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    await startMicAndCalibrate(socket, asr)
     // Loud enough to clear the SilenceGate's default threshold — this is
     // a speech-like frame, not silence. See the dedicated silence test
     // below for the gate actually filtering something out.
@@ -393,9 +403,11 @@ test("AppCore: a frame of pure silence is filtered by the SilenceGate and never 
     logger: silentLogger(),
     port: 0,
     tokens: TOKENS,
+    silenceGate: new SilenceGate({ calibrationDurationMs: 10 }),
   })
   try {
     const socket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    await startMicAndCalibrate(socket, asr)
     socket.send(
       encodeAudioFrame({ samples: Int16Array.from(new Array(160).fill(0)), sampleRate: 16000, sequence: 1 })
     )
@@ -4434,6 +4446,7 @@ test("AppCore: broadcasts mic:health about once per second of processed audio, w
       if (message.type === "mic:health") health.push(message.payload as { state: string; autoGain: boolean; gainDb: number })
     })
     operatorSocket.send(JSON.stringify({ id: "01A", type: "mic:start", timestamp: Date.now(), payload: null }))
+    await waitFor(() => asr.startCalls >= 1)
     // 50 x 20 ms = 1 s of quiet-but-present speech
     for (let i = 0; i < 55; i++) {
       operatorSocket.send(
@@ -4630,9 +4643,11 @@ test("AppCore: audio frame error logging is throttled across rapid consecutive f
     logger,
     port: 0,
     tokens: TOKENS,
+    silenceGate: new SilenceGate({ calibrationDurationMs: 10 }),
   })
   try {
     const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    await startMicAndCalibrate(operatorSocket, asr)
     // Send 30 audio frames in rapid succession
     for (let i = 0; i < 30; i++) {
       operatorSocket.send(
@@ -5897,6 +5912,135 @@ test("AppCore (announced chapter): a sentence that names another chapter's missi
     await new Promise((resolve) => setTimeout(resolve, 400))
     assert.equal(shown.length, 1, "nothing may be shown for Isaiah 4:8, and above all not John 3:8")
     viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+// ---- Audit regressions: pending invalidation, mic ordering, audio gating ----
+
+test("AppCore: an operator Clear invalidates a pending verse, so a late Confirm shows nothing", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    verseConfirmationMode: "review",
+  })
+  try {
+    const operator = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const viewer = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const types: string[] = []
+    viewer.on("message", (data) => types.push(JSON.parse(data.toString()).type))
+    const send = (type: string) => operator.send(JSON.stringify({ id: "01A", type, timestamp: Date.now(), payload: null }))
+
+    asr.emitTranscript({ id: "01T", correlationId: "01A", sequence: 1, text: "Turn to John 3:16.", state: "final", timestamp: Date.now() })
+    await waitFor(() => types.includes("verse:pending"))
+    send("verse:clear")
+    await waitFor(() => types.includes("verse:clear"))
+    send("verse:confirm-pending")
+    await new Promise((resolve) => setTimeout(resolve, 80))
+
+    assert.equal(types.includes("verse:show"), false)
+    operator.close()
+    viewer.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: mic:stop that arrives while mic:start is still starting the ASR runs after it, never before", async () => {
+  const order: string[] = []
+  class SlowStartAsr extends FakeAsrProvider {
+    override async start(): Promise<void> {
+      order.push("start-begin")
+      await new Promise((resolve) => setTimeout(resolve, 80))
+      order.push("start-end")
+    }
+    override async stop(): Promise<void> {
+      order.push("stop")
+    }
+  }
+  const app = await startAppCore({
+    asr: new SlowStartAsr(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operator = await connect(app.wsServer.port, TOKENS.operatorToken)
+    operator.send(JSON.stringify({ id: "01A", type: "mic:start", timestamp: Date.now(), payload: null }))
+    await waitFor(() => order.includes("start-begin"))
+    operator.send(JSON.stringify({ id: "01B", type: "mic:stop", timestamp: Date.now(), payload: null }))
+    await waitFor(() => order.includes("stop"))
+    assert.deepEqual(order, ["start-begin", "start-end", "stop"])
+    operator.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: audio frames sent after mic:stop never reach the ASR", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    silenceGate: new SilenceGate({ calibrationDurationMs: 10 }),
+  })
+  try {
+    const operator = await connect(app.wsServer.port, TOKENS.operatorToken)
+    await startMicAndCalibrate(operator, asr)
+    operator.send(JSON.stringify({ id: "01B", type: "mic:stop", timestamp: Date.now(), payload: null }))
+    await waitFor(() => asr.stopCalls >= 1)
+    operator.send(encodeAudioFrame({ samples: Int16Array.from(new Array(160).fill(5000)), sampleRate: 16000, sequence: 9 }))
+    await new Promise((resolve) => setTimeout(resolve, 80))
+    assert.equal(asr.sentFrames.length, 0)
+    operator.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: a stalled ASR cannot accumulate unbounded in-flight audio frames", async () => {
+  class StalledAsr extends FakeAsrProvider {
+    override async sendAudio(audio: AudioFrame): Promise<void> {
+      this.sentFrames.push(audio)
+      await new Promise<void>(() => {}) // never resolves
+    }
+  }
+  const asr = new StalledAsr()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    silenceGate: new SilenceGate({ calibrationDurationMs: 10 }),
+  })
+  try {
+    const operator = await connect(app.wsServer.port, TOKENS.operatorToken)
+    await startMicAndCalibrate(operator, asr)
+    for (let i = 1; i <= 200; i++) {
+      operator.send(encodeAudioFrame({ samples: Int16Array.from(new Array(160).fill(5000)), sampleRate: 16000, sequence: i }))
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    assert.ok(asr.sentFrames.length > 0)
+    assert.ok(asr.sentFrames.length <= 64, `expected at most 64 in flight, saw ${asr.sentFrames.length}`)
+    operator.close()
   } finally {
     await app.stop()
   }
