@@ -40,3 +40,12 @@ test("remote page: the Layout & Media card is translated, not hardcoded English"
     assert.ok(html.includes(`data-t="${key}"`), `index.html does not mark ${key} as translatable`)
   }
 })
+
+test("remote page: the verse-string parser accepts accented French book names", () => {
+  const match = script.match(/function parseVerseString[\s\S]*?\.match\((\/.+\/[a-z]*)\)/)
+  assert.ok(match, "could not find the parseVerseString regex")
+  const re = new Function(`return ${match[1]}`)() as RegExp
+  assert.ok(re.test("Genèse 1:1"))
+  assert.ok(re.test("Ésaïe 41:10"))
+  assert.ok(re.test("1 Corinthiens 13:4"))
+})

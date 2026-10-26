@@ -121,3 +121,46 @@ test("FreeApiSource: a network failure (fetch rejects) is a real failure — it 
   )
   await assert.rejects(() => source.getVerse(JOHN_3_16), /network down/)
 })
+
+test("FreeApiSource: rejects a response whose verses[] is a different verse than requested", async () => {
+  const source = new FreeApiSource(
+    fakeFetch(
+      () =>
+        new Response(
+          JSON.stringify({ text: "x", translation_id: "kjv", verses: [{ chapter: 3, verse: 17 }] }),
+          { status: 200 }
+        )
+    )
+  )
+  await assert.rejects(() => source.getVerse(JOHN_3_16), /missing required verse fields/)
+})
+
+test("FreeApiSource: rejects a multi-verse response", async () => {
+  const source = new FreeApiSource(
+    fakeFetch(
+      () =>
+        new Response(
+          JSON.stringify({
+            text: "x",
+            translation_id: "kjv",
+            verses: [
+              { chapter: 3, verse: 16 },
+              { chapter: 3, verse: 17 },
+            ],
+          }),
+          { status: 200 }
+        )
+    )
+  )
+  await assert.rejects(() => source.getVerse(JOHN_3_16), /missing required verse fields/)
+})
+
+test("FreeApiSource: passes an abort signal so a stalled request cannot hang", async () => {
+  let signal: AbortSignal | null | undefined
+  const source = new FreeApiSource((async (_input: unknown, init?: RequestInit) => {
+    signal = init?.signal
+    return new Response(JSON.stringify({ text: "x", translation_id: "kjv" }), { status: 200 })
+  }) as typeof fetch)
+  await source.getVerse(JOHN_3_16)
+  assert.ok(signal)
+})

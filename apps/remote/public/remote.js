@@ -169,7 +169,7 @@
   }
 
   function parseVerseString(str) {
-    const match = str.trim().match(/^([\d\s\w]+?)\s+(\d+)[:\s]+(\d+)$/i)
+    const match = str.trim().match(/^([\d\s\p{L}]+?)\s+(\d+)[:\s]+(\d+)$/iu)
     if (!match) return null
     return {
       book: match[1].trim().toLowerCase(),
