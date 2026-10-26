@@ -207,6 +207,7 @@
   const livePreviewEl = document.getElementById("live-preview")
   const tallyChipEl = document.getElementById("tally-chip")
   const versePendingOriginEl = document.getElementById("verse-pending-origin")
+  const versePendingHeardEl = document.getElementById("verse-pending-heard")
   const micHealthEl = document.getElementById("mic-health")
   const micHealthTextEl = document.getElementById("mic-health-text")
   const micStatSpeechEl = document.getElementById("mic-stat-speech")
@@ -575,6 +576,10 @@
       versePendingOriginEl.dataset.i18n = originKey // stays right if the UI language changes
       versePendingOriginEl.textContent = t(originKey)
     }
+    // What the preacher actually said: lets the operator judge a detection at a glance.
+    const heard = typeof verse.heard === "string" ? verse.heard.trim() : ""
+    versePendingHeardEl.style.display = heard ? "block" : "none"
+    versePendingHeardEl.textContent = heard ? t("livePreview.pendingHeard", { text: heard }) : ""
     renderPendingAlternatives(verse)
     versePendingBannerEl.style.display = "flex"
     livePreviewEl.classList.add("has-pending")

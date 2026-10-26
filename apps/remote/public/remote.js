@@ -52,6 +52,12 @@
       alertWrap: "Wrap up",
       alertNursery: "Nursery",
       alertMic: "Mic check",
+      toastSent: "Sent",
+      toastOffline: "Not connected. Nothing was sent.",
+      toastBadRef: "Could not read that reference.",
+      toastShown: "On screen: {ref}",
+      toastPending: "Waiting for approval: {ref}",
+      toastNotShown: "Not shown. Check the reference.",
       alertMsg2min: "2 Minutes Remaining",
       alertMsgWrap: "Wrap Up Now",
       alertMsgNursery: "Nursery #104 Needed",
@@ -113,6 +119,12 @@
       alertWrap: "Conclure",
       alertNursery: "Garderie",
       alertMic: "Vérifier le micro",
+      toastSent: "Envoyé",
+      toastOffline: "Non connecté. Rien n'a été envoyé.",
+      toastBadRef: "Référence illisible.",
+      toastShown: "À l'écran : {ref}",
+      toastPending: "En attente d'approbation : {ref}",
+      toastNotShown: "Non affiché. Vérifiez la référence.",
       alertMsg2min: "Il reste 2 minutes",
       alertMsgWrap: "Conclure maintenant",
       alertMsgNursery: "Pouponnière #104 demandée",
@@ -329,10 +341,48 @@
     sceneListEl.appendChild(chip)
   }
 
+  // Acknowledgement toast. Only states the page can actually know: the
+  // socket was open (sent), or a verse:show / verse:pending followed a verse
+  // request. No server protocol change (AGENTS.md section 43).
+  const toastEl = document.getElementById("toast")
+  let toastTimer = null
+  function showToast(text, kind) {
+    if (!toastEl) return
+    toastEl.textContent = text
+    toastEl.className = "show " + (kind || "")
+    if (toastTimer) clearTimeout(toastTimer)
+    toastTimer = setTimeout(() => {
+      toastEl.className = ""
+      toastTimer = null
+    }, 2600)
+  }
+
+  // Returns whether the message left the page; tells the operator when it did not.
   function sendJson(ws, message) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      showToast(t("toastOffline"), "error")
+      return false
+    }
     triggerHaptic()
     ws.send(JSON.stringify(message))
+    return true
+  }
+
+  // A verse request is answered, if at all, by verse:show or verse:pending.
+  const VERSE_ACK_TIMEOUT_MS = 4000
+  let verseAckTimer = null
+  function expectVerseAck() {
+    if (verseAckTimer) clearTimeout(verseAckTimer)
+    verseAckTimer = setTimeout(() => {
+      verseAckTimer = null
+      showToast(t("toastNotShown"), "error")
+    }, VERSE_ACK_TIMEOUT_MS)
+  }
+  function resolveVerseAck(kind, ref) {
+    if (!verseAckTimer) return
+    clearTimeout(verseAckTimer)
+    verseAckTimer = null
+    showToast(t(kind, { ref }), "ok")
   }
 
   // Sends a spoken-style reference string ("Jean 3:16") the exact same way
@@ -495,8 +545,12 @@
       if (message.type === "rundown:state") {
         currentRundownState = message.payload
         renderSceneList()
+      } else if (message.type === "verse:pending" && message.payload?.reference) {
+        resolveVerseAck("toastPending", referenceText(message.payload.reference, message.payload.translation))
       } else if (message.type === "verse:show" && message.payload?.reference) {
-        renderOnScreen(referenceText(message.payload.reference, message.payload.translation))
+        const shownText = referenceText(message.payload.reference, message.payload.translation)
+        renderOnScreen(shownText)
+        resolveVerseAck("toastShown", shownText)
       } else if (message.type === "verse:clear") {
         renderOnScreen(null)
       } else if (message.type === "timer:state" && message.payload) {
@@ -532,22 +586,25 @@
     document.querySelectorAll(".alert-quick-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         const msg = t(btn.getAttribute("data-msg-key"))
-        sendJson(ws, { id: crypto.randomUUID(), type: "stage:alert", timestamp: Date.now(), payload: { message: msg } })
+        if (sendJson(ws, { id: crypto.randomUUID(), type: "stage:alert", timestamp: Date.now(), payload: { message: msg } })) showToast(t("toastSent"), "ok")
       })
     })
 
     sendAlertBtn.onclick = () => {
       const msg = stageAlertInput.value.trim()
       if (!msg) return
-      sendJson(ws, { id: crypto.randomUUID(), type: "stage:alert", timestamp: Date.now(), payload: { message: msg } })
+      if (!sendJson(ws, { id: crypto.randomUUID(), type: "stage:alert", timestamp: Date.now(), payload: { message: msg } })) return
+      showToast(t("toastSent"), "ok")
       stageAlertInput.value = ""
     }
 
     const fireVerse = (refStr) => {
       const ref = parseVerseString(refStr)
-      if (ref) {
-        sendJson(ws, { id: crypto.randomUUID(), type: "verse:override", timestamp: Date.now(), payload: ref })
+      if (!ref) {
+        showToast(t("toastBadRef"), "error")
+        return
       }
+      if (sendJson(ws, { id: crypto.randomUUID(), type: "verse:override", timestamp: Date.now(), payload: ref })) expectVerseAck()
     }
 
     quickVerseBtn.onclick = () => {

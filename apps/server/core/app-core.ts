@@ -28,6 +28,7 @@ import type {
 export const DEFAULT_VERSE_AUTO_CLEAR_MS = 150_000
 /** Upper bound on verse scenes prefetched per rundown:load (sequential requests). */
 const MAX_RUNDOWN_PREFETCH = 50
+import { heardSnippet } from "./heard-snippet"
 import type { Server as HttpServer } from "node:http"
 import { generateUlid } from "../../../packages/shared/ulid"
 import type { Logger } from "../../../packages/shared/logger"
@@ -982,7 +983,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       const delivery = verseConfirmationMode === "review" ? "pending" : "screen"
       if (delivery === "pending") {
         suggestionArbiter.noteDetectedWaiting()
-        broadcastPendingVerse(verse, transcript.correlationId)
+        broadcastPendingVerse({ ...verse, heard: heardSnippet(transcript.text) } as Verse, transcript.correlationId)
       } else broadcastVerse(verse, "detected", transcript.correlationId)
       const durationMs = Date.now() - transcript.timestamp
       pipelineLatency.record(durationMs)
@@ -1831,7 +1832,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         // trigger kind of its own — confirmation is how review mode
         // delivers a detection, not a different way a verse got there.
         if (pendingVerse) {
-          const { origin: _origin, suggestedBy: _suggestedBy, alternatives: _alternatives, ...verse } = pendingVerse as Verse & { origin?: string; suggestedBy?: string; alternatives?: unknown }
+          const { origin: _origin, suggestedBy: _suggestedBy, alternatives: _alternatives, heard: _heard, ...verse } = pendingVerse as Verse & { origin?: string; suggestedBy?: string; alternatives?: unknown; heard?: string }
           pendingVerse = null
           broadcastVerse(verse, "detected", message.correlationId)
         } else {

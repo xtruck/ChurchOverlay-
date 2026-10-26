@@ -56,6 +56,15 @@
   * { -webkit-tap-highlight-color: transparent; }
   /* A focused field scrolled into view must not end up under the fixed bottom tab bar. */
   html { background: var(--bg); -webkit-text-size-adjust: 100%; scroll-padding-bottom: calc(var(--nav-h) + 24px + var(--safe-b)); }
+  /* Acknowledgement toast: confirms or refuses what the operator just sent. Text, not colour alone. */
+  #toast { position: fixed; left: 50%; bottom: calc(var(--nav-h) + 16px + var(--safe-b)); transform: translateX(-50%) translateY(8px);
+    max-width: min(92vw, 420px); padding: 10px 16px; border-radius: var(--r-control); background: var(--surface-3);
+    border: 1px solid var(--field-border); color: var(--text); font: 600 15px/1.3 var(--font-ui); text-align: center;
+    opacity: 0; pointer-events: none; transition: opacity 0.15s var(--ease), transform 0.15s var(--ease); z-index: 50; }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.error { border-color: var(--on-air); color: var(--on-air-ink); }
+  #toast.ok { border-color: var(--live-ok); }
+  @media (prefers-reduced-motion: reduce) { #toast { transition: none; } }
   .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
   body {
     margin: 0 auto;
@@ -553,6 +562,8 @@
   </header>
 
   <div id="no-token" data-t="noToken">No operator token in the link. Copy the remote link from the desktop console's Settings.</div>
+
+  <div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <main id="app">
     <!-- On-air tally: above every tab, so the operator never loses sight of it. -->

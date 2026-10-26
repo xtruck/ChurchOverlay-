@@ -6045,3 +6045,36 @@ test("AppCore: a stalled ASR cannot accumulate unbounded in-flight audio frames"
     await app.stop()
   }
 })
+
+test("AppCore: a pending verse carries what was heard, and the confirmed verse:show does not", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    verseConfirmationMode: "review",
+  })
+  try {
+    const operator = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const viewer = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const pendingMsg = waitForMessage(viewer)
+    asr.emitTranscript({ id: "01T", correlationId: "01A", sequence: 1, text: "  Turn   to John 3:16. ", state: "final", timestamp: Date.now() })
+    const pending = await pendingMsg
+    assert.equal(pending.type, "verse:pending")
+    assert.equal((pending.payload as { heard?: string }).heard, "Turn to John 3:16.")
+
+    const shownMsg = waitForMessage(viewer)
+    operator.send(JSON.stringify({ id: "01B", type: "verse:confirm-pending", timestamp: Date.now(), payload: null }))
+    const shown = await shownMsg
+    assert.equal(shown.type, "verse:show")
+    assert.equal("heard" in (shown.payload as object), false)
+    operator.close()
+    viewer.close()
+  } finally {
+    await app.stop()
+  }
+})
