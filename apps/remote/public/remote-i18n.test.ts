@@ -58,3 +58,14 @@ test("remote page: quick stage alerts and the timer title are sent from the tran
   assert.ok(en.has("timerSermonTitle") && fr.has("timerSermonTitle"))
   assert.ok(!script.includes('title: "Sermon"'), "timer title must come from t()")
 })
+
+test("remote page: sends are acknowledged with a toast and offline sends are refused visibly", () => {
+  assert.ok(html.includes('id="toast"') && /id="toast"[^>]*aria-live="polite"/.test(html), "toast must be a polite live region")
+  for (const key of ["toastSent", "toastOffline", "toastBadRef", "toastShown", "toastPending", "toastNotShown"]) {
+    assert.ok(en.has(key) && fr.has(key), `${key} missing in a language`)
+  }
+  assert.match(script, /function sendJson[\s\S]*?showToast\(t\("toastOffline"\)[\s\S]*?return false/)
+  assert.match(script, /message\.type === "verse:pending"[\s\S]*?resolveVerseAck\("toastPending"/)
+  assert.match(script, /resolveVerseAck\("toastShown"/)
+  assert.match(script, /showToast\(t\("toastBadRef"\)/)
+})
