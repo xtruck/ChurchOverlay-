@@ -158,6 +158,30 @@ function normalizeAsrTypography(text: string): string {
     .replace(/(\d)\s*:\s*(\d)/g, "$1:$2")
 }
 
+// A bare "word N M" (no colon, no "verset"/"chapitre") followed by a unit, a month or a time word is
+// ordinary speech about quantities and dates ("Marc 12 14 personnes", "Jean 3 16 septembre",
+// "Job 1 5 times"), not a reference. Only applied to the compact form: an explicit colon or keyword
+// is a deliberate reference whatever follows it.
+const COMPACT_FORM_TRAILING_NON_REFERENCE_WORDS = new Set([
+  "personne", "personnes", "people", "persons", "person", "ans", "an", "annees", "annee", "years", "year",
+  "fois", "times", "minutes", "minute", "min", "heures", "heure", "hours", "hour", "h", "jours", "jour", "days", "day",
+  "mois", "months", "month", "semaines", "semaine", "weeks", "week", "secondes", "seconds",
+  "euros", "euro", "dollars", "dollar", "francs", "pourcent", "percent", "fcfa", "xof",
+  "janvier", "fevrier", "mars", "avril", "mai", "juin", "juillet", "aout", "septembre", "octobre", "novembre", "decembre",
+  "january", "february", "march", "april", "june", "july", "august", "september", "october", "november", "december",
+  "membres", "members", "freres", "soeurs", "enfants", "children", "kilos", "km", "metres", "meters",
+  // Prose that follows a bare "Jean 3 16" in ordinary speech ("Jean 3 16 dit ..."): not a reference.
+  // The explicit "Jean 3:16" / "Jean 3 verset 16" forms are never affected.
+  "dit", "disait", "dis", "disent", "says", "said", "say", "nous", "vous", "ils", "elles", "they",
+])
+
+function compactFormFollowedByNonReferenceWord(text: string, matchEnd: number): boolean {
+  const next = /^[\s,.]*(%|\p{L}+)/u.exec(text.slice(matchEnd))
+  if (!next) return false
+  const word = next[1] as string
+  return word === "%" || COMPACT_FORM_TRAILING_NON_REFERENCE_WORDS.has(stripAccents(word).toLowerCase())
+}
+
 // Book aliases that are also everyday words with numbers after them ("un grand
 // nombre 12 14 personnes"): accepted only with "verset"/"chapitre" or a colon.
 const COMPACT_FORM_EXCLUDED_WORDS = new Set(["nombre"])
@@ -203,6 +227,7 @@ export class RegexDetector implements VerseDetector {
         // Bare "word N M" with an ordinary-word book ("un grand nombre 12 14 personnes")
         // is not a reference; those words need an explicit keyword or colon.
         if (pattern === COMPACT_REFERENCE_PATTERN && COMPACT_FORM_EXCLUDED_WORDS.has(stripAccents(rawBook).toLowerCase())) continue
+        if (pattern === COMPACT_REFERENCE_PATTERN && compactFormFollowedByNonReferenceWord(text, (match.index ?? 0) + match[0].length)) continue
 
         references.push({
           book,

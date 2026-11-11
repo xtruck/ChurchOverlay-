@@ -128,10 +128,6 @@
     "3 john": "3 Jean", jude: "Jude", revelation: "Apocalypse",
   }
 
-  function formatReference(ref) {
-    return capitalize(ref.book) + " " + ref.chapter + ":" + ref.verse
-  }
-
   // French-only display used to show the ENGLISH book name ("John 3:16")
   // under a French verse. The verse's own translation id says which
   // language the congregation is reading — Louis Segond 1910 is "ls1910".
@@ -139,47 +135,66 @@
   // domain) added alongside the existing Louis Segond aliases — both name
   // a French-language translation, so both should render French book names.
   const FRENCH_TRANSLATIONS = new Set(["ls1910", "lsg", "segond", "darby"])
-  function formatVerseReference(verse) {
-    const ref = verse.reference
-    if (verse.secondary) return formatBilingualReference(ref)
-    if (FRENCH_TRANSLATIONS.has(String(verse.translation || "").toLowerCase())) {
-      return (FRENCH_BOOK_NAMES[ref.book] || capitalize(ref.book)) + " " + ref.chapter + ":" + ref.verse
-    }
-    return formatReference(ref)
+  function languageOf(translation) {
+    return FRENCH_TRANSLATIONS.has(String(translation || "").toLowerCase()) ? "fr" : "en"
+  }
+
+  function referenceText(ref, language) {
+    const name = language === "fr" ? FRENCH_BOOK_NAMES[ref.book] || capitalize(ref.book) : capitalize(ref.book)
+    return name + " " + ref.chapter + ":" + ref.verse
   }
 
   // ARCHITECTURE.md section 72: a viewer confirmed both languages must be
-  // visible in bilingual mode, not just the verse text — the reference
-  // line was showing only the English book name even while the verse
-  // itself displayed in French, which read as a mismatch/bug ("I say
-  // Jean, it shows John"). verse.secondary only exists in bilingual mode
-  // (LocalizedVerseSource), so its presence is exactly the right signal —
-  // French first, matching the primary/secondary text hierarchy below.
-  function formatBilingualReference(ref) {
-    const frenchName = FRENCH_BOOK_NAMES[ref.book]
-    const frenchRef = (frenchName || capitalize(ref.book)) + " " + ref.chapter + ":" + ref.verse
-    return frenchRef + " · " + formatReference(ref)
+  // visible in bilingual mode, not just the verse text — "I say Jean, it shows
+  // John" read as a bug. The reference line is therefore built from one part
+  // per language, in the same order as the verse blocks (the primary language
+  // first, French in practice), each part tagged with its own language so it
+  // follows the same typographic rule as the verse text: English italic,
+  // French upright. Two identical parts (two French translations) show once.
+  function referenceParts(verse, primaryLanguage) {
+    const parts = [{ text: referenceText(verse.reference, primaryLanguage), language: primaryLanguage }]
+    if (verse.secondary) {
+      const language = languageOf(verse.secondary.translation)
+      const text = referenceText(verse.reference, language)
+      if (text !== parts[0].text) parts.push({ text, language })
+    }
+    return parts
   }
 
-  // Auto-shrink to fit: a long verse (a wordy translation, or a small OBS
-  // Browser Source size) must never run off-screen or get visually cut
-  // off — the CSS clamp() on #verse-text's font-size is viewport-width
-  // aware, but not text-length aware, so it alone can't guarantee this.
-  // Steps the font size down until the card fits within a safe fraction
-  // of the viewport, or hits a legibility floor (never shrinks forever).
+  // The reference line is written with text nodes and spans only (never innerHTML).
+  function renderReference(parts) {
+    refEl.textContent = ""
+    parts.forEach((part, i) => {
+      if (i > 0) refEl.appendChild(document.createTextNode(" \u00b7 "))
+      const span = document.createElement("span")
+      span.className = "vc-ref-part"
+      span.lang = part.language
+      span.dataset.language = part.language
+      span.textContent = part.text
+      refEl.appendChild(span)
+    })
+  }
+
+  // Auto-fit: the verse must fill the frame as widely as it can (it is read from
+  // the back of a church) without ever running off it or being clipped, for one
+  // short verse and for a long multi-verse passage alike. measureFit() picks the
+  // LARGEST font size at which the whole card (primary text, secondary text and
+  // reference, plus the design's own padding and chrome) fits a target box that
+  // is a fraction of the frame (VerseMotion.fitLimits: ~95% x 92% fullscreen,
+  // full-width x 50% lower-third). It is a binary search over the size, probing
+  // the live layout in one synchronous pass: no paint happens between probes,
+  // so nothing flickers, and ~9 probes replace the old pixel-by-pixel descent.
+  // It re-runs on text change (present()), resize, a layout or style change, and
+  // after web fonts load (their metrics differ from the fallback face).
   //
-  // Bilingual mode (ARCHITECTURE.md section 63.4) extends this to measure
-  // the COMBINED card height across both text blocks, not just the
-  // primary one — #verse-secondary-text's own font size is stepped down
-  // in proportion to the primary's, rather than left fixed, since a long
-  // secondary (English) translation can just as easily overflow on its
-  // own.
+  // Bilingual mode (ARCHITECTURE.md section 63.4): both blocks use the SAME
+  // font size (SECONDARY_FONT_RATIO = 1; italic, not size, tells the languages
+  // apart) and are measured together as one card.
   //
-  // ARCHITECTURE.md section 82 / 133: the caps and available area depend on
-  // the layout (fullscreen is read from across a room, so its cap is much
-  // larger) and, since section 133, on the card design too (the cinema
-  // letterbox takes frame height, poster/bold want bigger type). They come
-  // from the pure VerseMotion.fitLimits(), which is unit tested.
+  // ARCHITECTURE.md section 82 / 133: the box and the size range depend on the
+  // layout and the card design (the cinema letterbox takes frame height).
+  // They come from the pure VerseMotion.fitLimits() and largestFit(), which
+  // are unit tested.
   const Motion = window.VerseMotion
   // The second language is the same size as the first (italic tells them apart):
   // a smaller English block was unreadable from the back of the room.
@@ -266,26 +281,45 @@
     )
   }
 
+  // Height the card needs for its content: the bottom of the last in-flow
+  // child plus the card's own bottom padding and border. Not card.scrollHeight:
+  // a design's decorative glow (an absolutely positioned ::before that extends
+  // past the card, clipped by its overflow: hidden) inflates scrollHeight and
+  // made those designs pick needlessly small type.
+  const FIT_CHILDREN = [textEl, secondaryTextEl, document.getElementById("verse-ornament"), document.getElementById("verse-ref-row")]
+  function cardContentHeight() {
+    let bottom = 0
+    for (const el of FIT_CHILDREN) {
+      if (el && el.offsetParent) bottom = Math.max(bottom, el.offsetTop + el.offsetHeight)
+    }
+    const cs = getComputedStyle(verseCardEl)
+    return bottom + parseFloat(cs.paddingBottom) + parseFloat(cs.borderBottomWidth)
+  }
+
   function measureFit() {
-    const limits = Motion.fitLimits(verseEl.classList.contains("fullscreen"), currentCard)
+    const limits = Motion.fitLimits(verseEl.classList.contains("fullscreen"), currentCard, { height: window.innerHeight })
     const maxWidth = window.innerWidth * limits.maxWidthFraction
     const maxHeight = window.innerHeight * limits.maxHeightFraction
     clearVerseSizing()
-    let fontSize = limits.maxFontPx
-    setFontSize(fontSize)
-    while ((contentScrollWidth() > maxWidth || verseCardEl.scrollHeight > maxHeight) && fontSize > limits.minFontPx) {
-      // Coarse steps while far above the floor keep the larger fullscreen caps cheap to fit.
-      fontSize -= fontSize > 80 ? 4 : 1
-      setFontSize(fontSize)
+    const fits = (px) => {
+      setFontSize(px)
+      return contentScrollWidth() <= maxWidth + 0.5 && cardContentHeight() <= maxHeight + 0.5
     }
+    let fontSize = Motion.largestFit(limits.minFontPx, limits.maxFontPx, fits)
+    // Wrapping is not perfectly monotone in the size (balanced lines, the
+    // design's own paddings): confirm the pick and step down a few pixels if a
+    // quirk of the search left it just over the box. Bounded.
+    for (let guard = 0; guard < 48 && fontSize > limits.minFontPx && !fits(fontSize); guard++) fontSize -= 1
+    setFontSize(fontSize)
 
-    // Extremely long bilingual passages can still exceed the viewport at the
+    // Extremely long bilingual passages can still exceed the box at the
     // legibility floor. Scale the complete card as a last resort rather than
     // clipping or allowing it to escape the screen.
     const overflowWidth = contentScrollWidth() / maxWidth
-    const overflowHeight = verseCardEl.scrollHeight / maxHeight
+    const overflowHeight = cardContentHeight() / maxHeight
     const scale = Math.min(1, 1 / Math.max(overflowWidth, overflowHeight))
-    if (scale < 1) verseCardEl.style.setProperty("--fit-scale", String(scale))
+    // Sub-pixel rounding noise (a 0.9996 ratio) is not an overflow: it would only blur the type.
+    if (scale < 0.995) verseCardEl.style.setProperty("--fit-scale", String(scale))
   }
   let refitAfterSettle = false
   function fitVerseText() {
@@ -329,10 +363,10 @@
 
   // Verse text is written ONLY through textContent / text nodes, one span per
   // reveal unit (AGENTS.md section 20, SECURITY.md: never innerHTML).
-  function renderWords(el, text) {
+  function renderWords(el, text, withDropCap) {
     el.textContent = ""
     const units = Motion.splitRevealUnits(text)
-    const cap = units.length ? Motion.splitDropCap(units[0]) : null
+    const cap = withDropCap && units.length ? Motion.splitDropCap(units[0]) : null
     const frag = document.createDocumentFragment()
     if (cap) {
       // Decorative copy of the initial for the manuscript design (hidden by
@@ -363,23 +397,29 @@
   }
 
   function renderVerseContent(verse) {
-    // The page is declared English; say so when the verse is French (screen readers, hyphenation).
-    const primaryLanguage = FRENCH_TRANSLATIONS.has(String(verse.translation || "").toLowerCase()) ? "fr" : "en"
+    // The page is declared English; say so when the verse is French (screen
+    // readers, hyphenation). The language drives the typography too: CSS keys
+    // the English italic off data-language, never off primary/secondary.
+    // A bilingual payload whose primary carries no translation id is the
+    // French-primary pair (section 63.4).
+    const primaryLanguage = verse.secondary && !verse.translation ? "fr" : languageOf(verse.translation)
     textEl.lang = primaryLanguage
     textEl.dataset.language = primaryLanguage
     verseEl.classList.toggle("bilingual", Boolean(verse.secondary))
-    wordEls = renderWords(textEl, String(verse.text))
-    refEl.textContent = formatVerseReference(verse)
+    wordEls = renderWords(textEl, String(verse.text), true)
+    renderReference(referenceParts(verse, primaryLanguage))
 
     if (verse.secondary) {
-      const secondaryLanguage = FRENCH_TRANSLATIONS.has(String(verse.secondary.translation || "").toLowerCase()) ? "fr" : "en"
+      const secondaryLanguage = languageOf(verse.secondary.translation)
       secondaryTextEl.lang = secondaryLanguage
       secondaryTextEl.dataset.language = secondaryLanguage
-      secondaryTextEl.textContent = verse.secondary.text
+      // Same word-by-word reveal as the primary block, continuing after it.
+      wordEls = wordEls.concat(renderWords(secondaryTextEl, String(verse.secondary.text), false))
       secondaryTextEl.classList.add("visible")
     } else {
       secondaryTextEl.classList.remove("visible")
       secondaryTextEl.removeAttribute("data-language")
+      secondaryTextEl.removeAttribute("lang")
       secondaryTextEl.textContent = ""
     }
   }
@@ -558,7 +598,7 @@
     setVar("--ov-backdrop-2", darken(c.backdrop))
     // Dark text sits on a light card: the heavy black halo made it look smudged,
     // so it gets a faint light edge instead. Light text keeps the legibility halo.
-    setVar("--ov-shadow", isDark(c.text) ? "0 1px 1px rgba(255, 255, 255, 0.35)" : "0 2px 10px rgba(0, 0, 0, 0.85)")
+    setVar("--ov-shadow", isDark(c.text) ? "0 0.015em 0.02em rgba(255, 255, 255, 0.35)" : "0 0.03em 0.1em rgba(0, 0, 0, 0.85), 0 0 0.4em rgba(0, 0, 0, 0.4)")
 
     setVar("--ov-text2-rgb", rgbTriple(c.textSecondary))
     setVar("--ov-border-rgb", rgbTriple(c.border))
@@ -642,12 +682,24 @@
     present(DESIGN_SAMPLE, kind === "resync" ? "enter" : kind)
   }
 
-  let resizeTimer = 0
-  window.addEventListener("resize", () => {
-    window.clearTimeout(resizeTimer)
-    resizeTimer = window.setTimeout(() => fitVerseText(), 80)
-  })
-  if (document.fonts?.ready) document.fonts.ready.then(() => fitVerseText())
+  // One refit per frame however many resize events arrive (an OBS source drag,
+  // a dashboard preview being resized): fitVerseText() itself defers while a
+  // reveal animation is in flight and refits when it settles.
+  let refitFrame = 0
+  function scheduleRefit() {
+    if (refitFrame) return
+    refitFrame = requestAnimationFrame(() => {
+      refitFrame = 0
+      fitVerseText()
+    })
+  }
+  window.addEventListener("resize", scheduleRefit)
+  if (document.fonts) {
+    // The first verse can arrive before the web fonts do: refit once they have
+    // loaded, since their metrics differ from the fallback face the first fit used.
+    if (document.fonts.ready) document.fonts.ready.then(scheduleRefit)
+    if (document.fonts.addEventListener) document.fonts.addEventListener("loadingdone", scheduleRefit)
+  }
 
   // Media Library (ARCHITECTURE.md section 60) had server/dashboard support
   // fully built but no audience-facing display at all until this. Image/
@@ -988,13 +1040,6 @@
       clearOutline()
       clearCanvas()
     }
-  })
-
-  // Re-fit on resize (the overlay preview window is resizable; a fixed
-  // OBS Browser Source size won't fire this, which is fine — it only
-  // needs to fit once, at whatever size it was given).
-  window.addEventListener("resize", () => {
-    if (verseEl.classList.contains("visible")) fitVerseText()
   })
 
   if (designPreview) showDesignSample()

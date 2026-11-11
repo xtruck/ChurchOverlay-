@@ -209,30 +209,62 @@
   }
 
   /**
-   * Size limits for the auto-fit (overlay.js fitVerseText), per layout and
-   * design: the cinema letterbox bars take frame height, the poster and bold
-   * designs want bigger type.
+   * Size limits for the auto-fit (overlay.js measureFit), per layout and
+   * design. The box is the share of the FRAME the whole card (its own padding
+   * and chrome included) may occupy; the font range is relative to the frame
+   * height, so the same fit works at 1920x1080, 1280x720, a 9:16 portrait
+   * source or a 480x270 dashboard preview. Short verses are capped (maxFontVh)
+   * so one line does not become a billboard; long ones shrink until the card
+   * fits the box (never below minFontPx).
+   *
+   * viewport (optional {height}) turns the vh fractions into pixels; without
+   * it the 1080-pixel-high reference frame is assumed.
+   *
+   * Fullscreen: ~95% x 92% of the frame (the safe margin is the #verse padding,
+   * 2.5vw x 2vh). Lower-third: the full-width band may grow to half the frame.
+   * The cinema letterbox bars (10vh each) take frame height; the poster and
+   * bold designs want bigger type.
    */
-  function fitLimits(isFullscreen, card) {
+  const REFERENCE_FRAME_HEIGHT = 1080
+  function fitLimits(isFullscreen, card, viewport) {
     const l = isFullscreen
-      ? { maxWidthFraction: 0.96, maxHeightFraction: 0.94, maxFontPx: 200, minFontPx: 18 }
-      : { maxWidthFraction: 1, maxHeightFraction: 0.46, maxFontPx: 64, minFontPx: 18 }
+      ? { maxWidthFraction: 0.95, maxHeightFraction: 0.92, maxFontVh: 0.3, minFontVh: 0.0167 }
+      : { maxWidthFraction: 1, maxHeightFraction: 0.5, maxFontVh: 0.11, minFontVh: 0.0167 }
     if (card === "cinema") {
       // The card is a full-width band (its width never shrinks with the
-      // type), so only the height may drive the fit.
-      l.maxHeightFraction = isFullscreen ? 0.7 : 0.46
+      // type), so only the height may drive the fit, clear of both bars.
+      l.maxHeightFraction = isFullscreen ? 0.74 : 0.5
       l.maxWidthFraction = 1
     } else if (card === "manuscript") {
-      // A page, not a billboard: keep fullscreen type book-like.
-      if (isFullscreen) l.maxFontPx = 150
-    } else if (card === "poster") {
-      l.maxFontPx = isFullscreen ? 220 : 64
-    } else if (card === "bold") {
-      l.maxFontPx = isFullscreen ? 190 : 64
-    } else if (card === "split") {
-      l.maxWidthFraction = isFullscreen ? 0.96 : 1
+      // A page, not a billboard: slightly calmer type than the others.
+      if (isFullscreen) l.maxFontVh = 0.24
+    } else if (card === "poster" || card === "bold") {
+      if (isFullscreen) l.maxFontVh = 0.32
     }
+    const h = viewport && typeof viewport.height === "number" && viewport.height > 0 ? viewport.height : REFERENCE_FRAME_HEIGHT
+    l.maxFontPx = Math.round(h * l.maxFontVh)
+    l.minFontPx = Math.max(8, Math.round(h * l.minFontVh))
     return l
+  }
+
+  /**
+   * Largest integer n in [min, max] for which fits(n) is true, by binary
+   * search (about log2(max-min) probes instead of one per pixel). fits must be
+   * monotone: true up to some size, false above it. When nothing fits, min is
+   * returned (the caller's last-resort shrink then takes over).
+   */
+  function largestFit(min, max, fits) {
+    let lo = Math.floor(min)
+    let hi = Math.floor(max)
+    if (hi <= lo) return lo
+    if (fits(hi)) return hi
+    // Invariant: fits(hi) is false; lo is the best known size (or the floor).
+    while (hi - lo > 1) {
+      const mid = Math.floor((lo + hi) / 2)
+      if (fits(mid)) lo = mid
+      else hi = mid
+    }
+    return lo
   }
 
   return {
@@ -247,5 +279,6 @@
     swapOutMs,
     pickVerseTransition,
     fitLimits,
+    largestFit,
   }
 })

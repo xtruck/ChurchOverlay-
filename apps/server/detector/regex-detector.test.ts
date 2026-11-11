@@ -277,3 +277,38 @@ test("RegexDetector: the same fixes do not make ordinary sentences produce a ref
   assert.deepEqual(detector.detect("the meeting starts at three sixteen"), [])
   assert.deepEqual(detector.detect("Timothy came at three sixteen"), [])
 })
+
+test("RegexDetector: a bare 'word N M' followed by a unit, month or time word is a quantity or a date, not a reference", () => {
+  const detector = new RegexDetector()
+  for (const text of [
+    "Marc 12 14 personnes",
+    "Jean 3 16 septembre",
+    "Luc 5 10 minutes",
+    "Job 1 5 times",
+    "Daniel 6 10 fois",
+    "Romains 8 28 euros",
+    "Jean 8 12 mai",
+    "Mark 3 16 percent",
+    "Mark 3 16 %",
+  ]) {
+    assert.deepEqual(detector.detect(text), [], text)
+  }
+})
+
+test("RegexDetector: bare compact form followed by prose is not a reference, the colon form is", () => {
+  const detector = new RegexDetector()
+  for (const text of ["Jean 3 16 dit", "Jean 3 16 disait que", "John 3 16 says", "John 3 16 said", "Jean 3 16 nous", "Jean 3 16 vous", "Jean 3 16 ans", "John 3 16 years", "Jean 3 16 fois", "John 3 16 times"]) {
+    assert.deepEqual(detector.detect(text), [], text)
+  }
+  assert.deepEqual(detector.detect("Jean 3:16 dit"), [{ book: "john", chapter: 3, verse: 16 }])
+  assert.deepEqual(detector.detect("Jean 3 verset 16 dit"), [{ book: "john", chapter: 3, verse: 16 }])
+})
+
+test("RegexDetector: the unit-word guard never touches explicit forms or an ordinary word after a compact reference", () => {
+  const detector = new RegexDetector()
+  assert.deepEqual(detector.detect("Jean 3:16 septembre"), [{ book: "john", chapter: 3, verse: 16 }])
+  assert.deepEqual(detector.detect("Jean 3 verset 16 personnes"), [{ book: "john", chapter: 3, verse: 16 }])
+  assert.deepEqual(detector.detect("Jean 3 16 pour nous"), [{ book: "john", chapter: 3, verse: 16 }])
+  assert.deepEqual(detector.detect("John 3 16 may be the most famous"), [{ book: "john", chapter: 3, verse: 16 }])
+  assert.deepEqual(detector.detect("Matthieu 5 3"), [{ book: "matthew", chapter: 5, verse: 3 }])
+})

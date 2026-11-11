@@ -1,6 +1,7 @@
 import { scrubSecrets } from "../../../packages/shared/logger"
 import type { TextCompleter } from "./claude-client"
 import type { AiAvailability } from "./guarded-text-completer"
+import { supportsReasoningEffort } from "./sermon-notes-generator"
 
 /**
  * The free-tier alternative to ClaudeClient (ARCHITECTURE.md section 128): the
@@ -35,6 +36,12 @@ export const DEFAULT_GROQ_TEXT_MODEL = "openai/gpt-oss-20b"
 const DEFAULT_URL = "https://api.groq.com/openai/v1/chat/completions"
 const DEFAULT_TIMEOUT_MS = 8_000
 const DEFAULT_MAX_TOKENS = 300
+// openai/gpt-oss-20b is a reasoning model: its hidden reasoning tokens count against
+// max_completion_tokens. The helpers ask for 60-160 visible tokens, so with no headroom the whole
+// budget was spent reasoning and the answer came back EMPTY every time (a silent "AI does
+// nothing"). Reasoning is kept at "low" and the cap raised by this headroom; the visible length
+// is still bounded by the prompts and the strict parsers.
+const REASONING_HEADROOM_TOKENS = 700
 
 export class GroqTextClient implements TextCompleter {
   private readonly apiKey: string
@@ -88,6 +95,11 @@ export class GroqTextClient implements TextCompleter {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), request.timeoutMs ?? DEFAULT_TIMEOUT_MS)
     try {
+      // Reasoning-only parameters (effort + token headroom) are sent only to a model that has them: a
+      // non-reasoning model can answer 400 to reasoning_effort, which would trip the breaker.
+      // The headroom is a CAP, not generated text: latency follows the tokens actually produced
+      // (low effort = a few hundred at most), so the helpers' 6-8 s deadlines are unchanged.
+      const reasoning = supportsReasoningEffort(this.model)
       const response = await this.fetchImpl(this.url, {
         method: "POST",
         headers: {
@@ -96,7 +108,8 @@ export class GroqTextClient implements TextCompleter {
         },
         body: JSON.stringify({
           model: this.model,
-          max_completion_tokens: request.maxTokens ?? DEFAULT_MAX_TOKENS,
+          max_completion_tokens: (request.maxTokens ?? DEFAULT_MAX_TOKENS) + (reasoning ? REASONING_HEADROOM_TOKENS : 0),
+          ...(reasoning ? { reasoning_effort: "low" } : {}),
           // Corrections and proposals must be repeatable, not creative.
           temperature: 0,
           messages: [
@@ -107,9 +120,13 @@ export class GroqTextClient implements TextCompleter {
         signal: controller.signal,
       })
       if (!response.ok) throw new Error(`Groq text request failed (${response.status})`)
-      const body = (await response.json()) as { choices?: Array<{ message?: { content?: unknown } }> }
-      const content = body.choices?.[0]?.message?.content
-      return typeof content === "string" ? content.trim() : ""
+      const body = (await response.json()) as { choices?: Array<{ message?: { content?: unknown }; finish_reason?: unknown }> }
+      const choice = body.choices?.[0]
+      const content = choice?.message?.content
+      const text = typeof content === "string" ? content.trim() : ""
+      // Not a silent empty answer: an empty completion cut off by the token limit is a visible failure.
+      if (!text && choice?.finish_reason === "length") throw new Error("Groq text request returned no answer (token limit reached)")
+      return text
     } catch (error) {
       if (controller.signal.aborted) throw new Error("Groq text request timed out")
       throw new Error(scrubSecrets(error instanceof Error ? error.message : String(error)))

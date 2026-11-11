@@ -118,3 +118,90 @@ export type NavigationCommand =
 export interface NavigationCommandDetector {
   detect(text: string): NavigationCommand[]
 }
+
+/**
+ * Bible Browser (audit-notes/bible-browser.md): an OPTIONAL capability a
+ * VerseSource may offer, same pattern as getTranslationId()/setMode(): read a
+ * whole chapter in one request instead of N single-verse lookups. A source
+ * without it is still usable (resolveChapter assembles the chapter verse by
+ * verse). Returns the verses the source actually has, in verse order, or null
+ * when the chapter is confirmed absent; a thrown error is a source failure.
+ */
+export interface ChapterCapableSource {
+  getChapter(book: string, chapter: number): Promise<readonly Verse[] | null>
+}
+
+/** One verse of a browsed chapter (the Bible Browser's wire shape, bounded). */
+export type BibleChapterVerse = {
+  readonly verse: number
+  readonly text: string
+  /** Bilingual mode only: the secondary-language text of the same verse. */
+  readonly secondary?: string
+}
+
+/** bible:chapter (operator -> server). `seq` lets the dashboard drop stale answers. */
+export type BibleChapterRequestPayload = {
+  readonly seq: number
+  readonly book: string
+  readonly chapter: number
+}
+
+/** bible:chapter-result (server -> operators only). verses is null with a reason when there is nothing to show. */
+export type BibleChapterResultPayload = {
+  readonly seq: number
+  readonly book: string
+  readonly chapter: number
+  readonly verses: readonly BibleChapterVerse[] | null
+  readonly translation?: string
+  readonly secondaryTranslation?: string
+  readonly source?: string
+  readonly reason?: "not-found" | "unavailable"
+  /** Verse numbers of the chapter the source did not provide (a gappy or differently versified source): the reader says so. */
+  readonly missing?: readonly number[]
+}
+
+/** bible:search (operator -> server). */
+export type BibleSearchRequestPayload = {
+  readonly seq: number
+  readonly query: string
+}
+
+export type BibleSearchHit = {
+  readonly reference: VerseReference
+  readonly text: string
+  readonly translation: string
+  readonly score: number
+}
+
+/**
+ * bible:search-result (server -> operators only). `coverage` says honestly what was searched:
+ * the bundled French text (always, once indexed) and how many chapters of other text were
+ * already loaded this session (the only English text there is).
+ */
+export type BibleSearchResultPayload = {
+  readonly seq: number
+  readonly query: string
+  readonly hits: readonly BibleSearchHit[]
+  readonly total: number
+  readonly coverage: {
+    readonly french: "offline" | "indexing" | "unavailable"
+    readonly loadedChapters: number
+  }
+  readonly reason?: "too-short"
+}
+
+export type VerseNavigateDirection = "next-verse" | "previous-verse" | "next-chapter" | "previous-chapter"
+
+/** verse:navigate (operator -> server): step from the SERVER's current position (section 61.4). */
+export type VerseNavigatePayload = {
+  readonly direction: VerseNavigateDirection
+}
+
+/**
+ * verse:navigate-result (server -> operators only): sent ONLY when a verse:navigate did not put a
+ * verse on screen, so "Next verse" never silently does nothing.
+ */
+export type VerseNavigateResultPayload = {
+  readonly direction: VerseNavigateDirection
+  readonly reason: "no-position" | "boundary" | "unavailable"
+}

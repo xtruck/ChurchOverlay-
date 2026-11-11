@@ -19,6 +19,8 @@ export type LockedLanguage = "fr" | "en"
 export const LANGUAGE_REDETECT_EVERY_CLIPS = 2
 /** A clip shorter than this is too little speech to detect from: it reuses the lock. */
 export const LANGUAGE_MIN_DETECT_MS = 2000
+/** A clip this short or longer may re-detect when the lock is in doubt (see needsDetection). */
+export const LANGUAGE_MIN_DETECT_UNCERTAIN_MS = 1000
 /** A clip decoded under the lock with a mean avg_logprob below this suggests the wrong language: detect again next clip. */
 export const LANGUAGE_LOW_LOGPROB = -0.8
 /** A detection whose winner holds less than this share of fr+en probability is not trusted: detect again next clip. */
@@ -27,7 +29,8 @@ export const LANGUAGE_MIN_MARGIN = 0.7
 /** Engines report either a code ("fr", sidecar) or the full name ("french", whisper.cpp). Anything else is not ours. */
 export function normalizeLanguage(value: unknown): LockedLanguage | null {
   if (typeof value !== "string") return null
-  const v = value.trim().toLowerCase()
+  // Primary subtag only: "en-US", "fr-CA", "fr_FR" and "English (US)" are English and French.
+  const v = (value.trim().toLowerCase().split(/[-_\s(]/)[0] ?? "").trim()
   if (v === "fr" || v === "french" || v === "français" || v === "francais") return "fr"
   if (v === "en" || v === "english") return "en"
   return null
@@ -75,7 +78,12 @@ export class LanguageLock {
   /** Should this clip (of `audioMs`) be sent with language "auto" and probabilities requested? */
   needsDetection(audioMs: number): boolean {
     if (this.current === null) return true
-    if (audioMs < LANGUAGE_MIN_DETECT_MS) return false
+    // Under ~1 s there is too little speech for any detection to be trusted: reuse the lock.
+    if (audioMs < LANGUAGE_MIN_DETECT_UNCERTAIN_MS) return false
+    // 1-2 s: only when the lock is already in doubt (the last clip decoded with a poor avg_logprob, or the previous
+    // detection was not clear-cut). Without this a preacher who switches to English after a French passage had every
+    // short English clip forced to French until a 2 s clip happened to arrive.
+    if (audioMs < LANGUAGE_MIN_DETECT_MS) return this.uncertain
     return this.uncertain || this.clipsSinceDetection >= LANGUAGE_REDETECT_EVERY_CLIPS
   }
 
@@ -92,4 +100,45 @@ export class LanguageLock {
     // Only a new detection (settle) clears the doubt.
     if (meanAvgLogprob !== null && meanAvgLogprob < LANGUAGE_LOW_LOGPROB) this.uncertain = true
   }
+}
+
+/** Fewer alphabetic words than this are never judged by language: a short reference is often mis-tagged. */
+export const OFF_LANGUAGE_MIN_WORDS = 4
+
+/**
+ * Off-language share (0..1) among the ALPHABETIC words an engine labelled
+ * (Deepgram Nova-3 `multi`): per-word `language` when present (digits, empty
+ * words and `skip` words such as Bible book names, which engines often
+ * mis-tag, are ignored), else the transcript-level `languages` list weighed
+ * by `transcriptWords`. `judged` is how many words the share rests on; the
+ * caller must not act below OFF_LANGUAGE_MIN_WORDS. Null when the engine
+ * reported nothing usable (the caller keeps the text). Language codes are
+ * normalized by primary subtag, so "en-US" is English. Pure.
+ */
+export function offLanguageShare(
+  words: unknown,
+  languages: unknown,
+  options: { readonly transcriptWords?: number; readonly skip?: (word: string) => boolean } = {},
+): { readonly share: number; readonly judged: number } | null {
+  if (Array.isArray(words)) {
+    let judged = 0
+    let off = 0
+    for (const entry of words) {
+      if (typeof entry !== "object" || entry === null) continue
+      const { word, punctuated_word: punctuated, language } = entry as { word?: unknown; punctuated_word?: unknown; language?: unknown }
+      const text = typeof word === "string" ? word : typeof punctuated === "string" ? punctuated : ""
+      if (typeof language !== "string" || language.trim() === "") continue
+      if (!/\p{L}/u.test(text) || (options.skip?.(text) ?? false)) continue
+      judged += 1
+      if (normalizeLanguage(language) === null) off += 1
+    }
+    if (judged > 0) return { share: off / judged, judged }
+  }
+  if (Array.isArray(languages)) {
+    const labelled = languages.filter((v): v is string => typeof v === "string" && v.trim() !== "")
+    if (labelled.length > 0) {
+      return { share: labelled.filter((v) => normalizeLanguage(v) === null).length / labelled.length, judged: options.transcriptWords ?? 0 }
+    }
+  }
+  return null
 }

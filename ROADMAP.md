@@ -46,6 +46,9 @@ Build order below, by risk, dependency, and real-world urgency — each still ne
 24. **Optional offline-first ASR mode** — implemented, opt-in, off by default (`ARCHITECTURE.md` section 139). Local Whisper carries audio with the cloud chain as fallback; limited to half the CPU cores; reports when it cannot keep up so the chain moves to the cloud. Measured on one laptop with the `base` model: not recommended on weak hardware (it cannot be light on CPU and faster than speech); a larger model, quantization and streaming remain proposals needing the church's hardware.
 
 
+25. **Production audit fixes** — implemented (`ARCHITECTURE.md` section 142). Settle window and bare-number merge so a split "verse 1" | "2" never shows verse 1; chapter-only mentions become pending suggestions; fr/en-only transcription with a transcript screen, noise modes (normal / loud room / speaking in tongues), a robust silence gate and visible mic diagnostics; frame-relative overlay auto-fit with English italic and French upright; AI helper repairs (key entry after setup, Groq reasoning-model empty answers, status line, sermon-notes timeout). No scope change except item 26. Unverified against live audio, live ASR traffic and live AI keys.
+26. **Operator Bible browser and French word search** — **scope change approved by the owner in chat; `ARCHITECTURE.md` section 142.4.** Browse every book, chapter and verse, step verse by verse and chapter by chapter, search the Louis Segond text by words. Operator-only, reads through the existing verse sources, adds no dataset. Phone remote exposure and multi-verse display remain not done.
+
 ## Deferred — not v1, do not implement without an explicit architecture review
 
 Each item below is a candidate future milestone, added as a new implementation behind an existing extension seam (`AsrProvider`, `VerseDetector`, `VerseSource`) wherever possible — not a rewrite.

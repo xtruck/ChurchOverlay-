@@ -16,11 +16,14 @@ import { GetBibleVerseSource } from "../../server/verse/get-bible-verse-source"
 import { LocalizedVerseSource } from "../../server/verse/localized-verse-source"
 import { loadOfflineBibleData, OfflineVerseSource, type OfflineBibleData } from "../../server/verse/offline-verse-source"
 import { QuoteMatcher, type QuoteMatch } from "../../server/detector/quote-matcher"
+import { createLazyBibleWordSearch } from "../../server/verse/bible-word-search"
 import { OfflineFallbackVerseSource } from "../../server/verse/offline-fallback-verse-source"
 import { GroqProvider } from "../../server/asr/groq-provider"
 import { DeepgramProvider } from "../../server/asr/deepgram-provider"
 import { CallBudget } from "../../server/ai/claude-client"
 import { AI_PROVIDERS, aiProviderReady, createTextCompleter, selectedAiProvider, type AiProvider } from "../../server/ai/ai-provider"
+import type { GuardedTextCompleter } from "../../server/ai/guarded-text-completer"
+import { normalizeAnthropicKeyInput, normalizeGroqKeyInput } from "../../server/ai/ai-key"
 import { ServiceExtrasGenerator, buildServiceNotesMarkdown, type ServiceExtras } from "../../server/ai/service-extras"
 import { isAiFeature, type AiFeature, type AiFeatureFlags } from "../../server/ai/ai-features"
 import { FailoverAsrProvider } from "../../server/asr/failover-provider"
@@ -53,6 +56,7 @@ import { PALETTES } from "../../server/overlay/palettes"
 import { BRAND_NAME_SIZE, BRAND_SCALE, BRAND_TEXT_MAX } from "../../server/overlay/overlay-style"
 import { OVERLAY_BRAND_FONTS, OVERLAY_CARD_DESIGNS, OVERLAY_PALETTE_GROUPS, OVERLAY_TRANSITIONS } from "../../../packages/contracts/overlay-style"
 import { OverlayStyleController } from "./overlay-style-controller"
+import { TranscriptionPolicy } from "../../server/asr/noise-mode"
 import { LogoRejectedError, type DecodedLogo } from "./brand-logo"
 import { getAudioProfileSettings, type AudioProfile } from "../../server/audio/audio-profile"
 import { SilenceGate } from "../../server/audio/silence-gate"
@@ -93,6 +97,8 @@ let mediaLibrary: MediaLibrary | null = null
 let sessionHistoryStore: SessionHistoryStore | null = null
 let localizedVerseSource: LocalizedVerseSource | null = null
 let asrProvider: GroqProvider | DeepgramProvider | LocalWhisperProvider | FailoverAsrProvider | null = null
+// One strictness switch (normal | noisy | tongues) shared by every ASR provider and AppCore; seeded from the saved config at each service start.
+const transcriptionPolicy = new TranscriptionPolicy()
 // The concrete providers behind asrProvider, kept so each gets the language
 // code its own API expects (Whisper auto-detects when given none; Deepgram
 // does not and would fall back to English).
@@ -117,6 +123,8 @@ let currentVerseConfirmationMode: VerseConfirmationMode = "auto"
 let currentEnableSermonNotes = false
 // ARCHITECTURE.md sections 123-125: live state of the optional AI features (default OFF).
 let currentAiFeatures: AiFeatureFlags = { transcriptCleanup: false, semanticDetection: false, sermonCopilot: false }
+// The running AI completer (undefined while no provider/key is ready): used by the operator's "test connection".
+let currentAiCompleter: GuardedTextCompleter | undefined
 const AI_CONFIG_KEY = {
   transcriptCleanup: "aiTranscriptCleanup",
   semanticDetection: "aiSemanticDetection",
@@ -384,6 +392,7 @@ async function startServices(
   // default (section 24) exactly as before this feature existed.
   const wsHost = config.allowPhoneRemote ? "0.0.0.0" : undefined
 
+  transcriptionPolicy.set(config.noiseMode ?? "normal")
   const plan = planAsr({
     groqApiKey: config.groqApiKey,
     deepgramApiKey: config.deepgramApiKey,
@@ -395,12 +404,15 @@ async function startServices(
         logger,
         chunkDurationMs: getAudioProfileSettings(config.audioProfile).chunkDurationMs,
         language: whisperLanguageFor(config.displayMode),
+        policy: transcriptionPolicy,
       })
     : null
   deepgramAsr = config.deepgramApiKey
     ? new DeepgramProvider({
         apiKey: config.deepgramApiKey,
         language: deepgramLanguageFor(config.displayMode),
+        logger,
+        policy: transcriptionPolicy,
       })
     : null
   // Offline last resort, only when the operator enabled it AND the engine
@@ -428,7 +440,7 @@ async function startServices(
             threads: localThreads,
           })
         : new WhisperServerProcess({ serverPath: localStatus.serverPath, modelPath: localStatus.modelPath, logger, threads: localThreads })
-    localAsr = new LocalWhisperProvider({ server: localWhisperServer, language: whisperLanguageFor(config.displayMode), logger })
+    localAsr = new LocalWhisperProvider({ server: localWhisperServer, language: whisperLanguageFor(config.displayMode), logger, policy: transcriptionPolicy })
     // Warm up now, in the background: loading the model takes seconds, and
     // the moment the internet drops is exactly when there are none to spare.
     localWhisperServer.ensureStarted().catch((err) => {
@@ -493,8 +505,31 @@ async function startServices(
     source: localizedVerseSource,
     logger,
     ...(quoteSource ? { quoteMatcher: lazyQuoteMatcher(quoteSource) } : {}),
-    silenceGate: new SilenceGate({ threshold: getAudioProfileSettings(config.audioProfile).silenceThreshold }),
+    ...(quoteSource
+      ? {
+          bibleWordSearch: createLazyBibleWordSearch(
+            quoteSource,
+            (info) => logger.info({ component: "main", event: "bible-word-search.ready", durationMs: info.durationMs, metadata: { verses: info.verses } }),
+            (err) => logger.error({ component: "main", event: "bible-word-search.failed", error: err instanceof Error ? err.message : String(err) })
+          ),
+        }
+      : {}),
+    // robust: speech-band level + adaptive noise floor, so a loud service does not flood the cloud ASR with room noise.
+    silenceGate: new SilenceGate({ threshold: getAudioProfileSettings(config.audioProfile).silenceThreshold, robust: true }),
     adaptiveGain: new AdaptiveGain({ enabled: config.autoGain ?? true }),
+    transcriptionPolicy,
+    onNoiseModeChanged: (mode) => {
+      if (activeConfig) activeConfig = { ...activeConfig, noiseMode: mode }
+      getConfigStore()
+        .update((existing) => ({ ...existing, noiseMode: mode }))
+        .catch((err) => {
+          logger.error({
+            component: "main",
+            event: "noise-mode-persist-failed",
+            error: err instanceof Error ? err.message : String(err),
+          })
+        })
+    },
     onAutoGainChanged: (enabled) => {
       if (activeConfig) activeConfig = { ...activeConfig, autoGain: enabled }
       getConfigStore()
@@ -526,11 +561,11 @@ async function startServices(
     ...(config.groqApiKey ? { sermonNotesGenerator: new SermonNotesGenerator({ apiKey: config.groqApiKey }) } : {}),
     // ARCHITECTURE.md section 128: the AI helpers run on the provider the operator chose
     // (Anthropic, or the free Groq text models) and stay off (undefined) when that provider has no key.
-    claudeClient: createTextCompleter(config, undefined, {
+    claudeClient: (currentAiCompleter = createTextCompleter(config, undefined, {
       // Observable bounded failure (AGENTS.md sections 37, 38): the helpers pause instead of failing on every transcript.
       onStateChange: (state, error) =>
         logger.warn({ component: "ai", event: `ai.circuit-${state}`, ...(error !== undefined ? { error } : {}) }),
-    }),
+    })),
     sermonNotesEnabled: config.enableSermonNotes,
     aiFeatures: aiFeaturesFromConfig(config),
     // ARCHITECTURE.md section 65.4: a voice-triggered display-mode switch
@@ -914,6 +949,56 @@ ipcMain.handle("set-ai-provider", async (_event, payload: unknown) => {
   return currentAsrStatus()
 })
 
+/**
+ * Add, replace or remove (empty string) the Anthropic key after setup. Before this existed the key
+ * could only be typed on the first-run setup screen, so a church that skipped the optional field
+ * had no way to turn the AI features on. Shape-validated (ai-key.ts), stored encrypted by the
+ * ConfigStore like every key, and never logged or echoed back. Saving a key is an explicit choice of
+ * Anthropic as the AI service; removing it leaves the provider choice alone (the helpers then say
+ * "no key" instead of silently switching). Services restart, like set-ai-provider.
+ */
+ipcMain.handle("set-ai-key", async (_event, payload: unknown) => {
+  const remove = typeof payload === "string" && payload.trim() === ""
+  const parsed = remove ? null : normalizeAnthropicKeyInput(payload)
+  if (parsed && !parsed.ok) return { ok: false as const, error: parsed.error }
+  const updated = await getConfigStore().update((existing) => {
+    const { anthropicApiKey: _previous, ...rest } = existing
+    return parsed && parsed.ok ? { ...rest, anthropicApiKey: parsed.key, aiProvider: "anthropic" as const } : rest
+  })
+  if (!updated) throw new Error("Services are not configured yet.")
+  await startServices(updated)
+  logger.info({ component: "main", event: remove ? "ai.key-removed" : "ai.key-saved" })
+  return { ok: true as const, status: currentAsrStatus() }
+})
+
+/**
+ * Replace the Groq key after setup (it is both the transcription key and the free AI service's
+ * key). Replace-only: an empty value is refused, so this can never leave the app without a way to
+ * transcribe. Same rules as set-ai-key: shape-validated, stored encrypted, never logged or echoed.
+ * Restarts the services.
+ */
+ipcMain.handle("set-groq-key", async (_event, payload: unknown) => {
+  const parsed = normalizeGroqKeyInput(payload)
+  if (!parsed.ok) return { ok: false as const, error: parsed.error }
+  const updated = await getConfigStore().update((existing) => ({ ...existing, groqApiKey: parsed.key }))
+  if (!updated) throw new Error("Services are not configured yet.")
+  await startServices(updated)
+  logger.info({ component: "main", event: "ai.groq-key-saved" })
+  return { ok: true as const, status: currentAsrStatus() }
+})
+
+/**
+ * Operator-triggered "Test connection" for the selected AI service: one tiny request (never
+ * automatic, never carrying transcript text). Returns a fixed result code, never the provider's
+ * error text.
+ */
+ipcMain.handle("test-ai-connection", async () => {
+  if (!currentAiCompleter) return { ok: false as const, reason: "no-key" as const }
+  const result = await currentAiCompleter.testConnection()
+  logger.info({ component: "main", event: "ai.connection-test", metadata: { ok: result.ok, ...(result.ok ? {} : { reason: result.reason }) } })
+  return result
+})
+
 /** ARCHITECTURE.md section 63.2: the live dashboard toggle, via IPC — an operator configuration action, not something that needs to round-trip through the WS server. */
 ipcMain.handle("set-display-mode", async (_event, payload: unknown) => {
   const mode = DISPLAY_MODES.includes(payload as DisplayMode) ? (payload as DisplayMode) : null
@@ -1269,6 +1354,8 @@ ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
     ...(existing?.aiTranscriptCleanup === undefined ? {} : { aiTranscriptCleanup: existing.aiTranscriptCleanup }),
     ...(existing?.aiSemanticDetection === undefined ? {} : { aiSemanticDetection: existing.aiSemanticDetection }),
     ...(existing?.aiSermonCopilot === undefined ? {} : { aiSermonCopilot: existing.aiSermonCopilot }),
+    // Re-running setup must not silently reset the operator's explicit AI service choice.
+    ...(existing?.aiProvider === undefined ? {} : { aiProvider: existing.aiProvider }),
     // ARCHITECTURE.md section 82: not a setup-screen control (same
     // reasoning as verseConfirmationMode above) — "fullscreen" is the
     // confirmed default for every fresh install; changeable afterward

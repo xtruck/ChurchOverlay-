@@ -1,0 +1,158 @@
+/*
+ * Bible Browser view (audit-notes/bible-browser.md). Self-contained: every rule is scoped under
+ * .bb and uses only the design tokens and shared components (.card, .btn-*, .segmented,
+ * .section-title, .skeleton) defined in dashboard.css, so a refresh of that file restyles this
+ * view with the rest of the console. Red is reserved for "on air" (same meaning as everywhere).
+ */
+.bb { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.bb [hidden] { display: none !important; }
+
+.bb-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin: 0 0 var(--space-4);
+}
+.bb-search { flex: 1 1 280px; min-width: 220px; max-width: 520px; }
+.bb-search input { width: 100%; margin: 0; }
+.bb-onair {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--text-muted);
+  font-size: var(--fs-13);
+}
+.bb-onair.is-on { border-color: var(--on-air-line); background: var(--on-air-soft); color: var(--on-air-text); }
+
+.bb-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(170px, 220px) minmax(150px, 210px) minmax(0, 1fr);
+  gap: var(--space-3);
+  /* leave room under the grid for the shell's own bottom padding */
+  padding-bottom: var(--space-2);
+}
+.bb-books, .bb-chapters, .bb-reader, .bb-results { overflow: auto; }
+.bb-results { grid-column: 2 / -1; }
+
+/* Books */
+.bb-booklist { display: flex; flex-direction: column; gap: 1px; margin-bottom: var(--space-4); }
+.bb-book {
+  text-align: left;
+  min-height: 30px;
+  padding: 4px 10px;
+  font-size: var(--fs-13);
+  font-weight: 500;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+.bb-book:hover:not(.active) { color: var(--text); background: var(--surface-2); }
+.bb-book.active { color: var(--text); background: var(--surface-3); border-color: var(--border-strong); box-shadow: inset 2px 0 0 var(--accent); }
+
+/* Chapters */
+.bb-chaptergrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 4px; }
+.bb-chapter {
+  min-height: 36px;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-13);
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.bb-chapter:hover:not(.active) { color: var(--text); border-color: var(--field-border); }
+.bb-chapter.active { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+.bb-chapter.on-air:not(.active) { border-color: var(--on-air-line); color: var(--on-air-text); }
+
+/* Reader */
+.bb-reader { min-width: 0; }
+.bb-reader-head { display: flex; align-items: baseline; gap: var(--space-3); margin-bottom: var(--space-3); }
+.bb-reader-title { margin: 0; margin-right: auto; font-family: var(--font-display); font-weight: 400; font-size: var(--fs-28); line-height: 1.1; }
+.bb-translation {
+  font-size: var(--fs-12);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.bb-verses { flex: 1; min-height: 120px; overflow: auto; outline-offset: 2px; border-radius: var(--radius-control); }
+.bb-verse {
+  position: relative;
+  display: flex;
+  gap: var(--space-3);
+  padding: 8px 12px 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  user-select: text;
+}
+.bb-verse:hover { background: var(--surface-2); }
+.bb-verse.in-range { background: var(--accent-soft); }
+.bb-verse.selected { background: var(--surface-3); border-color: var(--accent-line); box-shadow: inset 3px 0 0 var(--accent); }
+.bb-verse.on-air { border-color: var(--on-air-line); background: var(--on-air-soft); }
+.bb-vnum { flex: 0 0 2.2em; text-align: right; font-family: var(--font-mono); font-size: var(--fs-12); color: var(--text-faint); padding-top: 3px; }
+.bb-vtext { flex: 1; min-width: 0; font-size: var(--fs-16); line-height: 1.55; }
+.bb-vprimary, .bb-vsecondary { display: block; }
+.bb-vsecondary { margin-top: 2px; font-size: var(--fs-14); color: var(--text-muted); font-style: italic; }
+.bb-vbadge {
+  display: none;
+  align-self: flex-start;
+  font-size: var(--fs-12);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--on-air-text);
+}
+.bb-verse.on-air .bb-vbadge { display: inline; }
+.bb-empty { margin: var(--space-3) 0; }
+.bb-error { color: var(--warn-text); }
+
+.bb-stepbar { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--border); }
+.bb-stepbar .btn-secondary { min-width: 44px; font-size: var(--fs-16); }
+.bb-range-note { margin-right: auto; }
+.bb-keys { margin: var(--space-2) 0 0; }
+
+/* Search results */
+.bb-hits { display: flex; flex-direction: column; gap: var(--space-2); flex: 1; overflow: auto; }
+.bb-hit { display: flex; align-items: stretch; gap: var(--space-2); }
+.bb-hit-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  text-align: left;
+  padding: 8px 12px;
+  font-weight: 400;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+}
+.bb-hit-open:hover { border-color: var(--field-border); background: var(--surface-3); }
+.bb-hit-ref { display: flex; align-items: baseline; gap: var(--space-2); }
+.bb-hit-text { font-size: var(--fs-14); line-height: 1.5; color: var(--text-muted); }
+.bb-hit-text mark { background: var(--accent-soft); color: var(--text); border-radius: 3px; padding: 0 1px; }
+.bb-hit > .btn-primary { align-self: center; }
+.bb-coverage { margin: var(--space-3) 0 0; }
+
+@media (max-width: 1000px) {
+  .bb-grid { grid-template-columns: minmax(150px, 200px) minmax(0, 1fr); }
+  .bb-chapters { grid-column: 2; grid-row: 1; max-height: 150px; }
+  .bb-books { grid-row: 1 / span 2; }
+  .bb-reader, .bb-results { grid-column: 2; }
+}
+
+.bb-notice { margin: 0 0 var(--space-2); min-height: 0; color: var(--warn-text); font-size: var(--fs-13); }
+.bb-notice:empty { display: none; }
+.bb-partial { margin: 0 0 var(--space-2); padding: 6px 10px; border: 1px solid var(--pending-line); border-radius: var(--radius-control); background: var(--pending-soft); color: var(--text-muted); font-size: var(--fs-13); }

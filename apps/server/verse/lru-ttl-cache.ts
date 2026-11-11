@@ -73,6 +73,16 @@ export class LruTtlCache<T> {
     return this.entries.size
   }
 
+  /** Live (unexpired) values, oldest first. Read-only: does not touch LRU recency. */
+  values(): T[] {
+    const now = this.now()
+    const live: T[] = []
+    for (const entry of this.entries.values()) {
+      if (entry.expiresAt > now) live.push(entry.value)
+    }
+    return live
+  }
+
   clear(): void {
     this.entries.clear()
   }

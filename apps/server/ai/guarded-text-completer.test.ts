@@ -123,3 +123,58 @@ test("GuardedTextCompleter.checkAvailability: a definitive 'model-unavailable' o
 test("GuardedTextCompleter.checkAvailability: a completer without a check reports 'unknown'", async () => {
   assert.equal(await new GuardedTextCompleter(new FakeTextCompleter(() => "ok")).checkAvailability(), "unknown")
 })
+
+test("GuardedTextCompleter: 429 and 529 (overloaded) map to 'rate-limited', not to a bad key", async () => {
+  for (const status of [429, 529]) {
+    const guarded = new GuardedTextCompleter(new FakeTextCompleter(() => { throw new Error(`Claude request failed (${status})`) }), { failureThreshold: 1 })
+    await assert.rejects(guarded.complete(request))
+    assert.deepEqual(guarded.currentStatus(), { state: "paused", reason: "rate-limited" })
+  }
+})
+
+test("GuardedTextCompleter.testConnection: success closes a paused circuit and clears 'unavailable'", async () => {
+  const inner = Object.assign(new FakeTextCompleter(() => "OK"), { checkAvailability: async () => "auth" as const })
+  const guarded = new GuardedTextCompleter(inner, { failureThreshold: 2 })
+  await guarded.checkAvailability()
+  assert.equal(guarded.currentStatus().state, "unavailable")
+  assert.deepEqual(await guarded.testConnection(), { ok: true })
+  assert.deepEqual(guarded.currentStatus(), { state: "ok" })
+  assert.equal(await guarded.complete(request), "OK")
+})
+
+test("GuardedTextCompleter.testConnection: failures come back as fixed codes, never provider text", async () => {
+  const cases: Array<[string, string]> = [
+    ["Claude request failed (401)", "auth"],
+    ["Claude request failed (404)", "model-unavailable"],
+    ["Claude request failed (429)", "rate-limited"],
+    ["Claude request failed (529)", "rate-limited"],
+    ["Claude request timed out", "timeout"],
+    ["Groq text request returned no answer (token limit reached)", "empty"],
+    ["fetch failed", "network"],
+    ["Claude request failed (500)", "repeated-failures"],
+  ]
+  for (const [message, expected] of cases) {
+    const guarded = new GuardedTextCompleter(new FakeTextCompleter(() => { throw new Error(`${message} sk-ant-secret0123456789`) }))
+    const result = await guarded.testConnection()
+    assert.deepEqual(result, { ok: false, reason: expected }, message)
+  }
+})
+
+test("GuardedTextCompleter.testConnection: an empty answer is not 'working'; a bad key marks the helpers unavailable", async () => {
+  assert.deepEqual(await new GuardedTextCompleter(new FakeTextCompleter(() => "  ")).testConnection(), { ok: false, reason: "empty" })
+  const guarded = new GuardedTextCompleter(new FakeTextCompleter(() => { throw new Error("Claude request failed (401)") }))
+  const seen: string[] = []
+  guarded.subscribeStatus((status) => seen.push(`${status.state}:${status.reason}`))
+  await guarded.testConnection()
+  assert.deepEqual(guarded.currentStatus(), { state: "unavailable", reason: "auth" })
+  assert.deepEqual(seen, ["unavailable:auth"])
+})
+
+test("GuardedTextCompleter.testConnection: one tiny request, no transcript text", async () => {
+  const requests: Array<{ system: string; user: string; maxTokens?: number }> = []
+  const guarded = new GuardedTextCompleter({ complete: async (r) => { requests.push(r); return "OK" } })
+  await guarded.testConnection()
+  assert.equal(requests.length, 1)
+  assert.ok((requests[0]?.maxTokens ?? 999) <= 16)
+  assert.equal(requests[0]?.user, "ping")
+})

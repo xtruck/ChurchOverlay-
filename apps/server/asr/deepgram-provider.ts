@@ -2,7 +2,11 @@ import { isPlainObject } from "../../../packages/shared/type-guards"
 import { WebSocket } from "ws"
 import type { AsrProvider, AudioFrame, TranscriptResult } from "../../../packages/contracts"
 import { generateUlid } from "../../../packages/shared/ulid"
+import type { Logger } from "../../../packages/shared/logger"
 import { biblicalVocabularyFor, plannedBookTerms } from "./biblical-vocabulary"
+import { OFF_LANGUAGE_MIN_WORDS, offLanguageShare } from "./language-lock"
+import { isBibleWord } from "./transcript-screen"
+import type { TranscriptionPolicy } from "./noise-mode"
 
 const DEFAULT_MODEL = "nova-2"
 /**
@@ -39,6 +43,9 @@ const DEFAULT_ENDPOINTING_MS = 300
 const MAX_PLANNED_BOOK_TERMS = 15
 const DEFAULT_CONNECT_TIMEOUT_MS = 10_000
 
+/** After this many language drops in a row the guard stops dropping until a transcript passes it. */
+export const DEEPGRAM_LANGUAGE_VALVE_AFTER = 5
+
 export type DeepgramProviderOptions = {
   readonly apiKey: string
   readonly model?: string
@@ -51,6 +58,10 @@ export type DeepgramProviderOptions = {
   readonly endpointingMs?: number
   /** Boosts Bible book names and "chapitre/verset" (see biblical-vocabulary.ts). Default true. */
   readonly biblicalVocabulary?: boolean
+  /** Receives one debug line per transcript dropped for being in another language. */
+  readonly logger?: Logger
+  /** Operator noise/tongues strictness: how much off-language speech is tolerated (noise-mode.ts). */
+  readonly policy?: TranscriptionPolicy
 }
 
 type DeepgramMessage = {
@@ -58,7 +69,13 @@ type DeepgramMessage = {
   readonly is_final?: boolean
   readonly speech_final?: boolean
   readonly channel?: {
-    readonly alternatives?: readonly { readonly transcript?: string; readonly confidence?: number }[]
+    readonly alternatives?: readonly {
+      readonly transcript?: string
+      readonly confidence?: number
+      /** Nova-3 `multi` only (unverified against live traffic): detected languages, and a language per word. */
+      readonly languages?: readonly string[]
+      readonly words?: readonly { readonly language?: string }[]
+    }[]
   }
 }
 
@@ -77,6 +94,10 @@ export class DeepgramProvider implements AsrProvider {
   private readonly connectTimeoutMs: number
   private readonly biblicalVocabulary: boolean
   private language: string | undefined
+  private readonly logger?: Logger
+  private readonly policy?: TranscriptionPolicy
+  private offLanguageDrops = 0
+  private consecutiveOffLanguage = 0
   private socket: WebSocket | null = null
   private keepAliveTimer: ReturnType<typeof setInterval> | null = null
   private lastSendAt = 0
@@ -93,6 +114,8 @@ export class DeepgramProvider implements AsrProvider {
     this.apiKey = options.apiKey
     this.model = options.model ?? DEFAULT_MODEL
     this.language = options.language
+    this.logger = options.logger
+    this.policy = options.policy
     this.url = options.url ?? DEFAULT_URL
     this.WebSocketImpl = options.WebSocketImpl ?? WebSocket
     this.keepAliveIntervalMs = options.keepAliveIntervalMs ?? DEFAULT_KEEPALIVE_MS
@@ -277,6 +300,42 @@ export class DeepgramProvider implements AsrProvider {
     const text = typeof alternative?.transcript === "string" ? alternative.transcript.trim() : ""
     if (!text) return
     const state = message.is_final ? "final" : "partial"
+    // `language=multi` code-switches ten languages, not two. French and English only: a transcript that is mostly
+    // something else is dropped (tolerance by mode: tongues is least tolerant).
+    // Only alphabetic words count, Bible book names and numbers never do (engines mis-tag them), and fewer than
+    // OFF_LANGUAGE_MIN_WORDS judged words is never enough to drop: "Jean 3 16" must always get through.
+    const alphabeticWords = text.split(/[^\p{L}]+/u).filter((word) => word.length > 0 && !isBibleWord(word)).length
+    const off = offLanguageShare(alternative?.words, alternative?.languages, { transcriptWords: alphabeticWords, skip: isBibleWord })
+    const limit = this.policy?.mode === "tongues" ? 0.25 : this.policy?.mode === "noisy" ? 0.4 : 0.5
+    if (off !== null && off.judged >= OFF_LANGUAGE_MIN_WORDS && off.share >= limit) {
+      this.consecutiveOffLanguage += 1
+      if (this.consecutiveOffLanguage <= DEEPGRAM_LANGUAGE_VALVE_AFTER) {
+        this.offLanguageDrops += 1
+        const note = this.policy?.ledger.record("off-language", "deepgram")
+        if (note === undefined || note.log) {
+          this.logger?.info({
+            component: "asr",
+            event: "deepgram.language-dropped",
+            correlationId: this.correlationId,
+            metadata: { share: Math.round(off.share * 100) / 100, judged: off.judged, state, total: this.offLanguageDrops, suppressed: note?.suppressed ?? 1 },
+          })
+        }
+        if (state === "final") this.correlationId = generateUlid()
+        return
+      }
+      // Safety valve: many drops in a row means the guard, not the speaker, is probably wrong. Let text through, say so.
+      if (this.consecutiveOffLanguage === DEEPGRAM_LANGUAGE_VALVE_AFTER + 1) {
+        this.policy?.ledger.setValve("deepgram-language", true)
+        this.logger?.warn({
+          component: "asr",
+          event: "deepgram.language-guard-bypassed",
+          metadata: { consecutive: DEEPGRAM_LANGUAGE_VALVE_AFTER, share: Math.round(off.share * 100) / 100 },
+        })
+      }
+    } else if (this.consecutiveOffLanguage > 0) {
+      if (this.consecutiveOffLanguage > DEEPGRAM_LANGUAGE_VALVE_AFTER) this.policy?.ledger.setValve("deepgram-language", false)
+      this.consecutiveOffLanguage = 0
+    }
     this.sequence += 1
     this.deliverTranscript({
       id: generateUlid(),

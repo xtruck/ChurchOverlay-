@@ -9,6 +9,9 @@ export type WsCommandType =
   | "verse:clear"
   | "verse:override"
   | "verse:preview"
+  | "verse:navigate"
+  | "bible:chapter"
+  | "bible:search"
   | "media:select"
   | "media:play"
   | "media:pause"
@@ -26,6 +29,7 @@ export type WsCommandType =
   | "layout:set"
   | "asr:return-primary"
   | "mic:auto-gain"
+  | "asr:noise-mode"
   | "timer:start"
   | "timer:stop"
   | "timer:reset"
@@ -41,6 +45,9 @@ export type WsEventType =
   | "transcript:final"
   | "verse:show"
   | "verse:preview-result"
+  | "bible:chapter-result"
+  | "bible:search-result"
+  | "verse:navigate-result"
   | "verse:clear"
   | "media:show"
   | "media:clear"
@@ -103,7 +110,7 @@ export type AsrStatusPayload = {
    */
   readonly aiHelpers?: {
     readonly state: "ok" | "paused" | "unavailable"
-    readonly reason?: "model-unavailable" | "auth" | "repeated-failures"
+    readonly reason?: "model-unavailable" | "auth" | "rate-limited" | "repeated-failures"
   }
   readonly audioMetrics?: {
     readonly framesReceived: number
@@ -171,6 +178,26 @@ export type MicHealthPayload = {
   readonly clippingRatio: number
   readonly gainDb: number
   readonly autoGain: boolean
+  /** Operator noise/tongues strictness currently in effect (server/asr/noise-mode.ts). */
+  readonly noiseMode?: "normal" | "noisy" | "tongues"
+  /** Level a frame must reach to count as speech right now (PCM16 RMS), after noise-floor adaptation. */
+  readonly gateThreshold?: number
+  /** Tracked room noise floor (speech-band RMS). */
+  readonly noiseFloor?: number
+  /** Transcripts or segments dropped in the last minute, by layer. */
+  readonly dropsPerMinute?: {
+    readonly screen: number
+    readonly segment: number
+    readonly language: number
+    readonly offLanguage: number
+  }
+  /** Active warnings that tell a deaf app from a quiet room. */
+  readonly warnings?: readonly ("no-transcripts" | "gate-closed-loud" | "language-guard-bypassed")[]
+}
+
+/** asr:noise-mode — operator picks how strictly noisy or speaking-in-tongues audio is filtered. */
+export type AsrNoiseModePayload = {
+  readonly mode: "normal" | "noisy" | "tongues"
 }
 
 /** mic:auto-gain — operator toggles the adaptive gain applied to audio sent to ASR. */

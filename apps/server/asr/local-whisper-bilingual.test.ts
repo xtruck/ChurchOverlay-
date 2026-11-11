@@ -12,6 +12,7 @@ import {
 } from "./language-lock"
 import { DEFAULT_SEGMENT_THRESHOLDS, filterSegments } from "./segment-quality"
 import { isPromptEcho } from "./prompt-echo"
+import { TranscriptionPolicy } from "./noise-mode"
 import type { AudioFrame, TranscriptResult } from "../../../packages/contracts"
 
 // ARCHITECTURE.md section 118: bilingual (auto) mode locks French/English instead of trusting Whisper's auto-detection.
@@ -202,6 +203,7 @@ test("bilingual: no usable probabilities falls back to the language the engine d
   // Unknown confidence (margin 0) is not trusted: the decoded language is used for this clip, the next one detects again.
   assert.equal(fake.calls[1]!.fields.get("language"), "auto")
   provider.setLanguage(undefined) // resets the lock
+  // A clip the engine labelled German whose TEXT does not read as Spanish/Portuguese is kept (the label is a guess).
   await clip(provider, results, 3000, 3)
   await clip(provider, results, 3000, 4)
   assert.equal(fake.calls[2]!.fields.get("language"), "auto")
@@ -274,4 +276,39 @@ test("English text passes through the provider unchanged (no French-only filter 
   await provider.start()
   await clip(provider, results, 3000, 1)
   assert.equal(results[0]?.text, text)
+})
+
+// ---- French/English only, tongues mode ----
+
+test("local bilingual: a detection clip decoded in a third language with no fr/en probabilities is dropped when nothing is locked", async () => {
+  const { fake, provider, results } = setup([{ text: "Gracias hermanos por todo", language: "spanish" }])
+  await provider.start()
+  await provider.sendAudio(frame(3000))
+  await provider.onUtteranceEnd()
+  await new Promise((r) => setTimeout(r, 100))
+  assert.equal(results.length, 0)
+  assert.equal(fake.calls.length, 2, "retried once with French; the retry came back empty")
+  assert.equal(fake.calls[1]!.fields.get("language"), "fr")
+})
+
+test("local: tongues mode drops a low-confidence segment that normal mode keeps", async () => {
+  const reply = {
+    text: "Jean chapitre trois shalala kandara",
+    language: "french",
+    segments: [
+      { text: "Jean chapitre trois", avg_logprob: -0.3, no_speech_prob: 0.02 },
+      { text: "shalala kandara", avg_logprob: -1.3, no_speech_prob: 0.2 },
+    ],
+  }
+  const run = async (mode: "normal" | "tongues") => {
+    const fake = scriptedFetch([reply])
+    const provider = new LocalWhisperProvider({ server: endpoint, language: "fr", fetchImpl: fake.fetchImpl, policy: new TranscriptionPolicy(mode) })
+    const results: TranscriptResult[] = []
+    provider.onTranscript((r) => results.push(r))
+    await provider.start()
+    await clip(provider, results, 3000, 1)
+    return results[0]?.text
+  }
+  assert.equal(await run("normal"), "Jean chapitre trois shalala kandara")
+  assert.equal(await run("tongues"), "Jean chapitre trois")
 })

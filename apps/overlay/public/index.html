@@ -55,7 +55,9 @@
     --ov-border: rgba(255, 255, 255, 0.08);
     --ov-backdrop: #0c1320;
     --ov-backdrop-2: #070b12;
-    --ov-shadow: 0 2px 10px rgba(0, 0, 0, 0.85);
+    /* em units: the halo grows with the type (the verse is 60-300px), so it
+       holds on a bright picture at the back of the room as well as up close. */
+    --ov-shadow: 0 0.03em 0.1em rgba(0, 0, 0, 0.85), 0 0 0.4em rgba(0, 0, 0, 0.4);
     /* Vespers 2 motion (MASTER.md): enter 320ms, exit faster (200ms),
        transform/opacity only. */
     --ov-ease: cubic-bezier(0.2, 0, 0, 1);
@@ -213,7 +215,7 @@
   #verse:not(.fullscreen) { bottom: 0; align-items: stretch; padding: 0 0 2vh; }
   #verse:not(.fullscreen) #verse-card.no-card { background: transparent; border-color: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
   #verse:not(.fullscreen) #verse-card {
-    width: 100%; max-width: none; max-height: 48vh;
+    width: 100%; max-width: none; max-height: 52vh;
     padding: clamp(18px, 2.6vh, 34px) clamp(22px, 4vw, 68px);
     background: linear-gradient(180deg, rgba(var(--ov-card-rgb), calc(0.42 + var(--ov-card-a) * 0.52)), rgba(var(--ov-card-rgb), calc(0.54 + var(--ov-card-a) * 0.44)));
   }
@@ -259,7 +261,8 @@
     }
   }
 
-  #verse-text {
+  #verse-text,
+  #verse-secondary-text {
     color: var(--ov-text);
     text-shadow: var(--ov-shadow);
     font-family: "Instrument Serif", Georgia, "Times New Roman", serif;
@@ -329,8 +332,7 @@
   html.nature-background #verse.fullscreen { background: linear-gradient(180deg, rgba(3, 8, 14, 0.34), rgba(3, 8, 14, 0.58)); }
   /* Fullscreen is read from the back of the room: no narrow measure, the type
      fills the frame (overlay.js picks the largest size that fits). */
-  #verse.fullscreen #verse-text { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5); line-height: 1.28; max-width: 100%; }
-  #verse.fullscreen #verse-secondary-text { max-width: 100%; line-height: 1.28; }
+  #verse.fullscreen :is(#verse-text, #verse-secondary-text) { line-height: 1.28; max-width: 100%; }
   /* The full-bleed backdrop never slides: it only fades, so the frame edge
      never shows video through a moving gap. The words inside still settle
      (see .reveal below). */
@@ -348,42 +350,25 @@
 
   /*
     Bilingual mode (ARCHITECTURE.md section 63.4): present only when a
-    verse:show payload carries `secondary` — French (primary, above, in
-    #verse-text) stays in the existing styling; English (secondary) is
-    visually subordinate: smaller, italic, slightly less opaque. Hidden
-    entirely (not just empty) for single-language mode, so it takes no
+    verse:show payload carries `secondary`. Both blocks are typeset the same
+    (family, weight, size, leading, shadow, reveal); the ONLY difference
+    between the languages is that English is italic and French upright, set
+    from each block's data-language, never from its primary/secondary slot
+    (see "Language-driven typography" near the end of this stylesheet).
+    Hidden entirely (not just empty) for single-language mode, so it takes no
     layout space at all.
   */
+  /* Typography (colour, family, weight, size, leading, shadow, balance) comes
+     from the shared rule on #verse-text above and from each design's own
+     typographic rule, which every design applies to BOTH blocks. Only the
+     spacing and the hairline between the languages belong to this block. */
   #verse-secondary-text {
     display: none;
-    /* Same colour, family, weight and size as the French block above (the size
-       is set inline by overlay.js at the primary's size): readable from the
-       back of the room. Italic is what tells the two languages apart. */
-    color: var(--ov-text);
-    text-shadow: var(--ov-shadow);
-    font-family: "Instrument Serif", Georgia, "Times New Roman", serif;
-    font-style: italic;
-    font-weight: 400;
-    font-size: clamp(22px, 3.2vw, 44px);
-    line-height: 1.34;
-    text-align: center;
     margin-top: 12px;
     padding-top: 12px;
     border-top: 1px solid rgba(255, 255, 255, 0.14);
-    max-width: 32em;
-    text-wrap: pretty;
-    text-wrap: balance;
   }
   #verse-secondary-text.visible { display: block; }
-  /* English is italic in the same serif family as French; French retains
-     its existing, unmodified primary-block styling. */
-  #verse.bilingual #verse-text[data-language="en"],
-  #verse.bilingual #verse-secondary-text[data-language="en"] {
-    font-family: "Instrument Serif", Georgia, "Times New Roman", serif;
-    font-style: italic;
-    font-weight: 400;
-  }
-
   #verse-ref-row {
     display: flex;
     align-items: center;
@@ -403,14 +388,15 @@
     text-shadow: var(--ov-shadow);
     font-family: "Instrument Serif", Georgia, serif;
     font-style: italic;
-    font-size: clamp(18px, 2.1vw, 34px);
+    font-size: var(--ref-size);
     font-weight: 400;
     letter-spacing: 0.02em;
     font-variant-numeric: lining-nums;
-    white-space: nowrap;
+    text-align: center;
+    text-wrap: balance;
   }
+  .vc-ref-part { white-space: nowrap; }
   #verse.fullscreen #verse-ref-row { margin-top: clamp(18px, 3vh, 40px); }
-  #verse.fullscreen #verse-reference { font-size: clamp(22px, 2.5vw, 48px); }
   #verse.fullscreen #verse-ref-row::before,
   #verse.fullscreen #verse-ref-row::after { width: clamp(28px, 4vw, 72px); }
 
@@ -443,16 +429,16 @@
     border-top: 6px solid var(--accent);
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
   }
-  #verse-card.tpl-banner #verse-text,
+  #verse-card.tpl-banner :is(#verse-text, #verse-secondary-text),
   #verse-card.tpl-banner #verse-reference {
     font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
     font-style: normal;
     font-weight: 600;
   }
   /* Sans at display sizes wants tighter tracking and leading than the serif. */
-  #verse-card.tpl-banner #verse-text { letter-spacing: -0.005em; line-height: 1.3; }
+  #verse-card.tpl-banner :is(#verse-text, #verse-secondary-text) { letter-spacing: -0.005em; line-height: 1.3; }
   #verse-card.tpl-banner #verse-reference {
-    font-size: clamp(16px, 1.5vw, 28px);
+    font-size: var(--ref-size);
     letter-spacing: 0.12em;
     text-transform: uppercase;
   }
@@ -471,17 +457,17 @@
     backdrop-filter: none;
     padding: 12px 24px;
   }
-  #verse-card.tpl-minimal #verse-text {
+  #verse-card.tpl-minimal :is(#verse-text, #verse-secondary-text) {
     font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
     font-weight: 500;
     letter-spacing: -0.005em;
     line-height: 1.3;
     /* No card: a tight edge shadow for crispness plus a wide soft halo for
        legibility over bright video. */
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85), 0 3px 18px rgba(0, 0, 0, 0.75);
+    text-shadow: 0 0.02em 0.04em rgba(0, 0, 0, 0.85), 0 0.04em 0.3em rgba(0, 0, 0, 0.75), 0 0 0.8em rgba(0, 0, 0, 0.45);
   }
   #verse-card.tpl-minimal #verse-reference {
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85), 0 2px 12px rgba(0, 0, 0, 0.7);
+    text-shadow: 0 0.02em 0.04em rgba(0, 0, 0, 0.85), 0 0.04em 0.3em rgba(0, 0, 0, 0.7), 0 0 0.8em rgba(0, 0, 0, 0.4);
   }
   #verse-card.tpl-minimal #verse-ref-row::before,
   #verse-card.tpl-minimal #verse-ref-row::after { display: none; }
@@ -496,7 +482,7 @@
   #verse-card.tpl-elegant #verse-reference {
     letter-spacing: 0.06em;
   }
-  #verse-card.tpl-elegant #verse-text { line-height: 1.4; }
+  #verse-card.tpl-elegant :is(#verse-text, #verse-secondary-text) { line-height: 1.4; }
   #verse-card.tpl-elegant #verse-ref-row::before,
   #verse-card.tpl-elegant #verse-ref-row::after { width: 44px; opacity: 0.8; }
   #verse.fullscreen #verse-card.tpl-elegant {
@@ -569,7 +555,7 @@
   #verse-card.no-card #verse-text,
   #verse-card.no-card #verse-reference,
   #verse-card.no-card #verse-secondary-text {
-    text-shadow: 0 2px 3px rgba(0, 0, 0, 0.9), 0 0 18px rgba(0, 0, 0, 0.75);
+    text-shadow: 0 0.025em 0.05em rgba(0, 0, 0, 0.9), 0 0 0.3em rgba(0, 0, 0, 0.8), 0 0 0.8em rgba(0, 0, 0, 0.5);
   }
 
   /* ===================================================================
@@ -593,7 +579,7 @@
      OBS's CEF); keyframes are mostly from-only, so each lands exactly on the
      element's own resting style: text is fully legible the moment it settles.
      =================================================================== */
-  #verse-text .vc-w { display: inline-block; max-width: 100%; }
+  :is(#verse-text, #verse-secondary-text) .vc-w { display: inline-block; max-width: 100%; }
   .vc-dropcap, #verse-ornament { display: none; }
   #verse-card {
     --rv-dx: 0em;
@@ -601,6 +587,12 @@
     --rv-blur: 7px;
     --rv-scale: 1;
     --rv-ease: var(--vc-ease-out);
+    /* The reference is a fixed share of the verse type (overlay.js sets
+       --vc-font), so it stays readable at 300px verse type as at 60px, and
+       never drops below ~3.2% of the frame height (34px at 1080p) even under
+       a long passage's small type. */
+    --ref-k: 0.34;
+    --ref-size: clamp(3.2vh, calc(var(--vc-font, 44px) * var(--ref-k)), 11vh);
     --card-dx: 0px;
     --card-dy: 16px;
     --card-s: 0.985;
@@ -643,10 +635,6 @@
   #verse.vc-enter .vc-w,
   #verse.vc-swap-in .vc-w {
     animation: vc-word-in calc(var(--vc-word-dur, 560) * 1ms) var(--rv-ease) calc(var(--d, 0) * 1ms) both;
-  }
-  #verse.vc-enter #verse-secondary-text,
-  #verse.vc-swap-in #verse-secondary-text {
-    animation: vc-rise-in calc(var(--vc-word-dur, 560) * 1ms) var(--vc-ease-out) calc(var(--vc-sec-delay, 0) * 1ms) both;
   }
   #verse.vc-enter #verse-ref-row,
   #verse.vc-swap-in #verse-ref-row {
@@ -744,7 +732,7 @@
     backdrop-filter: none;
     background: linear-gradient(0deg, rgba(var(--ov-card-rgb), 0.97) 0%, rgba(var(--ov-card-rgb), 0.82) 38%, rgba(var(--ov-card-rgb), 0.45) 70%, rgba(var(--ov-card-rgb), 0) 100%);
   }
-  #verse-card.tpl-cinema #verse-text { letter-spacing: 0.006em; line-height: 1.3; max-width: 30em; }
+  #verse-card.tpl-cinema :is(#verse-text, #verse-secondary-text) { letter-spacing: 0.006em; line-height: 1.3; max-width: 30em; }
   #verse-card.tpl-cinema #verse-ref-row { margin-top: 16px; gap: 18px; }
   #verse-card.tpl-cinema #verse-ref-row::before,
   #verse-card.tpl-cinema #verse-ref-row::after { width: 64px; opacity: 0.55; }
@@ -752,7 +740,7 @@
     font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
     font-style: normal;
     font-weight: 500;
-    font-size: clamp(16px, 1.45vw, 28px);
+    font-size: var(--ref-size);
     letter-spacing: 0.32em;
     text-transform: uppercase;
   }
@@ -762,9 +750,9 @@
     background: radial-gradient(50% 60% at 50% 70%, rgba(var(--accent-rgb), 0.26), rgba(var(--accent-rgb), 0.08) 55%, transparent 75%);
     animation: vc-sweep 1100ms var(--vc-ease-inout) 60ms both;
   }
-  #verse.fullscreen[data-card="cinema"] { padding: var(--lb-h) 6vw; }
+  #verse.fullscreen[data-card="cinema"] { padding: var(--lb-h) 3vw; }
   #verse.fullscreen #verse-card.tpl-cinema { background: transparent; padding: 2vh 4vw; }
-  #verse.fullscreen #verse-card.tpl-cinema #verse-reference { font-size: clamp(14px, 1.4vw, 28px); }
+  #verse.fullscreen #verse-card.tpl-cinema #verse-reference { font-size: var(--ref-size); }
 
   /* ---------------------------------------------------------------
      New design 2: manuscript. An illuminated page: a framed leaf with a
@@ -807,7 +795,7 @@
     text-align: left;
     text-wrap: pretty;
   }
-  #verse-card.tpl-manuscript #verse-text { line-height: 1.36; }
+  #verse-card.tpl-manuscript :is(#verse-text, #verse-secondary-text) { line-height: 1.36; }
   #verse-card.tpl-manuscript #verse-secondary-text { border-top-color: rgba(var(--accent-rgb), 0.3); }
   #verse-card.tpl-manuscript .vc-dropcap {
     display: block;
@@ -845,7 +833,7 @@
   #verse-card.tpl-manuscript #verse-ref-row::after { display: none; }
   #verse-card.tpl-manuscript #verse-reference {
     font-style: normal;
-    font-size: clamp(16px, 1.45vw, 28px);
+    font-size: var(--ref-size);
     letter-spacing: 0.18em;
     text-transform: uppercase;
   }
@@ -873,7 +861,7 @@
     box-shadow: 0 30px 90px rgba(0, 0, 0, 0.4);
   }
   #verse.fullscreen #verse-card.tpl-manuscript::before { inset: 10px; }
-  #verse.fullscreen #verse-card.tpl-manuscript #verse-reference { font-size: clamp(16px, 1.7vw, 34px); }
+  #verse.fullscreen #verse-card.tpl-manuscript #verse-reference { font-size: var(--ref-size); }
   #verse.fullscreen #verse-card.tpl-manuscript #verse-ornament { width: min(380px, 40%); margin-top: clamp(20px, 3.5vh, 44px); }
 
   /* ---------------------------------------------------------------
@@ -920,7 +908,7 @@
     from { opacity: 0; transform: scale(0.6); }
   }
   #verse.vc-enter #verse-card.tpl-stained::before { animation: vc-bloom 1200ms var(--vc-ease-out) both, vc-breathe 9s ease-in-out 1200ms infinite alternate; }
-  #verse-card.tpl-stained #verse-text { line-height: 1.38; }
+  #verse-card.tpl-stained :is(#verse-text, #verse-secondary-text) { line-height: 1.38; }
   #verse-card.tpl-stained #verse-ref-row::before,
   #verse-card.tpl-stained #verse-ref-row::after { width: 52px; opacity: 0.8; }
   #verse-card.tpl-stained #verse-ref-row::before { background: linear-gradient(90deg, transparent, var(--accent)); }
@@ -981,7 +969,7 @@
   #verse.vc-swap-in #verse-card.tpl-poster::before { animation: vc-quote-in 900ms var(--vc-ease-out) both; }
   #verse-card.tpl-poster #verse-text,
   #verse-card.tpl-poster #verse-secondary-text { text-align: left; text-wrap: pretty; max-width: 26em; }
-  #verse-card.tpl-poster #verse-text { line-height: 1.12; letter-spacing: -0.012em; }
+  #verse-card.tpl-poster :is(#verse-text, #verse-secondary-text) { line-height: 1.12; letter-spacing: -0.012em; }
   #verse-card.tpl-poster #verse-secondary-text { border-top: none; padding-top: 0; margin-top: 14px; max-width: 46em; }
   #verse-card.tpl-poster #verse-ref-row { margin-top: 20px; }
   #verse-card.tpl-poster #verse-ref-row::before { width: 44px; height: 3px; opacity: 1; }
@@ -990,14 +978,14 @@
     font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
     font-style: normal;
     font-weight: 600;
-    font-size: clamp(16px, 1.45vw, 28px);
+    font-size: var(--ref-size);
     letter-spacing: 0.2em;
     text-transform: uppercase;
   }
   #verse.fullscreen[data-card="poster"] { align-items: flex-start; padding: 6vh 7vw; }
   #verse.fullscreen #verse-card.tpl-poster { width: auto; max-width: 100%; background: transparent; padding-left: calc(var(--vc-font, 100px) * 1.6 + 2vw); padding-right: 2vw; }
   #verse.fullscreen #verse-card.tpl-poster::before { font-size: calc(var(--vc-font, 100px) * 4.6); }
-  #verse.fullscreen #verse-card.tpl-poster #verse-reference { font-size: clamp(16px, 1.6vw, 30px); }
+  #verse.fullscreen #verse-card.tpl-poster #verse-reference { font-size: var(--ref-size); }
   #verse.fullscreen[data-card="poster"]::before {
     content: "";
     position: absolute;
@@ -1048,6 +1036,12 @@
     letter-spacing: -0.008em;
     line-height: 1.3;
   }
+  #verse-card.tpl-split #verse-secondary-text {
+    font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+    font-weight: 500;
+    letter-spacing: -0.008em;
+    line-height: 1.3;
+  }
   #verse-card.tpl-split #verse-secondary-text { grid-column: 3; grid-row: 2; text-align: left; text-wrap: pretty; border-top: none; padding-top: 0; margin-top: 10px; }
   #verse-card.tpl-split #verse-ornament {
     display: block;
@@ -1068,7 +1062,7 @@
     font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
     font-style: normal;
     font-weight: 600;
-    font-size: clamp(16px, 1.9vw, 34px);
+    font-size: var(--ref-size);
     line-height: 1.15;
     letter-spacing: 0.005em;
   }
@@ -1086,7 +1080,7 @@
     border-radius: 3px;
     background: rgba(var(--ov-card-rgb), calc(var(--ov-card-a) * 0.55));
   }
-  #verse.fullscreen #verse-card.tpl-split #verse-reference { font-size: clamp(22px, 3vw, 64px); }
+  #verse.fullscreen #verse-card.tpl-split #verse-reference { font-size: var(--ref-size); }
 
   /* ---------------------------------------------------------------
      New design 6: bold. High energy without noise: heavy left-set sans,
@@ -1129,7 +1123,7 @@
   #verse.vc-swap-in #verse-card.tpl-bold::before { animation: vc-wipe 520ms cubic-bezier(0.7, 0, 0.2, 1) 60ms both; }
   #verse-card.tpl-bold #verse-text,
   #verse-card.tpl-bold #verse-secondary-text { text-align: left; text-wrap: pretty; }
-  #verse-card.tpl-bold #verse-text {
+  #verse-card.tpl-bold :is(#verse-text, #verse-secondary-text) {
     font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
     font-weight: 700;
     letter-spacing: -0.02em;
@@ -1148,7 +1142,7 @@
     font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
     font-style: normal;
     font-weight: 700;
-    font-size: clamp(13px, 1.3vw, 22px);
+    font-size: var(--ref-size);
     letter-spacing: 0.14em;
     text-transform: uppercase;
   }
@@ -1161,7 +1155,7 @@
     background: rgba(var(--ov-card-rgb), calc(var(--ov-card-a) * 0.55));
   }
   #verse.fullscreen #verse-card.tpl-bold::before { height: 12px; }
-  #verse.fullscreen #verse-card.tpl-bold #verse-reference { font-size: clamp(16px, 1.6vw, 30px); }
+  #verse.fullscreen #verse-card.tpl-bold #verse-reference { font-size: var(--ref-size); }
 
   /* ---------------------------------------------------------------
      Section 133 follow-up: halo. A quiet, centered focal light with a
@@ -1196,7 +1190,7 @@
   @keyframes vc-halo-bloom { from { opacity: 0; transform: scale(0.82); } }
   #verse.vc-enter #verse-card.tpl-halo::before,
   #verse.vc-swap-in #verse-card.tpl-halo::before { animation: vc-halo-bloom 980ms var(--vc-ease-out) both; }
-  #verse-card.tpl-halo #verse-text { max-width: 28em; line-height: 1.3; }
+  #verse-card.tpl-halo :is(#verse-text, #verse-secondary-text) { max-width: 28em; line-height: 1.3; }
   #verse-card.tpl-halo #verse-secondary-text { margin-top: 14px; border-top-color: rgba(var(--accent-rgb), 0.28); }
   #verse-card.tpl-halo #verse-ref-row { margin-top: 24px; gap: 16px; }
   #verse-card.tpl-halo #verse-ref-row::before,
@@ -1205,7 +1199,7 @@
     font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
     font-style: normal;
     font-weight: 600;
-    font-size: clamp(13px, 1.35vw, 22px);
+    font-size: var(--ref-size);
     letter-spacing: 0.15em;
     text-transform: uppercase;
   }
@@ -1263,7 +1257,7 @@
   #verse.vc-swap-in #verse-card.tpl-signal::before { animation: vc-signal-rule 560ms var(--vc-ease-out) both; }
   #verse-card.tpl-signal #verse-text,
   #verse-card.tpl-signal #verse-secondary-text { max-width: 42em; text-align: left; text-wrap: pretty; }
-  #verse-card.tpl-signal #verse-text {
+  #verse-card.tpl-signal :is(#verse-text, #verse-secondary-text) {
     font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
     font-weight: 600;
     letter-spacing: -0.012em;
@@ -1279,7 +1273,7 @@
     border-radius: 3px;
     font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
     font-style: normal;
-    font-size: clamp(12px, 1.05vw, 18px);
+    font-size: var(--ref-size);
     font-weight: 600;
     letter-spacing: 0.075em;
     text-transform: uppercase;
@@ -1336,7 +1330,7 @@
   #verse.vc-swap-in #verse-card.tpl-folio::before { animation: vc-folio-frame 760ms var(--vc-ease-out) both; }
   #verse-card.tpl-folio #verse-text,
   #verse-card.tpl-folio #verse-secondary-text { align-self: stretch; max-width: none; text-align: left; text-wrap: pretty; }
-  #verse-card.tpl-folio #verse-text { line-height: 1.4; }
+  #verse-card.tpl-folio :is(#verse-text, #verse-secondary-text) { line-height: 1.4; }
   #verse-card.tpl-folio #verse-secondary-text { margin-top: 16px; border-top-color: rgba(var(--accent-rgb), 0.28); }
   #verse-card.tpl-folio #verse-ref-row { align-self: flex-end; margin-top: 22px; gap: 0; }
   #verse-card.tpl-folio #verse-ref-row::before,
@@ -1347,7 +1341,7 @@
     color: var(--ov-text2);
     font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
     font-style: normal;
-    font-size: clamp(12px, 1vw, 17px);
+    font-size: var(--ref-size);
     font-weight: 500;
     letter-spacing: 0.08em;
   }
@@ -1368,6 +1362,39 @@
     #verse-card.tpl-folio::before { inset: 6px; }
     #verse.fullscreen #verse-card.tpl-folio { padding: 30px 28px 24px; }
   }
+
+  /* Fullscreen is read from the back of the room: whatever width a design gave
+     its card (a 1400px page, a 90% pane), the card may use the whole safe area.
+     The auto-fit (overlay.js measureFit) then picks the type size from the real
+     box, so a long verse and a short one both fill the frame. Placed after
+     every design so it wins ties at equal specificity. */
+  #verse.fullscreen #verse-card[class] { max-width: 100%; }
+  /* Same for the lower-third band: no ~60-character measure. On a sanctuary
+     screen a narrow column of type is wasted space; the auto-fit already keeps
+     the block inside the band's height. */
+  #verse:not(.fullscreen) :is(#verse-text, #verse-secondary-text) { max-width: 100%; }
+
+  /* Designs that set the reference as a small letter-spaced label ask for a
+     smaller share of the verse type than the classic caption-style line. */
+  #verse-card.tpl-banner, #verse-card.tpl-manuscript, #verse-card.tpl-poster,
+  #verse-card.tpl-halo, #verse-card.tpl-signal { --ref-k: 0.24; }
+  #verse-card.tpl-cinema, #verse-card.tpl-bold, #verse-card.tpl-folio { --ref-k: 0.22; }
+  #verse-card.tpl-split { --ref-k: 0.38; }
+
+  /* ---------------------------------------------------------------
+     Language-driven typography. The ONLY visual difference between French and
+     English is that English is italic and French is upright, wherever the
+     language sits (primary or secondary block, single or bilingual, the
+     reference parts too). Keyed off data-language, set by overlay.js from the
+     translation id. Last in the file so it wins over every design's own
+     font-style (the sans designs declare "normal"). The sans designs have no
+     italic face, so the browser slants Instrument Sans: acceptable, and it
+     keeps one family per design for both languages.
+     --------------------------------------------------------------- */
+  #verse-card :is(#verse-text, #verse-secondary-text)[data-language="en"] { font-style: italic; }
+  #verse-card :is(#verse-text, #verse-secondary-text)[data-language="fr"] { font-style: normal; }
+  #verse-card #verse-reference .vc-ref-part[data-language="en"] { font-style: italic; }
+  #verse-card #verse-reference .vc-ref-part[data-language="fr"] { font-style: normal; }
 
   /* No card (clear-text palettes) still wins over every design, including
      the new ones declared after the original .no-card rule ([class] only

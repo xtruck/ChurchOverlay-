@@ -10,6 +10,7 @@ import { FreeApiSource } from "../server/verse/free-api-source"
 import { GetBibleVerseSource } from "../server/verse/get-bible-verse-source"
 import { LocalizedVerseSource } from "../server/verse/localized-verse-source"
 import { loadOfflineBibleData, OfflineVerseSource } from "../server/verse/offline-verse-source"
+import { createLazyBibleWordSearch } from "../server/verse/bible-word-search"
 import { OfflineFallbackVerseSource } from "../server/verse/offline-fallback-verse-source"
 import { RegexDetector } from "../server/detector/regex-detector"
 import { KnownValidVerseIndex } from "../server/verse/known-valid-verse-index"
@@ -123,8 +124,12 @@ async function main() {
 
   // Bible Sources
   let frenchSource: GetBibleVerseSource | OfflineFallbackVerseSource = new GetBibleVerseSource()
+  let bibleWordSearch: ReturnType<typeof createLazyBibleWordSearch> | undefined
   try {
     const offlineData = await loadOfflineBibleData()
+    bibleWordSearch = createLazyBibleWordSearch(offlineData, undefined, (error) =>
+      logger.error({ component: "server", event: "bible-word-search.failed", error: error instanceof Error ? error.message : String(error) })
+    )
     frenchSource = new OfflineFallbackVerseSource({
       primary: new GetBibleVerseSource(),
       offline: new OfflineVerseSource(offlineData),
@@ -192,6 +197,7 @@ async function main() {
     detector: new RegexDetector(),
     index: new KnownValidVerseIndex(),
     source: localizedVerseSource,
+    ...(bibleWordSearch ? { bibleWordSearch } : {}),
     logger,
     server: httpServer,
     port: PORT,

@@ -13,6 +13,7 @@ import { SilenceGate } from "../audio/silence-gate"
 import { SessionHistoryStore } from "./session-history-store"
 import { KnownValidVerseIndex } from "../verse/known-valid-verse-index"
 import { MediaLibrary } from "../media/media-library"
+import { TranscriptionPolicy } from "../asr/noise-mode"
 import { encodeAudioFrame } from "../../../packages/shared/audio-frame-codec"
 import { Logger } from "../../../packages/shared/logger"
 import { GuardedTextCompleter } from "../ai/guarded-text-completer"
@@ -3304,9 +3305,14 @@ test("AppCore: an empty accumulated buffer never calls summarize(), and a failed
     const update = await waitForMessage(viewerSocket)
     assert.equal(update.type, "sermonNotes:update")
     assert.deepEqual(update.payload, { notes: "- Recovered" })
-    // The failed cycle's text must have been cleared, not retried
-    // alongside the new text.
-    assert.equal(generator.calls[1], "New text after the failure.")
+    // A failed cycle's text is kept (bounded) and covered by the next cycle, so a transient
+    // failure does not lose what the preacher said.
+    // The retry can fire before the second sentence arrives (30 ms interval), so only the
+    // guarantee is asserted: the failed cycle's text is re-sent, it is not lost.
+    assert.ok(
+      (generator.calls[1] ?? "").startsWith("A failing cycle should not crash anything."),
+      `the failed cycle's text must be re-sent, got: ${generator.calls[1]}`,
+    )
 
     viewerSocket.close()
   } finally {
@@ -4464,6 +4470,56 @@ test("AppCore: broadcasts mic:health about once per second of processed audio, w
     assert.equal(health.find((h) => h.autoGain === false)?.gainDb, 0)
     operatorSocket.close()
     viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: asr:noise-mode switches the transcript screen, is reported in mic:health and persisted through the host callback", async () => {
+  const asr = new FakeAsrProvider()
+  const persisted: string[] = []
+  const policy = new TranscriptionPolicy()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    transcriptionPolicy: policy,
+    onNoiseModeChanged: (mode) => persisted.push(mode),
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const finals: string[] = []
+    const modes: (string | undefined)[] = []
+    operatorSocket.on("message", (data) => {
+      const message = JSON.parse(data.toString()) as WsMessage
+      if (message.type === "transcript:final") finals.push((message.payload as { text: string }).text)
+      if (message.type === "mic:health") modes.push((message.payload as { noiseMode?: string }).noiseMode)
+    })
+    const pseudo = "shala kandara lama sheka ondrai"
+    const say = (n: number, text: string) =>
+      asr.emitTranscript({ id: `01T${n}`, correlationId: `01CT${n}`, sequence: n, text, state: "final", timestamp: Date.now() })
+
+    say(1, pseudo) // normal mode: five unknown words are not obviously gibberish, they pass
+    await waitFor(() => finals.length === 1)
+
+    operatorSocket.send(JSON.stringify({ id: "01N1", type: "asr:noise-mode", timestamp: Date.now(), payload: { mode: "tongues" } }))
+    await waitFor(() => policy.mode === "tongues")
+    assert.deepEqual(persisted, ["tongues"])
+    await waitFor(() => modes.includes("tongues"))
+
+    say(2, pseudo) // tongues mode: dropped before anything downstream sees it
+    say(3, "Ouvrez vos Bibles à Jean chapitre 3")
+    await waitFor(() => finals.length === 2)
+    assert.deepEqual(finals, [pseudo, "Ouvrez vos Bibles à Jean chapitre 3"])
+
+    operatorSocket.send(JSON.stringify({ id: "01N2", type: "asr:noise-mode", timestamp: Date.now(), payload: { mode: "loud" } }))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    assert.equal(policy.mode, "tongues", "an unknown mode is rejected by the registry")
+    operatorSocket.close()
   } finally {
     await app.stop()
   }
@@ -6074,6 +6130,40 @@ test("AppCore: a pending verse carries what was heard, and the confirmed verse:s
     assert.equal("heard" in (shown.payload as object), false)
     operator.close()
     viewer.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: an EMPTY sermon-notes answer is never broadcast (it would blank/append to the panel); the text is kept for the next cycle", async () => {
+  const asr = new FakeAsrProvider()
+  const generator = new FakeSermonNotesGenerator()
+  generator.setResponse("   ")
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    sermonNotesGenerator: generator,
+    sermonNotesEnabled: true,
+    sermonNotesIntervalMs: 30,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const received: Array<{ type: string; payload: unknown }> = []
+    viewerSocket.on("message", (data) => received.push(JSON.parse(String(data))))
+    asr.emitTranscript({ id: "01T", correlationId: "01A", sequence: 1, text: "Grace is enough for every season.", state: "final", timestamp: Date.now() })
+    await waitFor(() => generator.calls.length >= 1)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.equal(received.filter((m) => m.type === "sermonNotes:update").length, 0)
+    generator.setResponse("- Grace")
+    await waitFor(() => received.some((m) => m.type === "sermonNotes:update"))
+    // The text of the empty cycle was retried, not lost.
+    assert.ok(generator.calls[generator.calls.length - 1]?.includes("Grace is enough for every season."))
+    viewerSocket.close()
   } finally {
     await app.stop()
   }

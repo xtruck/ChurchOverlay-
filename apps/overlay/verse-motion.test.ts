@@ -23,6 +23,8 @@ interface Plan {
 interface FitLimits {
   maxWidthFraction: number
   maxHeightFraction: number
+  maxFontVh: number
+  minFontVh: number
   maxFontPx: number
   minFontPx: number
 }
@@ -36,7 +38,8 @@ interface VerseMotionApi {
   revealPlan(lines: number[], card: string, options?: { swap?: boolean }): Plan
   swapOutMs(card: string): number
   pickVerseTransition(input: { wasVisible?: boolean; msSinceConnect?: number; reducedMotion?: boolean; motion?: string }): string
-  fitLimits(isFullscreen: boolean, card: string): FitLimits
+  fitLimits(isFullscreen: boolean, card: string, viewport?: { height: number }): FitLimits
+  largestFit(min: number, max: number, fits: (px: number) => boolean): number
 }
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -157,25 +160,59 @@ test("pickVerseTransition: first show, replacement, late join, gentle, reduced m
   assert.equal(M.pickVerseTransition({ wasVisible: false, msSinceConnect: -Infinity }), "enter")
 })
 
-test("fitLimits: lower-third and fullscreen keep their historical caps; designs adjust only what they need", () => {
-  assert.deepEqual(M.fitLimits(false, "classic"), { maxWidthFraction: 1, maxHeightFraction: 0.46, maxFontPx: 64, minFontPx: 18 })
-  // Fullscreen is read from the back of the room: it fills ~95% of the frame with type up to 200px.
-  assert.deepEqual(M.fitLimits(true, "classic"), { maxWidthFraction: 0.96, maxHeightFraction: 0.94, maxFontPx: 200, minFontPx: 18 })
-  for (const card of ["banner", "minimal", "elegant", "glass", "ribbon", "halo", "signal", "folio"]) {
-    assert.deepEqual(M.fitLimits(false, card), M.fitLimits(false, "classic"), card)
-    assert.deepEqual(M.fitLimits(true, card), M.fitLimits(true, "classic"), card)
+test("fitLimits: fullscreen fills ~95% x 92% of the frame, the lower-third band up to half of it; designs adjust only what they need", () => {
+  const fs = M.fitLimits(true, "classic")
+  assert.equal(fs.maxWidthFraction, 0.95)
+  assert.equal(fs.maxHeightFraction, 0.92)
+  // Readable from the back of the room: a short verse may reach ~30% of the frame height.
+  assert.equal(fs.maxFontPx, 324)
+  assert.equal(fs.minFontPx, 18)
+  const lt = M.fitLimits(false, "classic")
+  assert.equal(lt.maxWidthFraction, 1)
+  assert.equal(lt.maxHeightFraction, 0.5)
+  assert.ok(lt.maxFontPx >= 100, "the lower-third is no longer capped at 64px")
+  for (const card of ["banner", "minimal", "elegant", "glass", "ribbon", "halo", "signal", "folio", "stained", "split"]) {
+    assert.deepEqual(M.fitLimits(false, card), lt, card)
+    assert.deepEqual(M.fitLimits(true, card), fs, card)
   }
   // Cinema: the card must stay clear of both letterbox bars (10vh each).
   assert.ok(M.fitLimits(true, "cinema").maxHeightFraction <= 0.8 - 0.05)
   assert.ok(M.fitLimits(false, "cinema").maxHeightFraction <= 0.5)
-  assert.ok(M.fitLimits(false, "classic").maxFontPx >= 60)
+  // Poster/bold want bigger type, the manuscript page a calmer one.
+  assert.ok(M.fitLimits(true, "poster").maxFontPx > fs.maxFontPx)
+  assert.ok(M.fitLimits(true, "manuscript").maxFontPx < fs.maxFontPx)
   for (const card of DESIGNS) {
-    for (const fs of [false, true]) {
-      const l = M.fitLimits(fs, card)
+    for (const full of [false, true]) {
+      const l = M.fitLimits(full, card)
       assert.ok(l.minFontPx >= 14 && l.minFontPx < l.maxFontPx, `${card} legibility floor`)
       assert.ok(l.maxHeightFraction > 0.4 && l.maxHeightFraction <= 0.95, `${card} height`)
       assert.ok(l.maxWidthFraction > 0.5 && l.maxWidthFraction <= 1, `${card} width`)
-      if (!fs) assert.equal(l.maxWidthFraction, 1, `${card} lower third stays full width`)
+      if (!full) assert.equal(l.maxWidthFraction, 1, `${card} lower third stays full width`)
     }
   }
+})
+
+test("fitLimits: the font range scales with the frame height (1080p, 720p, portrait, tiny preview)", () => {
+  assert.equal(M.fitLimits(true, "classic", { height: 720 }).maxFontPx, 216)
+  assert.equal(M.fitLimits(true, "classic", { height: 720 }).minFontPx, 12)
+  assert.equal(M.fitLimits(true, "classic", { height: 1920 }).maxFontPx, 576)
+  // A dashboard preview a few hundred pixels high keeps a sane (never zero) floor.
+  assert.ok(M.fitLimits(true, "classic", { height: 270 }).minFontPx >= 8)
+  assert.equal(M.fitLimits(true, "classic", { height: 0 }).maxFontPx, 324, "a bad height falls back to the 1080 reference")
+})
+
+test("largestFit: the largest size that fits, by binary search, in about log2(range) probes", () => {
+  let probes = 0
+  const fitsUpTo = (limit: number) => (px: number) => {
+    probes += 1
+    return px <= limit
+  }
+  assert.equal(M.largestFit(18, 324, fitsUpTo(173)), 173)
+  assert.ok(probes <= 12, `took ${probes} probes`)
+  assert.equal(M.largestFit(18, 324, () => true), 324, "everything fits: the cap")
+  assert.equal(M.largestFit(18, 324, () => false), 18, "nothing fits: the floor (the caller then scales the card)")
+  assert.equal(M.largestFit(18, 324, fitsUpTo(18)), 18)
+  assert.equal(M.largestFit(18, 324, fitsUpTo(323)), 323)
+  assert.equal(M.largestFit(50, 50, () => false), 50, "an empty range returns the floor")
+  assert.equal(M.largestFit(18.4, 100.9, fitsUpTo(60)), 60, "fractional bounds are floored")
 })

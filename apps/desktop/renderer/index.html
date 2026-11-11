@@ -38,6 +38,7 @@
 <title>ChurchOverlay — Operator</title>
 <link href="fonts/fonts.css" rel="stylesheet" />
 <link href="dashboard.css" rel="stylesheet" />
+<link href="bible-browser.css" rel="stylesheet" />
 </head>
 <body>
   <!--
@@ -201,6 +202,10 @@
       <button type="button" id="nav-live" class="sidebar-nav-item active" data-view="live" data-i18n-title="nav.live">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="12.5" rx="2.5"/><path d="M8.5 20.5h7M12 17v3.5"/><circle cx="12" cy="10.75" r="2"/></svg>
         <span data-i18n="nav.live">Live</span>
+      </button>
+      <button type="button" id="nav-bible" class="sidebar-nav-item" data-view="bible" data-i18n-title="nav.bible">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6.5C10.2 5.2 7.6 4.6 4.5 4.8v13c3.1-.2 5.7.4 7.5 1.7 1.8-1.3 4.4-1.9 7.5-1.7v-13c-3.1-.2-5.7.4-7.5 1.7Z"/><path d="M12 6.5v13"/></svg>
+        <span data-i18n="nav.bible">Bible</span>
       </button>
       <button type="button" id="nav-rundown" class="sidebar-nav-item" data-view="rundown" data-i18n-title="nav.rundown">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6.5h11M9 12h11M9 17.5h11"/><circle cx="4.75" cy="6.5" r="1.25"/><circle cx="4.75" cy="12" r="1.25"/><circle cx="4.75" cy="17.5" r="1.25"/></svg>
@@ -375,6 +380,11 @@
                 <span data-i18n="micHealth.autoGain">Automatic gain</span>
                 <input id="auto-gain-toggle" type="checkbox" class="switch" checked />
               </label>
+              <label class="switch-row" for="noise-mode-select" data-i18n-title="micHealth.noiseHint" title=""><span data-i18n="micHealth.noiseMode">Noisy room / tongues</span><select id="noise-mode-select"><option value="normal" data-i18n="micHealth.noiseNormal">Normal</option><option value="noisy" data-i18n="micHealth.noiseLoud">Loud room (band, crowd)</option><option value="tongues" data-i18n="micHealth.noiseTongues">Speaking in tongues</option></select></label>
+              <div id="mic-diag" class="mic-diag" style="display: none">
+                <span id="mic-diag-stats"></span>
+                <span id="mic-diag-warn" role="alert"></span>
+              </div>
               <div id="asr-health-warning" class="asr-health-warning" role="alert" style="display: none">
                 <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 2.8 19.5h18.4z"/><path d="M12 10v4M12 17h.01"/></svg>
                 <div class="asr-health-warning-body">
@@ -458,6 +468,9 @@
           </details>
         </div>
       </div>
+
+      <!-- Bible Browser (audit-notes/bible-browser.md): built by bible-browser.js -->
+      <div id="view-bible" class="view"></div>
 
       <div id="view-rundown" class="view">
         <div class="view-head">
@@ -1056,7 +1069,37 @@
                 <button type="button" data-ai-provider="anthropic" data-i18n="ai.provider.anthropic">Anthropic</button>
               </div>
             </div>
-            <p id="ai-no-key-hint" class="settings-hint" data-i18n="ai.noKey" hidden>The chosen AI service has no API key. Add it in setup, or choose the other service.</p>
+            <p id="ai-no-key-hint" class="settings-hint" data-i18n="ai.noKey" hidden>The chosen AI service has no API key. Paste an Anthropic key in the field below, or choose the free service (it uses the Groq key from setup).</p>
+            <div class="ai-feature-row">
+              <div class="ai-feature-text">
+                <div class="ai-feature-name" data-i18n="ai.key.title">Anthropic API key</div>
+                <p class="settings-hint" data-i18n="ai.key.hint">Stored encrypted on this computer. Saving restarts the services for a moment.</p>
+                <input id="ai-key-input" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false" />
+              </div>
+              <div>
+                <button id="ai-key-save-btn" type="button" class="btn-secondary btn-small" data-i18n="ai.key.save">Save key</button>
+                <button id="ai-key-remove-btn" type="button" class="btn-secondary btn-small" data-i18n="ai.key.remove">Remove</button>
+              </div>
+            </div>
+            <div class="ai-feature-row">
+              <div class="ai-feature-text">
+                <div class="ai-feature-name" data-i18n="ai.groqKey.title">Groq API key</div>
+                <p class="settings-hint" data-i18n="ai.groqKey.hint">Also used for transcription. Replaces the saved key; saving restarts the services for a moment.</p>
+                <input id="ai-groq-key-input" type="password" placeholder="gsk_…" autocomplete="off" spellcheck="false" />
+              </div>
+              <div>
+                <button id="ai-groq-key-save-btn" type="button" class="btn-secondary btn-small" data-i18n="ai.key.save">Save key</button>
+              </div>
+            </div>
+            <div class="ai-feature-row">
+              <div class="ai-feature-text">
+                <div class="ai-feature-name" data-i18n="ai.status.title">Status</div>
+                <p id="ai-status-line" class="settings-hint" role="status"></p>
+              </div>
+              <div>
+                <button id="ai-test-btn" type="button" class="btn-secondary btn-small" data-i18n="ai.test.button">Test connection</button>
+              </div>
+            </div>
             <div class="ai-feature-row">
               <div class="ai-feature-text">
                 <div class="ai-feature-name" data-i18n="ai.cleanup.title">Smarter transcript cleanup</div>
@@ -1186,5 +1229,6 @@
   <script src="./audio-stream.js"></script>
   <script src="./dashboard.js"></script>
   <script src="./overlay-settings.js"></script>
+  <script src="./bible-browser.js"></script>
 </body>
 </html>

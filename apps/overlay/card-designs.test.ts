@@ -76,12 +76,71 @@ test("optional nature backdrop is local-only, opt-in, muted, and respects reduce
   assert.ok(!/https?:\/\//.test(sourceSetup), "nature media source is never remote")
 })
 
-test("bilingual English uses translation metadata and leaves French styling unchanged", () => {
-  assert.match(overlayJs, /primaryLanguage = FRENCH_TRANSLATIONS[\s\S]*?textEl\.dataset\.language = primaryLanguage/)
-  assert.match(overlayJs, /secondaryLanguage = FRENCH_TRANSLATIONS[\s\S]*?secondaryTextEl\.dataset\.language = secondaryLanguage/)
-  assert.match(overlayHtml, /#verse\.bilingual #verse-text\[data-language="en"\],[\s\S]*?#verse-secondary-text\[data-language="en"\] \{\s*font-family: "Instrument Serif"[\s\S]*?font-style: italic;/)
-  assert.ok(!/#verse\.bilingual[^}]*data-language="fr"/.test(overlayHtml))
-  assert.ok(overlayHtml.includes("#verse:not(.fullscreen) #verse-card") && overlayHtml.includes("max-height: 48vh"))
+test("language-driven typography: English italic and French upright from data-language, in either slot and in every design", () => {
+  // The language comes from the translation id, for the primary AND the secondary block.
+  assert.match(overlayJs, /primaryLanguage = [\s\S]*?languageOf\(verse\.translation\)[\s\S]*?textEl\.dataset\.language = primaryLanguage/)
+  assert.match(overlayJs, /secondaryLanguage = languageOf\(verse\.secondary\.translation\)[\s\S]*?secondaryTextEl\.dataset\.language = secondaryLanguage/)
+  assert.match(overlayJs, /function languageOf\(translation\)[\s\S]*?FRENCH_TRANSLATIONS\.has/)
+  // The reference parts carry their own language too.
+  assert.match(overlayJs, /span\.dataset\.language = part\.language/)
+  // The rule is keyed off data-language only, never off the primary/secondary slot or off bilingual mode.
+  assert.match(overlayHtml, /#verse-card :is\(#verse-text, #verse-secondary-text\)\[data-language="en"\] \{ font-style: italic; \}/)
+  assert.match(overlayHtml, /#verse-card :is\(#verse-text, #verse-secondary-text\)\[data-language="fr"\] \{ font-style: normal; \}/)
+  assert.match(overlayHtml, /#verse-reference \.vc-ref-part\[data-language="en"\] \{ font-style: italic; \}/)
+  assert.match(overlayHtml, /#verse-reference \.vc-ref-part\[data-language="fr"\] \{ font-style: normal; \}/)
+  assert.ok(!/#verse\.bilingual[^{]*data-language/.test(overlayHtml), "italic must not depend on bilingual mode")
+  // The secondary block no longer hard-codes italic (it used to, whatever its language).
+  // (the shared "#verse-text, #verse-secondary-text" rule also starts a line with this selector)
+  const secondaryBase = [...overlayHtml.matchAll(/^ {2}#verse-secondary-text \{[^}]*\}/gm)].map((m) => m[0]).find((r) => r.includes("display: none")) ?? ""
+  assert.ok(secondaryBase.includes("display: none"), "secondary base rule found")
+  assert.ok(!/font-(style|family|weight|size)|line-height|color:|text-shadow/.test(secondaryBase), "the secondary block's own rule carries layout only")
+  // The language rules come after every design rule, so they win ties.
+  const langRule = overlayHtml.indexOf('[data-language="en"] { font-style: italic; }')
+  const lastDesign = overlayHtml.lastIndexOf("#verse.fullscreen #verse-card.tpl-folio {")
+  assert.ok(langRule > lastDesign)
+  // French keeps the family, weight and spacing of English: every design's typographic rule names both blocks.
+  for (const design of OVERLAY_CARD_DESIGNS.filter((d) => d !== "classic")) {
+    for (const m of overlayHtml.matchAll(new RegExp(`#verse-card\\.tpl-${design} #verse-text[,\\s{]`, "g"))) {
+      const rule = overlayHtml.slice(m.index, overlayHtml.indexOf("}", m.index))
+      const header = rule.slice(0, rule.indexOf("{"))
+      // A shared rule lists #verse-secondary-text in its selector (split mirrors its own below).
+      if (/font-family|font-weight|letter-spacing|line-height/.test(rule) && !header.includes("#verse-secondary-text") && design !== "split") {
+        assert.fail(`tpl-${design}: a #verse-text-only typographic rule would style French and English differently: ${rule.slice(0, 80)}`)
+      }
+    }
+  }
+  assert.match(overlayHtml, /#verse-card\.tpl-split #verse-secondary-text \{\s+font-family: "Instrument Sans"/, "split mirrors its sans typography on the second language")
+  assert.ok(overlayHtml.includes("#verse:not(.fullscreen) #verse-card") && overlayHtml.includes("max-height: 52vh"))
+})
+
+test("both language blocks are revealed word by word and the reference is built from per-language spans", () => {
+  assert.match(overlayJs, /renderWords\(secondaryTextEl, String\(verse\.secondary\.text\), false\)/)
+  assert.match(overlayJs, /function referenceParts\(verse, primaryLanguage\)/)
+  assert.match(overlayJs, /function renderReference\(parts\)/)
+  assert.ok(!/refEl\.textContent = formatVerseReference/.test(overlayJs))
+})
+
+test("verse auto-fit is a binary search over the frame-relative box, refit on resize and font load", () => {
+  assert.match(overlayJs, /Motion\.largestFit\(limits\.minFontPx, limits\.maxFontPx, fits\)/)
+  assert.match(overlayJs, /Motion\.fitLimits\([\s\S]*?\{ height: window\.innerHeight \}/)
+  assert.match(overlayJs, /function cardContentHeight\(\)/)
+  assert.doesNotMatch(overlayJs, /verseCardEl\.scrollHeight/, "decorative overflow must not inflate the measured height")
+  assert.match(overlayJs, /addEventListener\("resize", scheduleRefit\)/)
+  assert.match(overlayJs, /document\.fonts\.addEventListener\("loadingdone", scheduleRefit\)/)
+  // One resize listener only (the old file registered two).
+  assert.equal(overlayJs.match(/addEventListener\("resize"/g)?.length, 1)
+})
+
+test("fullscreen cards may use the full safe area, whatever width their design asked for", () => {
+  assert.match(overlayHtml, /#verse\.fullscreen #verse-card\[class\] \{ max-width: 100%; \}/)
+  const rule = overlayHtml.indexOf("#verse.fullscreen #verse-card[class] { max-width: 100%; }")
+  assert.ok(rule > overlayHtml.lastIndexOf("#verse.fullscreen #verse-card.tpl-folio {"))
+  // The reference scales with the verse type through one variable.
+  assert.match(overlayHtml, /--ref-size: clamp\(3\.2vh, calc\(var\(--vc-font, 44px\) \* var\(--ref-k\)\), 11vh\);/)
+  for (const m of overlayHtml.matchAll(/[^{}]*#verse-reference[^{}]*\{([^}]*)\}/g)) {
+    const size = /font-size:\s*([^;]+);/.exec(m[1] ?? "")
+    if (size) assert.equal(size[1], "var(--ref-size)", "every reference size derives from the verse type")
+  }
 })
 
 test("verse auto-fit ignores decorative card overflow and measures displayed text", () => {

@@ -686,13 +686,17 @@ header.topbar {
   display: grid;
   gap: var(--space-3);
   grid-template-columns: minmax(0, 1fr) 340px;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  /* The program row never collapses below a usable monitor: at 1366x768 with the
+     drawer open it used to shrink to ~0 and the 16:9 frame painted over the
+     Heard strip and the Activity log. min-height: min-content makes the view
+     scroll (.shell-content) instead of overlapping. */
+  grid-template-rows: auto minmax(320px, 1fr) auto auto;
   grid-template-areas:
     "command side"
     "program side"
     "heard side"
     "drawer drawer";
-  min-height: 0;
+  min-height: min-content;
 }
 .cell-override { grid-area: command; display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
 .cell-live { grid-area: program; }
@@ -1002,6 +1006,8 @@ header.topbar {
 .asr-provider-line { color: var(--text-faint); font-size: var(--fs-12); margin-top: var(--space-2); }
 .asr-provider-line:empty, .mic-diagnostics:empty { display: none; }
 .mic-diagnostics { color: var(--text-faint); font-size: var(--fs-12); margin-top: var(--space-1); }
+.mic-diag { color: var(--text-faint); font-size: var(--fs-12); margin-top: var(--space-1); display: flex; flex-direction: column; gap: var(--space-1); }
+.mic-diag[data-warn="true"] #mic-diag-warn { color: var(--warn); font-weight: 600; }
 .mic-diagnostics[data-state="degraded"],
 .mic-diagnostics[data-state="disconnected"],
 .mic-diagnostics[data-state="backpressure"],
@@ -1026,13 +1032,15 @@ header.topbar {
 .drawer > summary::-webkit-details-marker { display: none; }
 .drawer-chevron { width: 16px; height: 16px; transition: transform var(--dur-state) var(--ease); }
 .drawer[open] > summary .drawer-chevron { transform: rotate(90deg); }
-.drawer-body { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-3); padding: 0 var(--space-3) var(--space-3); max-height: 320px; }
-.drawer-body > .card { background: var(--bg); max-height: 300px; padding: var(--space-3); }
+.drawer-body { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-3); padding: 0 var(--space-3) var(--space-3); }
+/* Fixed working height: the Activity log scrolls inside its card instead of the
+   card being clipped by a max-height smaller than its own header + buttons. */
+.drawer-body > .card { background: var(--bg); height: 300px; padding: var(--space-3); overflow: auto; }
 .media-header { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin-bottom: var(--space-3); }
 .media-header .card-title { margin: 0 auto 0 0; }
 
-#log { overflow-y: auto; font-size: var(--fs-12); flex: 1; min-height: 0; }
-.log-line { display: flex; gap: var(--space-3); padding: 4px 0; border-bottom: 1px solid var(--border); }
+#log { overflow-y: auto; overscroll-behavior: contain; font-size: var(--fs-12); flex: 1; min-height: 120px; }
+.log-line { display: flex; gap: var(--space-3); padding: 4px 0; border-bottom: 1px solid var(--border); content-visibility: auto; contain-intrinsic-size: auto 24px; }
 .log-time { font-family: var(--font-mono); font-size: var(--fs-12); color: var(--text-faint); flex-shrink: 0; }
 .log-text { color: var(--text-muted); overflow-wrap: anywhere; }
 .log-line.event-sent .log-text { color: var(--accent); }
@@ -1734,6 +1742,7 @@ header.topbar {
   .program-screen { container-type: normal; min-height: 0; flex: none; display: block; aspect-ratio: 16 / 9; }
   .overlay-preview-frame { width: 100%; height: 100%; }
   .drawer-body { grid-template-columns: 1fr; max-height: none; }
+  .drawer-body > .card { height: auto; max-height: 340px; }
   .brand .sub { display: none; }
 }
 @media (max-width: 860px) {
@@ -1817,5 +1826,9 @@ header.topbar {
 .reference-preview[hidden] { display: none; }
 .reference-preview-label { color: var(--text-faint); font-size: var(--fs-12); text-transform: uppercase; letter-spacing: 0.04em; }
 .reference-preview-ref { font-weight: 600; }
-.reference-preview-text { color: var(--text-faint); max-height: 4.5em; overflow: hidden; }
+/* The operator must be able to read the whole verse before sending it: muted (not faint) text, scrolls when long (was clipped at 3 lines). */
+.reference-preview-text { color: var(--text-muted); max-height: 6em; overflow-y: auto; overflow-wrap: anywhere; }
+.reference-preview.is-hint { border-color: var(--warn); }
+.reference-preview.is-hint .reference-preview-label { display: none; }
+.reference-preview.is-hint .reference-preview-text { color: var(--warn-text); }
 .recent-hint { color: var(--text-faint); font-size: var(--fs-12); white-space: nowrap; }

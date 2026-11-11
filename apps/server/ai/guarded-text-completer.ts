@@ -26,8 +26,13 @@ export class AiCircuitOpenError extends Error {
   }
 }
 
-export type AiHelpersReason = "model-unavailable" | "auth" | "repeated-failures"
+export type AiHelpersReason = "model-unavailable" | "auth" | "rate-limited" | "repeated-failures"
 export type AiHelpersStatus = { readonly state: "ok" | "paused" | "unavailable"; readonly reason?: AiHelpersReason }
+
+/** Outcome of the operator-triggered "test connection": one tiny request, a FIXED failure code (never provider text). */
+export type AiTestResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: AiHelpersReason | "timeout" | "network" | "empty" }
 
 /** What a one-time startup check can conclude. "unknown" (network trouble, an unexpected answer) is never treated as a failure. */
 export type AiAvailability = "ok" | "model-unavailable" | "auth" | "unknown"
@@ -58,7 +63,16 @@ const DEFAULT_COOLDOWN_MS = 60_000
 function reasonFor(message: string): AiHelpersReason {
   if (/\((401|403)\)/.test(message)) return "auth"
   if (/\(404\)/.test(message)) return "model-unavailable"
+  // 429 = rate limit, 529 = Anthropic "overloaded": both clear on their own, neither is a bad key.
+  if (/\((429|529)\)/.test(message)) return "rate-limited"
   return "repeated-failures"
+}
+
+function testFailureFor(message: string): Extract<AiTestResult, { ok: false }>["reason"] {
+  if (/timed out/i.test(message)) return "timeout"
+  if (/no answer|token limit/i.test(message)) return "empty"
+  if (!/\(\d{3}\)/.test(message)) return "network"
+  return reasonFor(message)
 }
 
 export class GuardedTextCompleter implements TextCompleter {
@@ -119,6 +133,38 @@ export class GuardedTextCompleter implements TextCompleter {
       this.notify()
     }
     return result
+  }
+
+  /**
+   * Operator-triggered "test connection" (never automatic): one tiny real request that bypasses the
+   * circuit (the operator asked, and it is a single call). Success closes the circuit and clears an
+   * "unavailable" mark; a definitive auth / model failure marks the helpers unavailable like the
+   * startup check does. The result carries a fixed code only, never the provider's error text.
+   */
+  async testConnection(): Promise<AiTestResult> {
+    try {
+      const answer = await this.inner.complete({
+        system: "Connection test. Reply with the single word OK.",
+        user: "ping",
+        maxTokens: 16,
+        timeoutMs: 10_000,
+      })
+      if (!answer.trim()) return { ok: false, reason: "empty" }
+      this.breaker.recordSuccess()
+      this.unavailableReason = null
+      this.notify()
+      return { ok: true }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      const reason = testFailureFor(message)
+      if (reason === "auth" || reason === "model-unavailable") {
+        this.unavailableReason = reason
+        this.lastReason = reason
+        for (let i = 0; i < this.failureThreshold; i++) this.breaker.recordFailure()
+        this.notify(message)
+      }
+      return { ok: false, reason }
+    }
   }
 
   async complete(request: { system: string; user: string; maxTokens?: number; timeoutMs?: number }): Promise<string> {

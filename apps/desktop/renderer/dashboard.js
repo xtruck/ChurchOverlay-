@@ -285,6 +285,7 @@
     history: document.getElementById("view-history"),
     overlay: document.getElementById("view-overlay"),
     settings: document.getElementById("view-settings"),
+    bible: document.getElementById("view-bible"),
   }
   const sermonNotesFeedEl = document.getElementById("sermon-notes-feed")
   const mediaNowPlayingEl = document.getElementById("media-now-playing")
@@ -410,9 +411,13 @@
     const body = document.createElement("span")
     body.className = "log-text"
     body.textContent = text
+    // Very long entries stay readable on hover (the row itself wraps).
+    if (typeof text === "string" && text.length > 120) body.title = text
     line.append(time, body)
     logEl.prepend(line)
-    while (logEl.children.length > 50) logEl.removeChild(logEl.lastChild)
+    // Bounded DOM; 200 lines (not 50) now that telemetry no longer fills it, and
+    // off-screen lines are skipped by content-visibility in the stylesheet.
+    while (logEl.children.length > 200) logEl.removeChild(logEl.lastChild)
   }
 
   // Bounded (AGENTS.md section 36): at most MAX_TOASTS on screen, and an
@@ -654,6 +659,7 @@
   const aiHelpersIndicatorEl = document.getElementById("ai-helpers-indicator")
   let aiHelpersStatus = { state: "ok" }
   function renderAiHelpersStatus() {
+    renderAiStatusLine() // the Settings status line mirrors the same server state
     if (!aiHelpersIndicatorEl) return
     const { state, reason } = aiHelpersStatus
     aiHelpersIndicatorEl.hidden = state === "ok"
@@ -661,7 +667,14 @@
       aiHelpersIndicatorEl.textContent = ""
       return
     }
-    const key = reason === "auth" ? "ai.helpers.auth" : reason === "model-unavailable" ? "ai.helpers.model" : "ai.helpers.paused"
+    const key =
+      reason === "auth"
+        ? "ai.helpers.auth"
+        : reason === "model-unavailable"
+          ? "ai.helpers.model"
+          : reason === "rate-limited"
+            ? "ai.helpers.rateLimited"
+            : "ai.helpers.paused"
     aiHelpersIndicatorEl.textContent = t(key)
   }
   window.addEventListener("churchoverlay:languagechange", renderAiHelpersStatus)
@@ -830,6 +843,41 @@
     micStatNoiseEl.textContent = formatDb(payload.noiseDbfs)
     micStatGainEl.textContent = payload.autoGain ? "+" + Math.round(payload.gainDb) + " dB" : t("micHealth.gainOff")
     autoGainToggleEl.checked = payload.autoGain
+    const noiseModeSelectEl = document.getElementById("noise-mode-select")
+    if (noiseModeSelectEl && payload.noiseMode && noiseModeSelectEl.value !== payload.noiseMode) {
+      noiseModeSelectEl.value = payload.noiseMode
+    }
+    renderMicDiagnostics(payload)
+  }
+  // What the gate and the guards are doing, so a deaf app is visibly different from a quiet room.
+  function renderMicDiagnostics(payload) {
+    const diagEl = document.getElementById("mic-diag")
+    if (!diagEl) return
+    const drops = payload.dropsPerMinute
+    if (typeof payload.gateThreshold !== "number" || !drops) {
+      diagEl.style.display = "none"
+      return
+    }
+    diagEl.style.display = ""
+    document.getElementById("mic-diag-stats").textContent = t("micHealth.diagStats", {
+      threshold: payload.gateThreshold,
+      floor: payload.noiseFloor,
+      screen: drops.screen,
+      segment: drops.segment,
+      language: drops.language,
+      offLanguage: drops.offLanguage,
+    })
+    const warnings = Array.isArray(payload.warnings) ? payload.warnings : []
+    const warnEl = document.getElementById("mic-diag-warn")
+    warnEl.textContent = warnings.map((code) => t("micHealth.warn." + code)).join(" ")
+    diagEl.dataset.warn = warnings.length > 0 ? "true" : "false"
+  }
+  const noiseModeSelectInitEl = document.getElementById("noise-mode-select")
+  if (noiseModeSelectInitEl) {
+    noiseModeSelectInitEl.addEventListener("change", () => {
+      sendJson({ id: crypto.randomUUID(), type: "asr:noise-mode", timestamp: Date.now(), payload: { mode: noiseModeSelectInitEl.value } })
+      log(t("log.noiseMode") + ": " + noiseModeSelectInitEl.value, "sent")
+    })
   }
   autoGainToggleEl.addEventListener("change", () => {
     sendJson({ id: crypto.randomUUID(), type: "mic:auto-gain", timestamp: Date.now(), payload: { enabled: autoGainToggleEl.checked } })
@@ -1215,7 +1263,117 @@
         button.disabled = !hasKey
       })
     })
+    if (aiTestBtnEl) aiTestBtnEl.disabled = !hasKey || aiTesting
+    renderAiStatusLine()
   }
+
+  // Operator-facing AI status: off / needs key / key refused / rate limited / working. Built only
+  // from fixed codes (server state + the test result), never provider error text.
+  const aiStatusLineEl = document.getElementById("ai-status-line")
+  const aiTestBtnEl = document.getElementById("ai-test-btn")
+  const aiKeyInputEl = document.getElementById("ai-key-input")
+  const aiKeySaveBtnEl = document.getElementById("ai-key-save-btn")
+  const aiKeyRemoveBtnEl = document.getElementById("ai-key-remove-btn")
+  let aiTesting = false
+  let aiTestResult = null // { ok: true, at: Date } | { ok: false, reason }
+  const AI_FAILURE_KEYS = {
+    auth: "ai.status.auth",
+    "model-unavailable": "ai.status.model",
+    "rate-limited": "ai.status.rateLimited",
+    "repeated-failures": "ai.status.paused",
+    timeout: "ai.status.timeout",
+    network: "ai.status.network",
+    empty: "ai.status.empty",
+  }
+  function renderAiStatusLine() {
+    if (!aiStatusLineEl) return
+    let key = "ai.status.ready"
+    let params
+    if (!asrStatus || !asrStatus.aiProvider) key = "ai.status.noProvider"
+    else if (!asrStatus.aiReady) key = "ai.status.noKey"
+    else if (aiTesting) key = "ai.status.testing"
+    else if (aiTestResult && aiTestResult.ok) {
+      key = "ai.status.working"
+      params = { time: aiTestResult.at.toLocaleTimeString() }
+    } else if (aiTestResult && !aiTestResult.ok) key = AI_FAILURE_KEYS[aiTestResult.reason] || "ai.status.failed"
+    else if (aiHelpersStatus.state !== "ok") key = AI_FAILURE_KEYS[aiHelpersStatus.reason] || "ai.status.paused"
+    aiStatusLineEl.textContent = t(key, params)
+  }
+  function resetAiTestState() {
+    aiTestResult = null
+    aiHelpersStatus = { state: "ok" } // the server restates a non-ok state after the restart
+    renderAiHelpersStatus()
+  }
+  if (aiTestBtnEl) {
+    aiTestBtnEl.addEventListener("click", () => {
+      if (aiTesting) return
+      aiTesting = true
+      aiTestBtnEl.disabled = true
+      renderAiStatusLine()
+      window.churchOverlay
+        .testAiConnection()
+        .then((result) => {
+          aiTestResult = result && result.ok ? { ok: true, at: new Date() } : { ok: false, reason: (result && result.reason) || "failed" }
+        })
+        .catch(() => {
+          aiTestResult = { ok: false, reason: "failed" }
+        })
+        .finally(() => {
+          aiTesting = false
+          aiTestBtnEl.disabled = !(asrStatus && asrStatus.aiReady)
+          renderAiStatusLine()
+        })
+    })
+  }
+  function saveAiKey(value, successKey) {
+    if (!aiKeySaveBtnEl) return
+    aiKeySaveBtnEl.disabled = true
+    if (aiKeyRemoveBtnEl) aiKeyRemoveBtnEl.disabled = true
+    window.churchOverlay
+      .setAiKey(value)
+      .then((result) => {
+        if (!result || !result.ok) {
+          log(t(result && result.error === "empty" ? "ai.key.empty" : "ai.key.invalid"), "error", { toast: true })
+          return
+        }
+        aiKeyInputEl.value = ""
+        resetAiTestState()
+        renderAsrStatus(result.status)
+        log(t(successKey), "sent", { toast: true })
+      })
+      .catch((err) => log(t("ai.toggleFailed", { error: err.message }), "error"))
+      .finally(() => {
+        aiKeySaveBtnEl.disabled = false
+        if (aiKeyRemoveBtnEl) aiKeyRemoveBtnEl.disabled = false
+      })
+  }
+  // Groq key: replace-only (it is also the transcription key). Never echoed back; the field is cleared on success.
+  const aiGroqKeyInputEl = document.getElementById("ai-groq-key-input")
+  const aiGroqKeySaveBtnEl = document.getElementById("ai-groq-key-save-btn")
+  if (aiGroqKeyInputEl && aiGroqKeySaveBtnEl) {
+    aiGroqKeySaveBtnEl.addEventListener("click", () => {
+      aiGroqKeySaveBtnEl.disabled = true
+      window.churchOverlay
+        .setGroqKey(aiGroqKeyInputEl.value)
+        .then((result) => {
+          if (!result || !result.ok) {
+            log(t(result && result.error === "empty" ? "ai.key.empty" : "ai.groqKey.invalid"), "error", { toast: true })
+            return
+          }
+          aiGroqKeyInputEl.value = ""
+          resetAiTestState()
+          renderAsrStatus(result.status)
+          log(t("ai.groqKey.saved"), "sent", { toast: true })
+        })
+        .catch((err) => log(t("ai.toggleFailed", { error: err.message }), "error"))
+        .finally(() => {
+          aiGroqKeySaveBtnEl.disabled = false
+        })
+    })
+  }
+  if (aiKeySaveBtnEl && aiKeyInputEl) aiKeySaveBtnEl.addEventListener("click", () => saveAiKey(aiKeyInputEl.value, "ai.key.saved"))
+  if (aiKeyRemoveBtnEl) aiKeyRemoveBtnEl.addEventListener("click", () => saveAiKey("", "ai.key.removed"))
+  window.addEventListener("churchoverlay:languagechange", renderAiStatusLine)
 
   function renderAsrStatus(status) {
     asrStatus = status || null
@@ -2880,6 +3038,28 @@
     }
   }
 
+  // Bible Browser bridge (bible-browser.js, loaded after this file): the only door that view
+  // has to the operator WebSocket. It can send commands and listen to what the server pushes;
+  // it never sees the token or the socket itself.
+  const bridgeListeners = new Set()
+  function notifyBridge(message) {
+    for (const listener of bridgeListeners) {
+      try {
+        listener(message)
+      } catch (err) {
+        console.error("Bible Browser listener failed", err)
+      }
+    }
+  }
+  window.ChurchOverlayBridge = {
+    send: (message) => sendJson(message, { reportDisconnected: false }),
+    isConnected: () => Boolean(ws && ws.readyState === WebSocket.OPEN),
+    subscribe: (listener) => {
+      bridgeListeners.add(listener)
+      return () => bridgeListeners.delete(listener)
+    },
+  }
+
   referenceInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault()
@@ -2891,6 +3071,8 @@
     const reference = parseReference(referenceInput.value)
     if (!reference) {
       document.getElementById("reference-field").classList.add("invalid")
+      // Explain next to the box (the toast alone vanishes before a hurried operator reads it).
+      showReferenceHint(t("reference.formatHint"))
       log(t("log.parseError", { text: referenceInput.value }), "error")
       return
     }
@@ -3024,6 +3206,23 @@
   micStartBtn.addEventListener("click", () => startMic())
   micStopBtn.addEventListener("click", () => stopMic())
 
+  const LOG_QUIET_TYPES = new Set(["mic:health", "transcript:partial", "status:update", "verse:preview-result", "rundown:state", "bible:chapter-result", "bible:search-result"])
+
+  // One short, operator-readable detail for the Activity log (textContent only).
+  function describeReceived(message) {
+    const p = message.payload
+    if (!p) return ""
+    try {
+      if ((message.type === "transcript:final" || message.type === "detector:near-miss") && typeof p.text === "string") {
+        return p.text.length > 140 ? p.text.slice(0, 140) + "…" : p.text
+      }
+      if ((message.type === "verse:show" || message.type === "verse:pending") && p.reference) return formatDisplayedReference(p)
+    } catch {
+      // A malformed payload only loses its detail line.
+    }
+    return ""
+  }
+
   function connect(port, token) {
     setStatus(t("status.connecting"), "disconnected")
     ws = new WebSocket("ws://127.0.0.1:" + port, [token])
@@ -3038,6 +3237,7 @@
         serverMicMayBeRunning = !sendJson({ id: crypto.randomUUID(), type: "mic:stop", timestamp: Date.now(), payload: null })
       }
       renderAudioTransportStatus()
+      notifyBridge({ type: "bridge:open" })
     })
     ws.addEventListener("close", () => {
       renderAudioTransportStatus()
@@ -3055,12 +3255,16 @@
       } catch {
         return
       }
+      notifyBridge(message)
       // message.type is a wire-protocol identifier (e.g. "verse:show"),
       // not user-facing text — it stays in English regardless of UI
       // language, same as any other protocol/technical identifier.
       // High-frequency telemetry would bury real events in the log.
-      if (message.type !== "mic:health" && message.type !== "transcript:partial") {
-        log(t("log.received", { type: message.type }), "received")
+      // status:update and verse:preview-result fire constantly / per keystroke and only
+      // pushed real events (verses, transcripts) out of the log window.
+      if (!LOG_QUIET_TYPES.has(message.type)) {
+        const detail = describeReceived(message)
+        log(detail ? t("log.receivedDetail", { type: message.type, detail }) : t("log.received", { type: message.type }), "received")
       }
 
       if (message.type === "transcript:partial" || message.type === "transcript:final") {
@@ -3238,7 +3442,8 @@
   const shortcutsModalEl = document.getElementById("shortcuts-modal")
   const shortcutsBtn = document.getElementById("shortcuts-btn")
   const shortcutsCloseBtn = document.getElementById("shortcuts-close-btn")
-  const VIEW_ORDER = ["live", "rundown", "media", "overlay", "history", "settings"]
+  // "bible" is last so every existing Ctrl+1..6 shortcut keeps its meaning (it is Ctrl+7).
+  const VIEW_ORDER = ["live", "rundown", "media", "overlay", "history", "settings", "bible"]
 
   function openShortcuts() {
     shortcutsModalEl.style.display = "flex"
@@ -3498,7 +3703,7 @@
     } else if (event.altKey && !ctrl && !event.shiftKey && (key === "ArrowLeft" || key === "ArrowRight")) {
       event.preventDefault()
       if (!event.repeat) stepVerse(key === "ArrowRight" ? 1 : -1)
-    } else if (ctrl && !event.shiftKey && !event.altKey && /^(Digit|Numpad)[1-6]$/.test(event.code)) {
+    } else if (ctrl && !event.shiftKey && !event.altKey && /^(Digit|Numpad)[1-7]$/.test(event.code)) {
       // event.code, not key: on a French AZERTY keyboard the digit row types
       // "&", "\u00e9", ... unless Shift is held, so key never matched there.
       event.preventDefault()
@@ -3545,8 +3750,19 @@
   // server has already said does not exist instead of sending it to be dropped.
   let previewNotFoundSeq = null
 
+  // Format help in the preview slot (shown when Show is pressed on text that is not
+  // "Book Chapter:Verse"); the next keystroke or answer replaces it.
+  function showReferenceHint(message) {
+    previewNotFoundSeq = null
+    previewEl.classList.add("is-hint")
+    previewEl.hidden = false
+    previewRefEl.textContent = ""
+    previewTextEl.textContent = message
+  }
+
   function hidePreview() {
     previewNotFoundSeq = null
+    previewEl.classList.remove("is-hint")
     previewEl.hidden = true
     previewRefEl.textContent = ""
     previewTextEl.textContent = ""
@@ -3572,6 +3788,7 @@
     // Only the newest answer is shown.
     if (!payload || payload.seq !== previewSeq) return
     previewNotFoundSeq = !payload.verse && payload.reason === "not-found" ? payload.seq : null
+    previewEl.classList.remove("is-hint")
     previewEl.hidden = false
     if (payload.verse) {
       previewRefEl.textContent = formatDisplayedReference(payload.verse)

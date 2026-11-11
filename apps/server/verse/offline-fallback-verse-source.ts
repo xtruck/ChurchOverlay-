@@ -1,4 +1,4 @@
-import type { Verse, VerseReference, VerseSource } from "../../../packages/contracts"
+import type { ChapterCapableSource, Verse, VerseReference, VerseSource } from "../../../packages/contracts"
 import type { Logger } from "../../../packages/shared/logger"
 import { CircuitBreaker } from "./circuit-breaker"
 
@@ -44,6 +44,37 @@ export class OfflineFallbackVerseSource implements VerseSource {
     this.offline = options.offline
     this.logger = options.logger
     this.circuitBreaker = options.circuitBreaker ?? new CircuitBreaker()
+  }
+
+  /**
+   * Bible Browser: the chapter-level twin of getVerse() with the same breaker and
+   * fallback rules. A primary without getChapter() is simply not asked; the bundled
+   * text answers instead (it is the same translation).
+   */
+  async getChapter(book: string, chapter: number): Promise<readonly Verse[] | null> {
+    const offline = this.offline as Partial<ChapterCapableSource>
+    const primary = this.primary as Partial<ChapterCapableSource>
+    if (typeof offline.getChapter !== "function") throw new Error("OfflineFallbackVerseSource: offline source cannot read chapters")
+    if (typeof primary.getChapter !== "function" || !this.circuitBreaker.canProceed()) {
+      return offline.getChapter(book, chapter)
+    }
+    try {
+      const verses = await primary.getChapter(book, chapter)
+      this.circuitBreaker.recordSuccess()
+      this.openStateLogged = false
+      return verses
+    } catch (err) {
+      this.circuitBreaker.recordFailure()
+      this.logger?.warn({
+        component: "offline-fallback-verse-source",
+        event: "primary-chapter-failed-using-offline",
+        metadata: { book, chapter },
+        error: err instanceof Error ? err.message : String(err),
+      })
+      const fallback = await offline.getChapter(book, chapter)
+      if (fallback === null) throw err // unknown, not "not found" (same rule as getVerse)
+      return fallback
+    }
   }
 
   async getVerse(reference: VerseReference): Promise<Verse | null> {

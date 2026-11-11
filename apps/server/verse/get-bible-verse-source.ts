@@ -1,4 +1,4 @@
-import type { Verse, VerseReference, VerseSource } from "../../../packages/contracts"
+import type { ChapterCapableSource, Verse, VerseReference, VerseSource } from "../../../packages/contracts"
 import { BOOK_CATALOG } from "./book-catalog"
 import { isPlainObject } from "../../../packages/shared/type-guards"
 
@@ -47,7 +47,7 @@ import { isPlainObject } from "../../../packages/shared/type-guards"
 const DEFAULT_BASE_URL = "https://api.getbible.net/v2"
 const DEFAULT_TRANSLATION = "ls1910"
 
-export class GetBibleVerseSource implements VerseSource {
+export class GetBibleVerseSource implements VerseSource, ChapterCapableSource {
   private readonly fetchImpl: typeof fetch
   private readonly translation: string
   private readonly baseUrl: string
@@ -63,10 +63,29 @@ export class GetBibleVerseSource implements VerseSource {
   }
 
   async getVerse(reference: VerseReference): Promise<Verse | null> {
-    const bookNr = bookNumberFor(reference.book)
+    const body = await this.fetchChapterBody(reference.book, reference.chapter)
+    if (body === null) return null
+    return parseChapterResponse(body, reference, this.translation)
+  }
+
+  /**
+   * Bible Browser (audit-notes/bible-browser.md): the same single request getVerse()
+   * makes, but every verse of the chapter is returned (the API always sends the whole
+   * chapter anyway). Same null-vs-throw contract; a malformed entry fails the whole
+   * chapter rather than showing a partially trusted one.
+   */
+  async getChapter(book: string, chapter: number): Promise<readonly Verse[] | null> {
+    const body = await this.fetchChapterBody(book, chapter)
+    if (body === null) return null
+    return parseWholeChapter(body, book, chapter, this.translation)
+  }
+
+  /** null = confirmed not found (unknown book, HTTP 404); throws on any real failure. */
+  private async fetchChapterBody(book: string, chapter: number): Promise<unknown> {
+    const bookNr = bookNumberFor(book)
     if (bookNr === null) return null // not a book this catalog knows — same as any other "not found"
 
-    const url = `${this.baseUrl}/${this.translation}/${bookNr}/${reference.chapter}.json`
+    const url = `${this.baseUrl}/${this.translation}/${bookNr}/${chapter}.json`
 
     let response: Response
     try {
@@ -84,15 +103,35 @@ export class GetBibleVerseSource implements VerseSource {
       throw new Error(`GetBibleVerseSource: unexpected HTTP status ${response.status}`)
     }
 
-    let body: unknown
     try {
-      body = await response.json()
+      return await response.json()
     } catch {
       throw new Error("GetBibleVerseSource: response body was not valid JSON")
     }
-
-    return parseChapterResponse(body, reference, this.translation)
   }
+}
+
+function parseWholeChapter(body: unknown, book: string, chapter: number, translation: string): Verse[] {
+  if (!isPlainObject(body)) {
+    throw new Error("GetBibleVerseSource: response was not a JSON object")
+  }
+  const verses = body.verses
+  if (!Array.isArray(verses)) {
+    throw new Error("GetBibleVerseSource: response was missing a verses array")
+  }
+  const result: Verse[] = []
+  for (const entry of verses) {
+    if (!isPlainObject(entry) || typeof entry.verse !== "number" || !Number.isInteger(entry.verse) || entry.verse < 1) {
+      throw new Error("GetBibleVerseSource: chapter contained a malformed verse entry")
+    }
+    const text = entry.text
+    if (typeof text !== "string" || text.trim().length === 0) {
+      throw new Error("GetBibleVerseSource: chapter contained a verse without text")
+    }
+    result.push({ reference: { book, chapter, verse: entry.verse }, text: text.trim(), translation, source: "getbible.net" })
+  }
+  result.sort((a, b) => a.reference.verse - b.reference.verse)
+  return result
 }
 
 function bookNumberFor(bookId: string): number | null {

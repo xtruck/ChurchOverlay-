@@ -220,12 +220,24 @@ as a bug.
   build-time globbing) and `http-cache-semantics` (GHSA-ch52-4w7c-c8xp, via `got` downloads).
   Every other high/critical advisory still fails the build. Remove an entry when a fix ships.
 
+- The Anthropic key is write-only from the renderer: the `set-ai-key` IPC handler validates
+  its shape (`apps/server/ai/ai-key.ts`), stores it through `ConfigStore` (encrypted with
+  `safeStorage`) and restarts the services, and no IPC channel or WebSocket event ever returns
+  it — the renderer only receives a boolean (`hasAnthropic`). `test-ai-connection` returns a
+  fixed reason code, never provider text. Neither handler logs the key.
+- The Bible browser commands (`bible:chapter`, `bible:search`, `verse:navigate`) and
+  `asr:noise-mode` are operator-only WebSocket commands with bounded payloads; their results
+  are broadcast to operators only, never to viewers or the overlay. Because the phone remote
+  holds the operator token (item 5 above), a paired phone can also call them. They only read
+  Bible text, move the on-screen position or change the transcription strictness — they
+  never bypass `KnownValidVerseIndex`.
+
 ## Known low-severity hardening opportunities (not implemented)
 
 Found by a read-only review (ARCHITECTURE.md section 134); none is a demonstrated exploit, all are defence in depth. (The web build's static pages now send `Referrer-Policy: no-referrer` and `X-Content-Type-Options: nosniff`, like the desktop static server.)
 
 - The WebSocket upgrade does not check the `Origin` header. A hostile web page can reach `127.0.0.1` but cannot authenticate without a token. A `verifyClient` check rejecting foreign origins would close this.
-- Sensitive IPC handlers (for example `get-operator-connection-info`, `complete-setup`) do not assert `event.senderFrame.url` is the dashboard page. The navigation guard makes a foreign page in that window unlikely.
+- Sensitive IPC handlers (for example `get-operator-connection-info`, `complete-setup`, `set-ai-key`, `test-ai-connection`) do not assert `event.senderFrame.url` is the dashboard page. The navigation guard makes a foreign page in that window unlikely.
 - Item 5 above says the renderer receives the operator token "and nothing else"; `get-operator-connection-info` also returns the port.
 
 ## Dependency advisories (GitHub Dependabot, reviewed 2026-10-12)

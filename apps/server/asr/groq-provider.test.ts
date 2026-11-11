@@ -12,6 +12,7 @@ import {
 } from "./groq-provider"
 import type { AudioFrame, TranscriptResult } from "../../../packages/contracts"
 import { Logger } from "../../../packages/shared/logger"
+import { TranscriptionPolicy } from "./noise-mode"
 
 function capturingLogger(): { logger: Logger; lines: unknown[] } {
   const lines: unknown[] = []
@@ -248,7 +249,7 @@ test("GroqProvider: sends the expected multipart fields (model, response_format)
 
   const form = request?.init?.body as FormData
   assert.equal(form.get("model"), "whisper-large-v3")
-  assert.equal(form.get("response_format"), "json")
+  assert.equal(form.get("response_format"), "verbose_json")
   assert.ok(form.get("file") instanceof Blob)
 })
 
@@ -1169,4 +1170,184 @@ test("GroqProvider: transcription requests never overlap and transcripts keep th
   assert.equal(maxInFlight, 1)
   assert.deepEqual(results.map((r) => r.text), ["chunk 1", "chunk 2", "chunk 3"])
   assert.deepEqual(results.map((r) => r.sequence), [1, 2, 3])
+})
+
+// --- French/English only, noise and tongues (language lock, segment scores) ---
+
+function seg(text: string, scores: { no?: number; lp?: number; cr?: number } = {}) {
+  return { text, no_speech_prob: scores.no ?? 0.02, avg_logprob: scores.lp ?? -0.3, compression_ratio: scores.cr ?? 1.2 }
+}
+
+test("GroqProvider (bilingual): a clip Groq reports as another language is dropped when nothing is locked, with a counted reason", async () => {
+  const { logger, lines } = capturingLogger()
+  const results: TranscriptResult[] = []
+  const provider = new GroqProvider({
+    apiKey: "k",
+    chunkDurationMs: 1000,
+    logger,
+    fetchImpl: fakeFetch(() => jsonResponse({ text: "Gracias hermanos por todo", language: "spanish", segments: [seg("Gracias hermanos por todo")] })),
+  })
+  provider.onTranscript((r) => results.push(r))
+  await provider.start()
+  await provider.sendAudio(oneSecondFrame(0))
+  assert.equal(results.length, 0)
+  assert.equal(provider.getDropCounts().language, 1)
+  const dropped = lines.find((l) => (l as { event: string }).event === "groq.chunk-dropped") as { metadata: { reason: string } }
+  assert.equal(dropped.metadata.reason, "language")
+})
+
+test("GroqProvider (bilingual): the first clip detects, later clips are sent with the locked language, and a wrong-language re-detection retries with the lock", async () => {
+  const captured: CapturedRequest[] = []
+  const replies = [
+    { text: "Ouvrez vos Bibles", language: "french" }, // detection clip -> locks fr
+    { text: "Jean chapitre trois", language: "french" }, // explicit fr
+    { text: "verset seize", language: "french" }, // explicit fr
+    { text: "Obrigado irmãos nosso Deus", language: "portuguese" }, // scheduled re-detection says Portuguese -> retried with fr
+    { text: "Jean chapitre trois verset seize", language: "french" },
+  ]
+  let call = 0
+  const results: TranscriptResult[] = []
+  const provider = new GroqProvider({
+    apiKey: "k",
+    chunkDurationMs: 2000,
+    fetchImpl: fakeFetch(() => jsonResponse(replies[call++] ?? { text: "" }), captured),
+  })
+  provider.onTranscript((r) => results.push(r))
+  await provider.start()
+  for (let i = 0; i < 4; i++) await provider.sendAudio(frameForMs(2000, i))
+  const languageOf = (i: number) => (captured[i]?.init?.body as FormData).get("language")
+  assert.equal(languageOf(0), null, "first clip auto-detects")
+  assert.equal(languageOf(1), "fr", "second clip uses the lock")
+  assert.equal(languageOf(2), "fr")
+  assert.equal(languageOf(3), null, "fourth clip is a scheduled re-detection")
+  assert.equal(languageOf(4), "fr", "wrong-language detection is retried once with the lock")
+  assert.equal(captured.length, 5)
+  assert.deepEqual(results.map((r) => r.text), ["Ouvrez vos Bibles", "Jean chapitre trois", "verset seize", "Jean chapitre trois verset seize"])
+  assert.equal(provider.getDropCounts().language, undefined, "the retry with the lock rescued the clip: nothing was lost")
+})
+
+test("GroqProvider (explicit language): the language parameter is sent and no language lock logic runs", async () => {
+  const captured: CapturedRequest[] = []
+  const provider = new GroqProvider({
+    apiKey: "k",
+    language: "en",
+    chunkDurationMs: 1000,
+    fetchImpl: fakeFetch(() => jsonResponse({ text: "hello", language: "english" }), captured),
+  })
+  provider.onTranscript(() => {})
+  await provider.start()
+  await provider.sendAudio(oneSecondFrame(0))
+  await provider.sendAudio(oneSecondFrame(1))
+  assert.equal(captured.length, 2)
+  for (const request of captured) assert.equal((request.init?.body as FormData).get("language"), "en")
+})
+
+test("GroqProvider: tongues mode drops a low-confidence segment that normal mode keeps; the kept segments rebuild the text", async () => {
+  const body = {
+    text: "Jean chapitre trois shalala kandara",
+    language: "french",
+    segments: [seg("Jean chapitre trois"), seg("shalala kandara", { no: 0.2, lp: -1.3 })],
+  }
+  const run = async (mode: "normal" | "tongues") => {
+    const results: TranscriptResult[] = []
+    const provider = new GroqProvider({
+      apiKey: "k",
+      language: "fr",
+      chunkDurationMs: 1000,
+      policy: new TranscriptionPolicy(mode),
+      fetchImpl: fakeFetch(() => jsonResponse(body)),
+    })
+    provider.onTranscript((r) => results.push(r))
+    await provider.start()
+    await provider.sendAudio(oneSecondFrame(0))
+    return { results, provider }
+  }
+  const normal = await run("normal")
+  assert.equal(normal.results[0]?.text, "Jean chapitre trois shalala kandara")
+  const tongues = await run("tongues")
+  assert.equal(tongues.results[0]?.text, "Jean chapitre trois")
+  assert.equal(tongues.provider.getDropCounts()["low-confidence"], 1)
+})
+
+test("GroqProvider: a reply without language or segments (older shape) behaves exactly as before", async () => {
+  const results: TranscriptResult[] = []
+  const provider = new GroqProvider({ apiKey: "k", chunkDurationMs: 1000, fetchImpl: fakeFetch(() => jsonResponse({ text: "Jean 3 16" })) })
+  provider.onTranscript((r) => results.push(r))
+  await provider.start()
+  await provider.sendAudio(oneSecondFrame(0))
+  assert.equal(results[0]?.text, "Jean 3 16")
+})
+
+// --- Fix round: a wrong language LABEL must not lose real French; valve; ledger ---
+
+test("GroqProvider (bilingual): a French reference labelled 'portuguese' is kept (the text decides, not the label) and does not lock", async () => {
+  const { logger, lines } = capturingLogger()
+  const results: TranscriptResult[] = []
+  const captured: CapturedRequest[] = []
+  const provider = new GroqProvider({
+    apiKey: "k",
+    chunkDurationMs: 1000,
+    logger,
+    fetchImpl: fakeFetch(() => jsonResponse({ text: "Romains 8 28", language: "portuguese" }), captured),
+  })
+  provider.onTranscript((r) => results.push(r))
+  await provider.start()
+  await provider.sendAudio(oneSecondFrame(0))
+  assert.deepEqual(results.map((r) => r.text), ["Romains 8 28"])
+  assert.equal(captured.length, 1, "no retry for text that does not read as Spanish/Portuguese")
+  assert.equal(provider.getDropCounts().language, undefined)
+  assert.ok(lines.some((l) => (l as { event: string }).event === "groq.language-label-ignored"))
+})
+
+test("GroqProvider (bilingual): text that really is Spanish is retried once with French and the retry is used", async () => {
+  const captured: CapturedRequest[] = []
+  const replies = [
+    { text: "Gracias hermanos por todo", language: "spanish" },
+    { text: "Merci mes frères pour tout", language: "french" },
+  ]
+  let call = 0
+  const results: TranscriptResult[] = []
+  const provider = new GroqProvider({ apiKey: "k", chunkDurationMs: 1000, fetchImpl: fakeFetch(() => jsonResponse(replies[call++] ?? { text: "" }), captured) })
+  provider.onTranscript((r) => results.push(r))
+  await provider.start()
+  await provider.sendAudio(oneSecondFrame(0))
+  assert.equal(captured.length, 2)
+  assert.equal((captured[1]?.init?.body as FormData).get("language"), "fr")
+  assert.deepEqual(results.map((r) => r.text), ["Merci mes frères pour tout"])
+})
+
+test("GroqProvider (bilingual): after 5 language drops in a row the guard is bypassed, warned about, shown in the ledger, and closes when a clip passes", async () => {
+  const { logger, lines } = capturingLogger()
+  const policy = new TranscriptionPolicy()
+  const third = { text: "Gracias hermanos por todo", language: "spanish" }
+  const replies: unknown[] = []
+  for (let i = 0; i < 6; i++) replies.push(third, third) // detection + retry, six chunks
+  replies.push({ text: "Jean chapitre trois", language: "french" })
+  let call = 0
+  const results: TranscriptResult[] = []
+  const provider = new GroqProvider({ apiKey: "k", chunkDurationMs: 1000, logger, policy, fetchImpl: fakeFetch(() => jsonResponse(replies[call++] ?? { text: "" })) })
+  provider.onTranscript((r) => results.push(r))
+  await provider.start()
+  for (let i = 0; i < 6; i++) await provider.sendAudio(oneSecondFrame(i))
+  assert.equal(provider.getDropCounts().language, 5)
+  assert.equal(results.length, 1, "the sixth clip is let through instead of dropped")
+  assert.deepEqual(policy.ledger.openValves(), ["groq-language"])
+  assert.ok(lines.some((l) => (l as { event: string }).event === "groq.language-guard-bypassed"))
+  await provider.sendAudio(oneSecondFrame(7))
+  assert.deepEqual(policy.ledger.openValves(), [], "a clip that passes closes the valve")
+  assert.equal(policy.ledger.perMinute().language, 5)
+})
+
+test("GroqProvider: drops are logged at info (rate limited) and a short reference is rescued from the confidence floor", async () => {
+  const { logger, lines } = capturingLogger()
+  const policy = new TranscriptionPolicy("tongues")
+  const body = { text: "Jean 3 16", language: "french", segments: [{ text: "Jean 3 16", avg_logprob: -1.4, no_speech_prob: 0.2, compression_ratio: 1.1 }] }
+  const results: TranscriptResult[] = []
+  const provider = new GroqProvider({ apiKey: "k", language: "fr", chunkDurationMs: 1000, logger, policy, fetchImpl: fakeFetch(() => jsonResponse(body)) })
+  provider.onTranscript((r) => results.push(r))
+  await provider.start()
+  await provider.sendAudio(oneSecondFrame(0))
+  assert.deepEqual(results.map((r) => r.text), ["Jean 3 16"])
+  const rescued = lines.find((l) => (l as { event: string }).event === "groq.segment-kept-reference") as { level: string } | undefined
+  assert.equal(rescued?.level, "info")
 })

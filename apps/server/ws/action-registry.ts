@@ -32,6 +32,14 @@ import type {
   WsRole,
 } from "../../../packages/contracts"
 import { isPlainObject } from "../../../packages/shared/type-guards"
+import {
+  isBibleChapterRequestPayload,
+  isBibleChapterResultPayload,
+  isBibleSearchRequestPayload,
+  isBibleSearchResultPayload,
+  isVerseNavigatePayload,
+  isVerseNavigateResultPayload,
+} from "./bible-browser-payloads"
 
 /**
  * v1 WS Action Registry (ARCHITECTURE.md section 30, section 50 fourth
@@ -89,6 +97,10 @@ function isMicHealthPayload(payload: unknown): payload is MicHealthPayload {
 
 function isMicAutoGainPayload(payload: unknown): payload is MicAutoGainPayload {
   return isPlainObject(payload) && typeof payload.enabled === "boolean" && Object.keys(payload).length === 1
+}
+
+function isAsrNoiseModePayload(payload: unknown): payload is { readonly mode: "normal" | "noisy" | "tongues" } {
+  return isPlainObject(payload) && Object.keys(payload).length === 1 && (payload.mode === "normal" || payload.mode === "noisy" || payload.mode === "tongues")
 }
 
 function isNullPayload(payload: unknown): payload is null {
@@ -283,6 +295,7 @@ function isAiHelpersField(value: unknown): boolean {
     (value.reason === undefined ||
       value.reason === "model-unavailable" ||
       value.reason === "auth" ||
+      value.reason === "rate-limited" ||
       value.reason === "repeated-failures")
   )
 }
@@ -577,6 +590,37 @@ export const ACTION_REGISTRY: Readonly<Record<WsCommandType | WsEventType, Actio
     allowedSenders: [],
     validatePayload: isVersePreviewResultPayload,
   },
+  // Bible Browser (audit-notes/bible-browser.md): operator-only commands, server-only events.
+  "verse:navigate": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isVerseNavigatePayload,
+  },
+  "bible:chapter": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isBibleChapterRequestPayload,
+  },
+  "bible:chapter-result": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isBibleChapterResultPayload,
+  },
+  "bible:search": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isBibleSearchRequestPayload,
+  },
+  "bible:search-result": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isBibleSearchResultPayload,
+  },
+  "verse:navigate-result": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isVerseNavigateResultPayload,
+  },
   "verse:confirm-pending": {
     kind: "command",
     allowedSenders: ["operator"],
@@ -744,6 +788,11 @@ export const ACTION_REGISTRY: Readonly<Record<WsCommandType | WsEventType, Actio
     kind: "command",
     allowedSenders: ["operator"],
     validatePayload: isNullPayload,
+  },
+  "asr:noise-mode": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isAsrNoiseModePayload,
   },
   "mic:auto-gain": {
     kind: "command",

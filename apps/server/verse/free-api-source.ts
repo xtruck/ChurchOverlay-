@@ -1,4 +1,4 @@
-import type { Verse, VerseReference, VerseSource } from "../../../packages/contracts"
+import type { ChapterCapableSource, Verse, VerseReference, VerseSource } from "../../../packages/contracts"
 import { isPlainObject } from "../../../packages/shared/type-guards"
 
 /**
@@ -42,13 +42,37 @@ const V1_TRANSLATION = "kjv"
 // A stalled connection must not hang the live lookup path (AGENTS.md section 37).
 const FETCH_TIMEOUT_MS = 5000
 
-export class FreeApiSource implements VerseSource {
+export class FreeApiSource implements VerseSource, ChapterCapableSource {
   private readonly fetchImpl: typeof fetch
   private readonly baseUrl: string
 
   constructor(fetchImpl: typeof fetch = fetch, baseUrl: string = DEFAULT_BASE_URL) {
     this.fetchImpl = fetchImpl
     this.baseUrl = baseUrl
+  }
+
+  /**
+   * Bible Browser (audit-notes/bible-browser.md): the whole chapter in one request
+   * (`/john+3?translation=kjv` answers with every verse; verified against the live
+   * service, Psalm 119 returns all 176). Same null-vs-throw contract as getVerse().
+   */
+  async getChapter(book: string, chapter: number): Promise<readonly Verse[] | null> {
+    const url = `${this.baseUrl}/${encodeURIComponent(book.trim())}+${chapter}?translation=${V1_TRANSLATION}`
+    let response: Response
+    try {
+      response = await this.fetchImpl(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
+    } catch (err) {
+      throw new Error(`FreeApiSource: network request failed: ${err instanceof Error ? err.message : String(err)}`)
+    }
+    if (response.status === 404) return null
+    if (!response.ok) throw new Error(`FreeApiSource: unexpected HTTP status ${response.status}`)
+    let body: unknown
+    try {
+      body = await response.json()
+    } catch {
+      throw new Error("FreeApiSource: response body was not valid JSON")
+    }
+    return parseChapterVerses(body, book, chapter)
   }
 
   async getVerse(reference: VerseReference): Promise<Verse | null> {
@@ -87,6 +111,34 @@ export class FreeApiSource implements VerseSource {
     }
     return verse
   }
+}
+
+function parseChapterVerses(body: unknown, book: string, chapter: number): Verse[] {
+  if (!isPlainObject(body)) throw new Error("FreeApiSource: chapter response was not an object")
+  const translation = body.translation_id
+  if (typeof translation !== "string" || translation.trim().length === 0) {
+    throw new Error("FreeApiSource: chapter response had no translation id")
+  }
+  if (!Array.isArray(body.verses) || body.verses.length === 0) {
+    throw new Error("FreeApiSource: chapter response had no verses")
+  }
+  const result: Verse[] = []
+  for (const entry of body.verses as unknown[]) {
+    if (
+      !isPlainObject(entry) ||
+      entry.chapter !== chapter ||
+      typeof entry.verse !== "number" ||
+      !Number.isInteger(entry.verse) ||
+      entry.verse < 1 ||
+      typeof entry.text !== "string" ||
+      entry.text.trim().length === 0
+    ) {
+      throw new Error("FreeApiSource: chapter response contained a malformed verse")
+    }
+    result.push({ reference: { book, chapter, verse: entry.verse }, text: entry.text.trim(), translation, source: "bible-api.com" })
+  }
+  result.sort((a, b) => a.reference.verse - b.reference.verse)
+  return result
 }
 
 function buildRequestUrl(baseUrl: string, reference: VerseReference): string {

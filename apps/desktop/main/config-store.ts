@@ -114,6 +114,8 @@ export type AppConfig = {
   readonly asrStrategy?: AsrStrategy
   /** Adaptive gain on audio sent to ASR. Absent → on. */
   readonly autoGain?: boolean
+  /** Transcript strictness for loud rooms and speaking in tongues (server/asr/noise-mode.ts). Absent → "normal". */
+  readonly noiseMode?: "normal" | "noisy" | "tongues"
   /** Offline whisper.cpp engine as the last fallback. Absent → off (it is a download). */
   readonly localAsrEnabled?: boolean
   readonly localAsrModel?: "base" | "small"
@@ -174,6 +176,7 @@ type StoredConfig = {
   readonly asrStrategy?: string
   readonly aiProvider?: string
   readonly autoGain?: boolean
+  readonly noiseMode?: string
   readonly localAsrEnabled?: boolean
   readonly localAsrModel?: string
   readonly localAsrEngine?: string
@@ -300,6 +303,7 @@ export class ConfigStore {
       ...(config.asrStrategy === undefined ? {} : { asrStrategy: config.asrStrategy }),
       ...(config.aiProvider === undefined ? {} : { aiProvider: config.aiProvider }),
       ...(config.autoGain === undefined ? {} : { autoGain: config.autoGain }),
+      ...(config.noiseMode === undefined ? {} : { noiseMode: config.noiseMode }),
       ...(config.localAsrEnabled === undefined ? {} : { localAsrEnabled: config.localAsrEnabled }),
       ...(config.localAsrModel === undefined ? {} : { localAsrModel: config.localAsrModel }),
       ...(config.localAsrEngine === undefined ? {} : { localAsrEngine: config.localAsrEngine }),
@@ -358,6 +362,7 @@ export class ConfigStore {
       asrStrategy,
       aiProvider,
       autoGain,
+      noiseMode,
       localAsrEnabled,
       localAsrModel,
       localAsrEngine,
@@ -495,6 +500,8 @@ export class ConfigStore {
       ...(asrStrategy === undefined ? {} : { asrStrategy: asrStrategy as AsrStrategy }),
       ...(aiProvider === undefined ? {} : { aiProvider: aiProvider as AiProvider }),
       ...(autoGain === undefined ? {} : { autoGain }),
+      // Lenient on purpose: an unknown value falls back to "normal" instead of refusing to load the whole config.
+      ...(noiseMode === "normal" || noiseMode === "noisy" || noiseMode === "tongues" ? { noiseMode } : {}),
       ...(localAsrEnabled === undefined ? {} : { localAsrEnabled }),
       ...(localAsrModel === undefined ? {} : { localAsrModel: localAsrModel as "base" | "small" }),
       ...(localAsrEngine === undefined ? {} : { localAsrEngine: localAsrEngine as "whisper.cpp" | "faster-whisper" }),

@@ -2,7 +2,10 @@ import type { AsrProvider, AudioFrame, TranscriptResult } from "../../../package
 import { generateUlid } from "../../../packages/shared/ulid"
 import type { Logger } from "../../../packages/shared/logger"
 import { isPlainObject } from "../../../packages/shared/type-guards"
-import { hasForeignScript } from "./script-guard"
+import { hasForeignScript, isLikelyThirdLatinLanguage } from "./script-guard"
+import { LanguageLock, meanLogprob, normalizeLanguage } from "./language-lock"
+import { filterSegments, parseScoredSegments, segmentThresholdsFor } from "./segment-quality"
+import type { TranscriptionPolicy } from "./noise-mode"
 
 const DEFAULT_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
 const DEFAULT_MODEL = "whisper-large-v3-turbo"
@@ -88,6 +91,11 @@ export class GroqNetworkError extends Error {
   }
 }
 
+/** French is the church's primary language: the retry language when a clip's label is a third language and none is locked yet. */
+const PRIMARY_FALLBACK_LANGUAGE = "fr"
+/** After this many language drops in a row the guard lets text through until a clip passes. */
+export const GROQ_LANGUAGE_VALVE_AFTER = 5
+
 export type GroqProviderOptions = {
   readonly apiKey: string
   readonly model?: string
@@ -120,6 +128,8 @@ export type GroqProviderOptions = {
   readonly logger?: Logger
   /** Production audit (2026-09) — see DEFAULT_REQUEST_TIMEOUT_MS above. */
   readonly requestTimeoutMs?: number
+  /** Operator noise/tongues strictness for the per-segment quality filter (noise-mode.ts). Absent = "normal". */
+  readonly policy?: TranscriptionPolicy
 }
 
 /**
@@ -162,6 +172,11 @@ export class GroqProvider implements AsrProvider {
   private readonly logger?: Logger
   private readonly requestTimeoutMs: number
   private language: string | undefined
+  private readonly policy?: TranscriptionPolicy
+  /** Bilingual (no explicit language): sticky fr/en lock so a noisy clip is never decoded as a third language. */
+  private readonly languageLock = new LanguageLock()
+  private readonly dropCounts: Record<string, number> = {}
+  private consecutiveLanguageDrops = 0
 
   private transcriptCallback: ((result: TranscriptResult) => void) | null = null
   private errorCallback: ((error: Error) => void) | null = null
@@ -210,12 +225,107 @@ export class GroqProvider implements AsrProvider {
     this.now = options.now ?? Date.now
     this.logger = options.logger
     this.language = options.language
+    this.policy = options.policy
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
   }
 
   /** Live-updatable (ARCHITECTURE.md section 81) — a display-mode switch mid-service (voice, dashboard, or API) should retarget Whisper immediately, not just at construction. */
   setLanguage(language: string | undefined): void {
     this.language = language
+    this.languageLock.reset()
+  }
+
+  private closeLanguageValve(): number {
+    if (this.consecutiveLanguageDrops >= GROQ_LANGUAGE_VALVE_AFTER) this.policy?.ledger.setValve("groq-language", false)
+    return 0
+  }
+
+  private openLanguageValve(): void {
+    this.policy?.ledger.setValve("groq-language", true)
+    this.logger?.warn({
+      component: "asr",
+      event: "groq.language-guard-bypassed",
+      metadata: { consecutive: this.consecutiveLanguageDrops },
+    })
+  }
+
+  /** Count of audio chunks/segments dropped by quality or language checks, by reason (diagnostics only). */
+  getDropCounts(): Readonly<Record<string, number>> {
+    return { ...this.dropCounts }
+  }
+
+  private noteDrop(reason: string, metadata: Record<string, unknown> = {}): void {
+    this.dropCounts[reason] = (this.dropCounts[reason] ?? 0) + 1
+    // Shared ledger: counted for the operator's mic panel, and the log line is rate-limited (info, not debug).
+    const note = this.policy?.ledger.record(reason === "language" ? "language" : "segment", reason)
+    if (note !== undefined && !note.log) return
+    this.logger?.info({
+      component: "asr",
+      event: "groq.chunk-dropped",
+      correlationId: this.correlationId,
+      metadata: { reason, total: this.dropCounts[reason], suppressed: note?.suppressed ?? 1, ...metadata },
+    })
+  }
+
+  /**
+   * One chunk -> text, French/English only. With an explicit language the
+   * request is constrained at the API. Bilingual (no explicit language) cannot
+   * be constrained to two languages on Whisper, so: auto-detect only when a
+   * detection is due (language-lock.ts), read the language Groq reports
+   * (verbose_json `language`), and when it is not French/English decode the
+   * same chunk once more with the locked language, or drop it when none is
+   * locked yet. The detection request is the transcription itself: no extra
+   * cost except that single retry.
+   */
+  private async decode(samples: Int16Array): Promise<string> {
+    const explicit = this.language && this.language !== "auto" ? this.language : undefined
+    if (explicit) return (await this.transcribe(samples, explicit)).text
+    const audioMs = (samples.length / SAMPLE_RATE) * 1000
+    const locked = this.languageLock.language
+    const detecting = this.languageLock.needsDetection(audioMs)
+    let decoded = await this.transcribe(samples, detecting || !locked ? undefined : locked)
+    if (detecting || !locked) {
+      const language = normalizeLanguage(decoded.language)
+      if (language) {
+        if (language !== locked) {
+          this.logger?.info({
+            component: "asr",
+            event: "groq.language-locked",
+            correlationId: this.correlationId,
+            metadata: { language, previous: locked },
+          })
+        }
+        this.languageLock.settle(language, 1)
+        this.consecutiveLanguageDrops = this.closeLanguageValve()
+      } else if (decoded.language !== undefined && decoded.language !== "") {
+        // Whisper labelled the clip as a third language. Its label is a guess on a short noisy clip (a French-accented
+        // "Romains 8 28" can come back "portuguese"), so the TEXT decides: only text that really reads as Spanish or
+        // Portuguese is retried, once, with the locked language (or French, the church's primary) and dropped if still so.
+        if (isLikelyThirdLatinLanguage(decoded.text)) {
+          const fallback = locked ?? PRIMARY_FALLBACK_LANGUAGE
+          const retry = await this.transcribe(samples, fallback)
+          if (!isLikelyThirdLatinLanguage(retry.text)) {
+            decoded = retry
+            this.consecutiveLanguageDrops = this.closeLanguageValve()
+          } else if (this.consecutiveLanguageDrops >= GROQ_LANGUAGE_VALVE_AFTER) {
+            this.openLanguageValve() // too many drops in a row: let the text through and say so
+          } else {
+            this.consecutiveLanguageDrops += 1
+            this.noteDrop("language", { detected: decoded.language.slice(0, 24), retried: fallback })
+            return ""
+          }
+        } else {
+          this.logger?.info({
+            component: "asr",
+            event: "groq.language-label-ignored",
+            correlationId: this.correlationId,
+            metadata: { detected: decoded.language.slice(0, 24), words: decoded.text.split(/\s+/).length },
+          })
+        }
+      }
+    }
+    this.languageLock.noteClip(decoded.meanLogprob, detecting)
+    return decoded.text
   }
 
   /**
@@ -497,7 +607,7 @@ export class GroqProvider implements AsrProvider {
 
   private async transcribeAndEmit(samples: Int16Array): Promise<void> {
     try {
-      const text = await this.transcribe(samples)
+      const text = await this.decode(samples)
       if (text.trim().length === 0) {
         this.logger?.debug({
           component: "asr",
@@ -647,6 +757,30 @@ export class GroqProvider implements AsrProvider {
     return currText
   }
 
+  /**
+   * Segment-quality filter (segment-quality.ts, thresholds by noise mode): drop
+   * the segments Whisper itself says are probably not speech and rebuild the
+   * text from the rest. No scored segments, or nothing dropped: `text` as is.
+   */
+  private dropUnlikelySegments(scored: ReturnType<typeof parseScoredSegments>, text: string): string {
+    if (!scored) return text
+    const { kept, dropped, rescued } = filterSegments(scored, segmentThresholdsFor(this.policy?.mode))
+    if (rescued > 0) {
+      this.logger?.info({ component: "asr", event: "groq.segment-kept-reference", correlationId: this.correlationId, metadata: { rescued } })
+    }
+    if (dropped.length === 0) return text
+    for (const segment of dropped) {
+      this.noteDrop(segment.reason, {
+        words: segment.words,
+        mode: this.policy?.mode ?? "normal",
+        noSpeechProb: segment.noSpeechProb,
+        avgLogprob: segment.avgLogprob,
+        compressionRatio: segment.compressionRatio,
+      })
+    }
+    return kept.map((segment) => segment.text.trim()).filter(Boolean).join(" ")
+  }
+
   onTranscript(callback: (result: TranscriptResult) => void): void {
     this.transcriptCallback = callback
   }
@@ -667,14 +801,16 @@ export class GroqProvider implements AsrProvider {
     await this.flushSamples(samples)
   }
 
-  private async transcribe(samples: Int16Array): Promise<string> {
+  private async transcribe(samples: Int16Array, language: string | undefined): Promise<GroqDecoded> {
     const wavBytes = encodeWav(samples, SAMPLE_RATE)
     const form = new FormData()
     form.append("file", new Blob([wavBytes], { type: "audio/wav" }), "audio.wav")
     form.append("model", this.model)
-    form.append("response_format", "json")
-    if (this.language) {
-      form.append("language", this.language)
+    // verbose_json adds the detected language and per-segment scores (avg_logprob,
+    // no_speech_prob, compression_ratio) used by the language and noise guards; `text` is still there.
+    form.append("response_format", "verbose_json")
+    if (language) {
+      form.append("language", language)
     }
     // TASK B: Add prompt for lexical bias
     const prompt = this.buildPrompt()
@@ -760,15 +896,20 @@ export class GroqProvider implements AsrProvider {
     // quality signal, not a fault). Detection is a cheap, deterministic
     // heuristic — good enough to spot the trend in logs, never used to
     // alter or reject the transcript itself.
-    if (this.language === "fr" && looksLikePortugueseOrSpanish(text)) {
+    if (language === "fr" && looksLikePortugueseOrSpanish(text)) {
       this.logger?.debug({
         component: "asr",
         event: "transcript.language-divergence",
-        metadata: { expected: this.language, textPreview: text.slice(0, 80) },
+        metadata: { expected: language, textPreview: text.slice(0, 80) },
       })
     }
 
-    return text.trim()
+    const scored = parseScoredSegments(body)
+    return {
+      text: this.dropUnlikelySegments(scored, text).trim(),
+      language: isPlainObject(body) && typeof body.language === "string" ? body.language : undefined,
+      meanLogprob: meanLogprob((scored ?? []).map((segment) => segment.avgLogprob)),
+    }
     } catch (err) {
       if (controller.signal.aborted || (err instanceof Error && err.name === "AbortError")) {
         this.consecutiveNetworkErrors++
@@ -791,6 +932,15 @@ export class GroqProvider implements AsrProvider {
       clearTimeout(timeoutId)
     }
   }
+}
+
+/** One Groq reply, reduced to what the provider uses. */
+type GroqDecoded = {
+  readonly text: string
+  /** Groq's `language` (a name such as "french"), when the reply carries one. */
+  readonly language: string | undefined
+  /** Mean avg_logprob over the reply's segments, before the quality filter; null when unscored. */
+  readonly meanLogprob: number | null
 }
 
 // TASK B: heuristic Romance-language divergence markers for a French-

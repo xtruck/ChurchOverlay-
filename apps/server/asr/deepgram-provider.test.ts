@@ -2,6 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { EventEmitter } from "node:events"
 import { DeepgramProvider } from "./deepgram-provider"
+import { TranscriptionPolicy } from "./noise-mode"
 import type { AudioFrame } from "../../../packages/contracts"
 
 class MockWebSocket extends EventEmitter {
@@ -331,4 +332,101 @@ test("DeepgramProvider: an explicit endpointing wins over the multi default, and
   const french = new URL(new DeepgramProvider({ apiKey: "k", language: "fr" }).buildUrl())
   assert.equal(french.searchParams.get("model"), "nova-2")
   assert.equal(french.searchParams.get("endpointing"), "300")
+})
+
+test("DeepgramProvider: a transcript Nova-3 multi reports as another language is dropped; French/English and unlabelled ones pass", () => {
+  const provider = new DeepgramProvider({ apiKey: "test", language: "multi" })
+  const results: { text: string }[] = []
+  provider.onTranscript((result) => results.push(result))
+  const send = (alternative: object) =>
+    (provider as unknown as { handleMessage(raw: string): void }).handleMessage(JSON.stringify({ is_final: true, channel: { alternatives: [alternative] } }))
+  const es = (n: number) => Array.from({ length: n }, (_, i) => ({ word: `palabra${i}`, language: "es" }))
+  send({ transcript: "gracias hermanos por todo hoy", languages: ["es"], words: es(5) })
+  send({ transcript: "namaste amigos buenas noches hoy", languages: ["hi"] })
+  send({ transcript: "Ouvrez Jean 3", languages: ["fr"], words: [{ language: "fr" }, { language: "fr" }, { language: "en" }] })
+  send({ transcript: "Turn to John 3", languages: ["en"] })
+  send({ transcript: "Jean 3 16" }) // no language info: kept, never an error
+  assert.deepEqual(results.map((r) => r.text), ["Ouvrez Jean 3", "Turn to John 3", "Jean 3 16"])
+})
+
+test("DeepgramProvider: tongues mode tolerates less off-language speech than normal mode", () => {
+  const run = (mode: "normal" | "tongues") => {
+    const provider = new DeepgramProvider({ apiKey: "test", language: "multi", policy: new TranscriptionPolicy(mode) })
+    const results: unknown[] = []
+    provider.onTranscript((result) => results.push(result))
+    ;(provider as unknown as { handleMessage(raw: string): void }).handleMessage(
+      JSON.stringify({
+        is_final: true,
+        channel: { alternatives: [{ transcript: "a b c d", words: [{ word: "a", language: "fr" }, { word: "b", language: "fr" }, { word: "c", language: "fr" }, { word: "d", language: "es" }] }] },
+      }),
+    )
+    return results.length
+  }
+  assert.equal(run("normal"), 1) // 25% off: kept
+  assert.equal(run("tongues"), 0) // 25% off: dropped
+})
+
+// --- Fix round: tolerant language judging and the safety valve ---
+
+function deepgramHarness(mode: "normal" | "tongues" = "normal") {
+  const policy = new TranscriptionPolicy(mode)
+  const provider = new DeepgramProvider({ apiKey: "test", language: "multi", policy })
+  const results: { text: string }[] = []
+  provider.onTranscript((result) => results.push(result))
+  const send = (transcript: string, words: { word: string; language: string }[], state = true) =>
+    (provider as unknown as { handleMessage(raw: string): void }).handleMessage(
+      JSON.stringify({ is_final: state, channel: { alternatives: [{ transcript, words }] } }),
+    )
+  return { policy, results, send }
+}
+
+const tag = (text: string, language: string) => text.split(" ").map((word) => ({ word, language }))
+
+test("DeepgramProvider: regional tags (en-US, fr-CA) are English and French, never dropped", () => {
+  const { results, send } = deepgramHarness("tongues")
+  send("ouvrez vos bibles ensemble", tag("ouvrez vos bibles ensemble", "fr-CA"))
+  send("turn to your neighbor today", tag("turn to your neighbor today", "en-US"))
+  assert.equal(results.length, 2)
+})
+
+test("DeepgramProvider: a short reference mis-tagged as another language is never judged", () => {
+  const { results, send } = deepgramHarness("tongues")
+  send("Jean 3 16", [{ word: "Jean", language: "es" }, { word: "3", language: "hi" }, { word: "16", language: "hi" }])
+  send("Romains huit", tag("Romains huit", "pt"))
+  assert.equal(results.length, 2)
+})
+
+test("DeepgramProvider: fewer than 4 alphabetic words are not enough to drop, and numbers and book names do not count", () => {
+  const { results, send } = deepgramHarness("tongues")
+  send("gracias hermanos amigos", tag("gracias hermanos amigos", "es")) // 3 words: not judged
+  send("Jean 3 16 gracias hermanos", [...tag("Jean", "es"), ...tag("3 16", "hi"), ...tag("gracias hermanos", "es")]) // 2 judged words
+  assert.equal(results.length, 2)
+  send("gracias hermanos por todo hoy", tag("gracias hermanos por todo hoy", "es")) // 5 judged, all off
+  assert.equal(results.length, 2)
+})
+
+test("DeepgramProvider: after 5 off-language drops in a row it stops dropping, warns, shows the valve, and closes it when a transcript passes", () => {
+  const warnings: string[] = []
+  const policy = new TranscriptionPolicy()
+  const provider = new DeepgramProvider({
+    apiKey: "test",
+    language: "multi",
+    policy,
+    logger: { info() {}, debug() {}, error() {}, warn: (line: { event: string }) => warnings.push(line.event) } as never,
+  })
+  const results: { text: string }[] = []
+  provider.onTranscript((result) => results.push(result))
+  const send = (text: string, language: string) =>
+    (provider as unknown as { handleMessage(raw: string): void }).handleMessage(
+      JSON.stringify({ is_final: true, channel: { alternatives: [{ transcript: text, words: tag(text, language) }] } }),
+    )
+  for (let i = 0; i < 5; i++) send("gracias hermanos por todo hoy", "es")
+  assert.equal(results.length, 0)
+  send("gracias hermanos por todo hoy", "es")
+  assert.equal(results.length, 1, "the sixth is let through")
+  assert.deepEqual(policy.ledger.openValves(), ["deepgram-language"])
+  assert.deepEqual(warnings, ["deepgram.language-guard-bypassed"])
+  send("ouvrez vos bibles ensemble", "fr")
+  assert.deepEqual(policy.ledger.openValves(), [])
+  assert.equal(policy.ledger.perMinute()["off-language"], 5)
 })
