@@ -193,6 +193,18 @@ test("DeepgramProvider: URL carries endpointing and weighted biblical keywords f
   assert.equal(url.searchParams.getAll("keyterm").length, 0)
 })
 
+test("DeepgramProvider: boosts Philemon in French, English and bilingual sessions", () => {
+  const french = new URL(new DeepgramProvider({ apiKey: "k", language: "fr" }).buildUrl())
+  assert.ok(french.searchParams.getAll("keywords").includes("Philémon:2"))
+
+  const english = new URL(new DeepgramProvider({ apiKey: "k", language: "en" }).buildUrl())
+  assert.ok(english.searchParams.getAll("keywords").includes("Philemon:2"))
+
+  const bilingual = new URL(new DeepgramProvider({ apiKey: "k", language: "multi" }).buildUrl())
+  assert.ok(bilingual.searchParams.getAll("keyterm").includes("Philémon"))
+  assert.ok(bilingual.searchParams.getAll("keyterm").includes("Philemon"))
+})
+
 test("DeepgramProvider: nova-3 uses keyterm prompting instead of weighted keywords", () => {
   const url = new URL(new DeepgramProvider({ apiKey: "k", language: "en", model: "nova-3" }).buildUrl())
   assert.ok(url.searchParams.getAll("keyterm").includes("Deuteronomy"))

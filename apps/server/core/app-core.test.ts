@@ -2724,6 +2724,68 @@ test("AppCore: a French spoken reference and a French 'verset suivant' navigatio
   }
 })
 
+test("AppCore: conversational next/previous voice commands move exactly one validated verse", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const firstShow = waitForMessage(viewerSocket)
+    asr.emitTranscript({
+      id: "01NAV1",
+      correlationId: "01NAV1",
+      sequence: 1,
+      text: "Turn to John 3:15.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    await firstShow
+
+    const nextShow = waitForMessage(viewerSocket)
+    asr.emitTranscript({
+      id: "01NAV2",
+      correlationId: "01NAV2",
+      sequence: 2,
+      text: "Go to the next verse.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    assert.deepEqual(((await nextShow).payload as Verse).reference, { book: "john", chapter: 3, verse: 16 })
+
+    const previousShow = waitForMessage(viewerSocket)
+    asr.emitTranscript({
+      id: "01NAV3",
+      correlationId: "01NAV3",
+      sequence: 3,
+      text: "Go back one verse.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    assert.deepEqual(((await previousShow).payload as Verse).reference, { book: "john", chapter: 3, verse: 15 })
+
+    const recoveredNextShow = waitForMessage(viewerSocket)
+    asr.emitTranscript({
+      id: "01NAV4",
+      correlationId: "01NAV4",
+      sequence: 4,
+      text: "Go to the nearest West.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    assert.deepEqual(((await recoveredNextShow).payload as Verse).reference, { book: "john", chapter: 3, verse: 16 })
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
 // ARCHITECTURE.md section 65.5: on-demand glossary lookup by voice.
 test("AppCore: a spoken 'define grace' broadcasts definition:show, and it auto-clears after the configured delay", async () => {
   const asr = new FakeAsrProvider()

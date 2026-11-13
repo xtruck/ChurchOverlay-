@@ -1082,7 +1082,8 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     const keys: string[] = []
     for (const command of navigationCommandDetector.detect(text)) {
       if (command.kind !== only) continue
-      const resolution = resolveNavigationCommand(command, navigationPositionFor(command), index)
+      const position = announcedChapterFor(command)?.reference ?? currentVersePosition
+      const resolution = resolveNavigationCommand(command, position, index)
       if (resolution.kind === "reference") keys.push(suggestionKey(resolution.reference))
     }
     return keys
@@ -2629,12 +2630,12 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     broadcastPendingVerse({ ...verse, origin: "quote" } as Verse, transcript.correlationId)
   }
 
-  /** The position a command resolves against: a bare verse prefers a fresh announced chapter. */
-  function navigationPositionFor(command: { readonly kind: string }): VerseReference | null {
+  /** A bare verse prefers a fresh announced chapter over the last displayed position. */
+  function announcedChapterFor(command: { readonly kind: string }): typeof announcedChapter {
     if (command.kind === "goto-bare-verse" && announcedChapter !== null && Date.now() - announcedChapter.at <= ANNOUNCED_CHAPTER_TTL_MS) {
-      return announcedChapter.reference
+      return announcedChapter
     }
-    return currentVersePosition
+    return null
   }
 
   async function handleNavigationCommands(
@@ -2666,7 +2667,6 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         announcedChapter = { reference: { book: announced.book, chapter: announced.chapter, verse: 1 }, at: Date.now() }
       }
     }
-    const positionFor = navigationPositionFor
     for (const command of opts.onlyCommand ? [opts.onlyCommand] : navigationCommandDetector.detect(transcript.text)) {
       if (hasExplicitReference && !opts.onlyCommand && command.kind !== "goto-display-mode" && command.kind !== "cancel") {
         logger.debug({
@@ -2696,7 +2696,8 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         continue
       }
 
-      const position = positionFor(command)
+      const chapterContext = announcedChapterFor(command)
+      const position = chapterContext?.reference ?? currentVersePosition
       const resolution = resolveNavigationCommand(command, position, index)
 
       if (resolution.kind === "cancel") {
@@ -2740,6 +2741,11 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       }
       if (verse && isSupersededIntent(ticket)) {
         dropStaleLookup("navigation", transcript.correlationId)
+        continue
+      }
+      if (verse && command.kind === "goto-bare-verse" && chapterContext !== null) {
+        suggestionArbiter.noteDetectedWaiting()
+        broadcastPendingVerse({ ...verse, heard: heardSnippet(transcript.text) } as Verse, transcript.correlationId)
         continue
       }
       if (verse) {
@@ -2969,15 +2975,16 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       transcriptAssembler.reset()
     } else if (transcript.state === "final") {
       const currentHasReference = detector.detect(transcript.text).length > 0
-      if (currentHasReference) {
-        // This transcript already contains a complete, standalone
-        // reference — the primary detection path above already handles
-        // it. Reset rather than push: leaving an already-complete
-        // fragment in the assembler's window let a later, unrelated
-        // transcript recombine with it and re-detect the SAME reference
-        // a second time (a real regression — e.g. "next verse" spoken
-        // right after a detected reference recombined with it and
-        // re-showed the OLD verse instead of advancing to the next one).
+      const continuesAnnouncedChapter =
+        announcedChapter !== null &&
+        Date.now() - announcedChapter.at <= ANNOUNCED_CHAPTER_TTL_MS &&
+        navigationCommandDetector.detect(transcript.text).some((command) => command.kind === "goto-bare-verse")
+      if (currentHasReference || continuesAnnouncedChapter) {
+        // Reset complete references to prevent later transcript fragments
+        // from re-detecting them. A bare verse following a finalized chapter
+        // announcement also resets the assembler: AppCore resolves that
+        // continuation against the retained chapter and offers it for
+        // approval, rather than auto-detecting an assembled reference.
         transcriptAssembler.reset()
       } else {
         const assembledText = transcriptAssembler.push({

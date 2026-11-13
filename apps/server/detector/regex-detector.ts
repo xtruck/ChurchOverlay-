@@ -465,6 +465,13 @@ export const PHONETIC_BOOK_ALIASES: Readonly<Record<string, string>> = nullProto
   neemie: "nehemiah",
   nehemi: "nehemiah",
   nehemia: "nehemiah",
+  // Habakkuk — alternate spellings; English sometimes writes one k, while
+  // French ASR may use "ou" for the final /u/ sound.
+  habakuk: "habakkuk",
+  habacuk: "habakkuk",
+  abakuk: "habakkuk",
+  habacouc: "habakkuk",
+  abacouc: "habakkuk",
   // Numbers — Observed live (2026-10-12): "dans nombre un, le verset 2" heard
   // twice for "Nombres 1:2" (the ASR dropped the plural -s). "nombre" is also
   // an ordinary French word, so this is the same accepted-risk shape as
@@ -499,6 +506,15 @@ export const PHONETIC_BOOK_ALIASES: Readonly<Record<string, string>> = nullProto
   lamentation: "lamentations",
   // Zephaniah — French "ph"/"f" are pronounced identically ("Sophonie" -> "Sofonie").
   sofonie: "zephaniah",
+  // Common alternate spellings and ASR omission of a silent final h.
+  zephania: "zephaniah",
+  // Zechariah — established English spelling variants.
+  zachariah: "zechariah",
+  zacharia: "zechariah",
+  zecharia: "zechariah",
+  // Obadiah/Malachi — final-h and vowel spellings frequently vary in transcription.
+  obadia: "obadiah",
+  malachai: "malachi",
   // Haggai — French single-g mishearing ("Aggée" -> "Agée").
   agee: "haggai",
   // Matthew — "Mathieu" (one "t") is the standard spelling of the common
@@ -506,6 +522,7 @@ export const PHONETIC_BOOK_ALIASES: Readonly<Record<string, string>> = nullProto
   // Gospel's own "Matthieu" — same accepted-risk shape as "Jean"/"Marc"
   // above. Also the common English misspelling "Mathew".
   mathieu: "matthew",
+  matieu: "matthew",
   mathew: "matthew",
   // 1/2 Corinthians, Ephesians, Philippians, Colossians — Grammatical
   // singular, both languages, the same reasoning as Proverbs/Chronicles
@@ -550,6 +567,12 @@ export const PHONETIC_BOOK_ALIASES: Readonly<Record<string, string>> = nullProto
   "2 timothe": "2 timothy",
   // Philemon — Observed live (2026-09-29): "Phélemone" for "Philémon".
   phelemone: "philemon",
+  // Observed in a final live transcript: "Phelemon" and the partial variant
+  // "Philimon" for the same book name.
+  phelemon: "philemon",
+  philimon: "philemon",
+  // Filemon is a common phonetic spelling of the French pronunciation.
+  filemon: "philemon",
   // Revelation — Grammatical: "Revelations" (with a final "s") is a very
   // common everyday English mis-pluralization of this book's actual,
   // singular title.

@@ -186,6 +186,26 @@ test("RegexDetector: detects two more live-observed Habakkuk mishearings (2026-0
   assert.deepEqual(detector.detect("Bakouct 5 verset 6"), [{ book: "habakkuk", chapter: 5, verse: 6 }])
 })
 
+test("RegexDetector: common phonetic and alternate book spellings resolve through the normal reference path", () => {
+  const detector = new RegexDetector()
+  const examples: ReadonlyArray<readonly [string, string, number, number]> = [
+    ["Habakuk 1:2", "habakkuk", 1, 2],
+    ["Abacouc 1 verset 2", "habakkuk", 1, 2],
+    ["Zachariah 1:1", "zechariah", 1, 1],
+    ["Zecharia 1:1", "zechariah", 1, 1],
+    ["Zephania 1:1", "zephaniah", 1, 1],
+    ["Obadia 1:1", "obadiah", 1, 1],
+    ["Malachai 1:1", "malachi", 1, 1],
+    ["Filemon 1:1", "philemon", 1, 1],
+    ["Phelemon chapter one verse two", "philemon", 1, 2],
+    ["Philimon 1:1", "philemon", 1, 1],
+    ["Matieu 1:1", "matthew", 1, 1],
+  ]
+  for (const [spoken, book, chapter, verse] of examples) {
+    assert.deepEqual(detector.detect(spoken), [{ book, chapter, verse }], spoken)
+  }
+})
+
 // ARCHITECTURE.md section 105: comprehensive, proactive phonetic and
 // grammatical-number tolerance for all 66 books, across both languages —
 // requested directly (not waiting for each individual live miss).

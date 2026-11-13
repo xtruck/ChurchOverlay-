@@ -19,7 +19,7 @@
  * statistical rules.
  */
 import { BOOK_CATALOG } from "../verse/book-catalog"
-import { FRENCH_BOOK_ALIASES } from "../detector/regex-detector"
+import { FRENCH_BOOK_ALIASES, PHONETIC_BOOK_ALIASES } from "../detector/regex-detector"
 import { detectHallucination } from "./transcription-corrector"
 import { hasForeignScript } from "./script-guard"
 import type { NoiseMode } from "./noise-mode"
@@ -113,9 +113,11 @@ function bibleWords(): ReadonlySet<string> {
     add(book.id)
     add(book.name)
   }
-  for (const [alias, id] of Object.entries(FRENCH_BOOK_ALIASES)) {
-    add(alias)
-    add(id)
+  for (const aliases of [FRENCH_BOOK_ALIASES, PHONETIC_BOOK_ALIASES]) {
+    for (const [alias, id] of Object.entries(aliases)) {
+      add(alias)
+      add(id)
+    }
   }
   knownBibleWords = words
   return words

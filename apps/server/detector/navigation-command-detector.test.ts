@@ -49,6 +49,29 @@ test("NavigationCommandDetector: short synonyms embedded in a longer sentence do
   assert.deepEqual(detector.detect("The sky is clear today."), [])
 })
 
+test("NavigationCommandDetector: natural next/previous-one phrases work only as complete commands", () => {
+  const detector = new NavigationCommandDetector()
+  for (const phrase of [
+    "next one",
+    "the next one",
+    "go to the next one",
+    "show me the next one",
+    "go forward one verse",
+    "one verse forward",
+    "go to the next best",
+    "go to the nearest west",
+  ]) {
+    assert.deepEqual(detector.detect(`${phrase}.`), [{ kind: "next-verse" }], phrase)
+  }
+  for (const phrase of ["previous one", "the previous one", "go to the previous one", "go back one verse", "go back a verse", "one verse back"]) {
+    assert.deepEqual(detector.detect(`${phrase}.`), [{ kind: "previous-verse" }], phrase)
+  }
+  assert.deepEqual(detector.detect("I will go to the next one after this reading."), [])
+  assert.deepEqual(detector.detect("We can go back one verse in the story."), [])
+  assert.deepEqual(detector.detect("We should go to the next best book after this."), [])
+  assert.deepEqual(detector.detect("The nearest west side of town is quiet."), [])
+})
+
 test("NavigationCommandDetector: 'goto-chapter' parses 'Book chapter N' correctly", () => {
   const detector = new NavigationCommandDetector()
   assert.deepEqual(detector.detect("Let's go to Romans chapter 8 now."), [
@@ -197,6 +220,17 @@ test("NavigationCommandDetector: French substring phrases for verse/chapter navi
   assert.deepEqual(detector.detect("Passons au chapitre suivant."), [{ kind: "next-chapter" }])
   assert.deepEqual(detector.detect("Retournons au chapitre précédent."), [{ kind: "previous-chapter" }])
   assert.deepEqual(detector.detect("Il faut effacer l'écran maintenant."), [{ kind: "cancel" }])
+})
+
+test("NavigationCommandDetector: French one-verse forward/back phrases work as complete commands", () => {
+  const detector = new NavigationCommandDetector()
+  for (const phrase of ["avance d'un verset", "avançons d'un verset", "un verset en avant"]) {
+    assert.deepEqual(detector.detect(`${phrase}.`), [{ kind: "next-verse" }], phrase)
+  }
+  for (const phrase of ["recule d'un verset", "reculons d'un verset", "un verset en arrière"]) {
+    assert.deepEqual(detector.detect(`${phrase}.`), [{ kind: "previous-verse" }], phrase)
+  }
+  assert.deepEqual(detector.detect("Nous avancerons d'un verset dans notre lecture."), [])
 })
 
 // ARCHITECTURE.md section 72: "prochain X" (adjective-first) is just as

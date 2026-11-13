@@ -33,6 +33,7 @@ const FRENCH_TERMS: readonly string[] = [
   "Thessaloniciens",
   "Galates",
   "Corinthiens",
+  "Philémon",
   "Hébreux",
   "Apocalypse",
 ]
@@ -56,6 +57,7 @@ const ENGLISH_TERMS: readonly string[] = [
   "Thessalonians",
   "Galatians",
   "Corinthians",
+  "Philemon",
   "Hebrews",
   "Revelation",
 ]

@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { screenTranscript } from "./transcript-screen"
+import { isBibleWord, screenTranscript } from "./transcript-screen"
 import { segmentThresholdsFor, filterSegments } from "./segment-quality"
 
 const REAL_SPEECH = [
@@ -33,6 +33,12 @@ test("screen: real French/English speech and bare references pass in every mode"
         assert.deepEqual(screenTranscript(text, { mode, state }), { ok: true }, `${mode}/${state}: ${text}`)
       }
     }
+  }
+})
+
+test("screen and Deepgram language checks recognize supported phonetic book spellings", () => {
+  for (const word of ["Habakuk", "Abacouc", "Zachariah", "Zephania", "Obadia", "Malachai", "Filemon", "Phelemon", "Philimon", "Matieu"]) {
+    assert.equal(isBibleWord(word), true, word)
   }
 })
 

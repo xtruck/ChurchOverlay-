@@ -72,6 +72,31 @@ const WHOLE_UTTERANCE_RULES: readonly WholeUtteranceRule[] = [
   { phrase: "annuler", command: { kind: "cancel" } },
   { phrase: "clear", command: { kind: "cancel" } },
   { phrase: "effacer", command: { kind: "cancel" } },
+  // Short, natural alternatives that do not repeat "verse". These are
+  // whole-utterance-only so narrative uses never move the on-air reference.
+  { phrase: "next one", command: { kind: "next-verse" } },
+  { phrase: "the next one", command: { kind: "next-verse" } },
+  { phrase: "go to the next one", command: { kind: "next-verse" } },
+  { phrase: "go to next one", command: { kind: "next-verse" } },
+  { phrase: "show me the next one", command: { kind: "next-verse" } },
+  { phrase: "go to the next best", command: { kind: "next-verse" } },
+  { phrase: "go to the nearest west", command: { kind: "next-verse" } },
+  { phrase: "previous one", command: { kind: "previous-verse" } },
+  { phrase: "the previous one", command: { kind: "previous-verse" } },
+  { phrase: "go to the previous one", command: { kind: "previous-verse" } },
+  { phrase: "go to previous one", command: { kind: "previous-verse" } },
+  { phrase: "show me the previous one", command: { kind: "previous-verse" } },
+  { phrase: "go forward one verse", command: { kind: "next-verse" } },
+  { phrase: "one verse forward", command: { kind: "next-verse" } },
+  { phrase: "go back one verse", command: { kind: "previous-verse" } },
+  { phrase: "go back a verse", command: { kind: "previous-verse" } },
+  { phrase: "one verse back", command: { kind: "previous-verse" } },
+  { phrase: "avance d'un verset", command: { kind: "next-verse" } },
+  { phrase: "avancons d'un verset", command: { kind: "next-verse" } },
+  { phrase: "un verset en avant", command: { kind: "next-verse" } },
+  { phrase: "recule d'un verset", command: { kind: "previous-verse" } },
+  { phrase: "reculons d'un verset", command: { kind: "previous-verse" } },
+  { phrase: "un verset en arriere", command: { kind: "previous-verse" } },
 ]
 
 // ARCHITECTURE.md section 65.4 — a spoken display-mode switch. AUDIT TS-01:
@@ -119,7 +144,7 @@ const MODE_COMMAND_RULES: ReadonlyArray<{ readonly regex: RegExp; readonly comma
 // "go back" is narrative when followed by "to"/"in"/... ("let's go back to
 // the beginning"). Those are descriptions, not commands.
 const NARRATIVE_PREFIX = /\b(?:in|of|from|dans|du)\s+(?:the\s+|this\s+|that\s+|le\s+|ce\s+|cet\s+)?$/
-const GO_BACK_NARRATIVE_TAIL = /^\s+(?:to|in|into|and|home|there|then|on|when|before|after|with)\b/
+const GO_BACK_NARRATIVE_TAIL = /^\s+(?:to|in|into|and|home|there|then|on|when|before|after|with|one|a)\b/
 const NARRATIVE_GUARDED_KINDS: ReadonlySet<string> = new Set(["next-verse", "previous-verse", "next-chapter", "previous-chapter"])
 
 // "<book> chapter <number>" — e.g. "go to Romans chapter 8". Requires the

@@ -257,13 +257,14 @@ test("settle: an operator Clear during the settle window cancels the held verse"
 
 // ---- chapter-only mentions and bare "verse N" continuations (navigation path) ----
 
-test("nav: 'John 11' | 'verse 12' chunk split shows John 11:12 and NEVER John 11:1 on the overlay", () =>
-  run(async ({ asr, shown }) => {
+test("nav: 'John 11' | 'verse 12' chunk split offers John 11:12 without showing an unconfirmed verse", () =>
+  run(async ({ asr, shown, pending }) => {
     asr.say("Turn with me to John 11")
     await flushEvents()
     asr.say("verse 12")
     await flushEvents()
-    assert.deepEqual(shown, ["john 11:12"])
+    assert.deepEqual(shown, [])
+    assert.deepEqual(pending, ["john 11:1", "john 11:12"])
   }))
 
 test("nav: a chapter-only mention ('In John 11 we read about Lazarus') is only offered, never shown", () =>
@@ -276,15 +277,16 @@ test("nav: a chapter-only mention ('In John 11 we read about Lazarus') is only o
     assert.deepEqual(pending, ["john 11:1"])
   }))
 
-test("nav: French 'Jean chapitre 11' | 'verset 1' | '2' ends on Jean 11:12, nothing truncated is shown", () =>
-  run(async ({ asr, shown }) => {
+test("nav: French 'Jean chapitre 11' | 'verset 1' | '2' offers Jean 11:12, nothing is shown unconfirmed", () =>
+  run(async ({ asr, shown, pending }) => {
     asr.say("Jean chapitre 11")
     await flushEvents()
     asr.say("verset 1")
     await flushEvents()
     asr.say("2")
     await flushEvents()
-    assert.deepEqual(shown, ["john 11:12"])
+    assert.deepEqual(shown, [])
+    assert.deepEqual(pending, ["john 11:1", "john 11:12"])
   }))
 
 test("nav: a split chapter number 'Jean 1' | '1' offers John 11:1, never John 1:1", () =>
@@ -299,13 +301,47 @@ test("nav: a split chapter number 'Jean 1' | '1' offers John 11:1, never John 1:
     assert.deepEqual(pending, ["john 11:1"])
   }))
 
-test("nav: a bare 'verse 5' after a chapter was announced still shows immediately when it cannot grow", () =>
-  run(async ({ asr, shown }) => {
+test("nav: Genesis chapter 1 followed by verse 5 is pending for operator confirmation", () =>
+  run(async ({ asr, operatorSocket, viewer, shown, pending, clock }) => {
+    asr.say("Genesis chapter 1")
+    await flushEvents()
+    clock.tick(SETTLE_MS)
+    await flushEvents()
+    asr.say("verse 5")
+    await flushEvents()
+    assert.deepEqual(shown, [])
+    assert.deepEqual(pending, ["genesis 1:1", "genesis 1:5"])
+
+    const confirmedMessage = new Promise<WsMessage>((resolve) => {
+      viewer.once("message", (data: { toString(): string }) => resolve(JSON.parse(data.toString()) as WsMessage))
+    })
+    operatorSocket.send(JSON.stringify({ id: "confirm-context-verse", type: "verse:confirm-pending", timestamp: Date.now(), payload: null }))
+    const message = await confirmedMessage
+    assert.equal(message.type, "verse:show")
+    assert.deepEqual((message.payload as Verse).reference, { book: "genesis", chapter: 1, verse: 5 })
+    assert.deepEqual(shown, ["genesis 1:5"])
+  }))
+
+test("nav: a verse following a separately announced French chapter is also pending", () =>
+  run(async ({ asr, shown, pending, clock }) => {
     asr.say("Dans Jean chapitre 3")
+    await flushEvents()
+    clock.tick(SETTLE_MS)
     await flushEvents()
     asr.say("verset 16")
     await flushEvents()
-    assert.deepEqual(shown, ["john 3:16"])
+    assert.deepEqual(shown, [])
+    assert.deepEqual(pending, ["john 3:1", "john 3:16"])
+  }))
+
+test("nav: a chapter heard only in a partial transcript cannot seed a verse suggestion", () =>
+  run(async ({ asr, shown, pending }) => {
+    asr.say("Genesis chapter 1", "partial")
+    await flushEvents()
+    asr.say("verse 5")
+    await flushEvents()
+    assert.deepEqual(shown, [])
+    assert.deepEqual(pending, [])
   }))
 
 // ---- review fix round: only a BARE number completes a held verse ----
