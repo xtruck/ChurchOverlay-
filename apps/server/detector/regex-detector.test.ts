@@ -1,6 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { RegexDetector, normalizeBookName, FRENCH_BOOK_ALIASES, PHONETIC_BOOK_ALIASES, CATALOG_IDS } from "./regex-detector"
+import { BOOK_CATALOG } from "../verse/book-catalog"
 
 test("RegexDetector: detects a single valid 'Book Chapter:Verse' reference", () => {
   const detector = new RegexDetector()
@@ -206,9 +207,47 @@ test("RegexDetector: common phonetic and alternate book spellings resolve throug
   }
 })
 
+test("RegexDetector: phonetic spelling variants cover difficult names across the Old and New Testaments", () => {
+  const detector = new RegexDetector()
+  const examples: ReadonlyArray<readonly [string, string]> = [
+    ["1 Samual 1:1", "1 samuel"],
+    ["2 Samual 1:1", "2 samuel"],
+    ["Ecclesiasties 1:1", "ecclesiastes"],
+    ["Ecclesiastis 1:1", "ecclesiastes"],
+    ["Jeremias 1:1", "jeremiah"],
+    ["Ezekial 1:1", "ezekiel"],
+    ["Hoshea 1:1", "hosea"],
+    ["Obediah 1:1", "obadiah"],
+    ["Nahoum 1:1", "nahum"],
+    ["Zacharias 1:1", "zechariah"],
+    ["Malachias 1:1", "malachi"],
+    ["Galatian 1:1", "galatians"],
+    ["Galatien 1:1", "galatians"],
+    ["1 Corintian 1:1", "1 corinthians"],
+    ["2 Corintian 1:1", "2 corinthians"],
+    ["1 Thessalonien 1:1", "1 thessalonians"],
+    ["2 Thessalonien 1:1", "2 thessalonians"],
+    ["1 Timotee 1:1", "1 timothy"],
+    ["2 Timotee 1:1", "2 timothy"],
+    ["1 Timoty 1:1", "1 timothy"],
+    ["2 Timoty 1:1", "2 timothy"],
+  ]
+  for (const [spoken, book] of examples) {
+    assert.deepEqual(detector.detect(spoken), [{ book, chapter: 1, verse: 1 }], spoken)
+  }
+})
+
 // ARCHITECTURE.md section 105: comprehensive, proactive phonetic and
 // grammatical-number tolerance for all 66 books, across both languages —
 // requested directly (not waiting for each individual live miss).
+test("normalizeBookName: every catalog book has working English and French names", () => {
+  const frenchBookIds = new Set(Object.values(FRENCH_BOOK_ALIASES))
+  for (const book of BOOK_CATALOG) {
+    assert.equal(normalizeBookName(book.name), book.id, `English name "${book.name}"`)
+    assert.ok(frenchBookIds.has(book.id), `French alias missing for ${book.id}`)
+  }
+})
+
 test("normalizeBookName: grammatical singular/plural mismatches resolve in both languages", () => {
   assert.equal(normalizeBookName("Psalms"), "psalm")
   assert.equal(normalizeBookName("Proverb"), "proverbs")

@@ -459,6 +459,10 @@ export const PHONETIC_BOOK_ALIASES: Readonly<Record<string, string>> = nullProto
   "2 chronicle": "2 chronicles",
   // Ezra — French trailing-consonant-drop mishearing ("Esdras" -> "Esdra").
   esdra: "ezra",
+  // Samuel — common vowel-order spelling error; numbered to keep the two
+  // catalog entries distinct.
+  "1 samual": "1 samuel",
+  "2 samual": "2 samuel",
   // Nehemiah — French "H"-drop mishearing (same pattern as Habakkuk's
   // "abacuc"/"abaku"), plus a dropped-final-vowel and an English
   // dropped-"H" mishearing.
@@ -494,6 +498,9 @@ export const PHONETIC_BOOK_ALIASES: Readonly<Record<string, string>> = nullProto
   // Ecclesiastes — French single-c and dropped-final-e mishearings.
   eclesiaste: "ecclesiastes",
   eclesiastes: "ecclesiastes",
+  // Ecclesiastes — common phonetic spellings of the unstressed middle syllable.
+  ecclesiasties: "ecclesiastes",
+  ecclesiastis: "ecclesiastes",
   // Isaiah — English dropped-"H" mishearing (mirrors "Ésaïe"/"Isaïe"
   // already being two full French names for this book).
   isaia: "isaiah",
@@ -502,6 +509,9 @@ export const PHONETIC_BOOK_ALIASES: Readonly<Record<string, string>> = nullProto
   // "Amos"/"Jean"/"Marc" above — gated by the surrounding "N:M" pattern).
   jeremia: "jeremiah",
   jeremy: "jeremiah",
+  jeremias: "jeremiah",
+  // Ezekiel — common English spelling variant.
+  ezekial: "ezekiel",
   // Lamentations — Grammatical singular (same spelling in both languages).
   lamentation: "lamentations",
   // Zephaniah — French "ph"/"f" are pronounced identically ("Sophonie" -> "Sofonie").
@@ -514,7 +524,14 @@ export const PHONETIC_BOOK_ALIASES: Readonly<Record<string, string>> = nullProto
   zecharia: "zechariah",
   // Obadiah/Malachi — final-h and vowel spellings frequently vary in transcription.
   obadia: "obadiah",
+  obediah: "obadiah",
+  // Hosea/Nahum — established transliteration variants.
+  hoshea: "hosea",
+  nahoum: "nahum",
   malachai: "malachi",
+  malachias: "malachi",
+  // Zechariah — established English spelling variant.
+  zacharias: "zechariah",
   // Haggai — French single-g mishearing ("Aggée" -> "Agée").
   agee: "haggai",
   // Matthew — "Mathieu" (one "t") is the standard spelling of the common
@@ -532,6 +549,8 @@ export const PHONETIC_BOOK_ALIASES: Readonly<Record<string, string>> = nullProto
   "2 corinthien": "2 corinthians",
   "1 corinthian": "1 corinthians",
   "2 corinthian": "2 corinthians",
+  "1 corintian": "1 corinthians",
+  "2 corintian": "2 corinthians",
   // Observed live (2026-10-05, French Deepgram): "Corentin", "Corretien",
   // "Corretine" for "Corinthiens". Numbered only, like every volume above: a
   // bare "Corentin 5" is ambiguous between the two epistles and stays unresolved.
@@ -553,6 +572,9 @@ export const PHONETIC_BOOK_ALIASES: Readonly<Record<string, string>> = nullProto
   philippian: "philippians",
   colossien: "colossians",
   colossian: "colossians",
+  // Galatians — singular forms occur in both English and French speech.
+  galatian: "galatians",
+  galatien: "galatians",
   // 1/2 Thessalonians — Observed live (2026-09-29): "saloniciens" for
   // "Thessaloniciens" (the leading "Thes" dropped entirely), plus the
   // same singular-mishearing reasoning as the group above.
@@ -562,9 +584,15 @@ export const PHONETIC_BOOK_ALIASES: Readonly<Record<string, string>> = nullProto
   "2 thessalonicien": "2 thessalonians",
   "1 thessalonian": "1 thessalonians",
   "2 thessalonian": "2 thessalonians",
+  "1 thessalonien": "1 thessalonians",
+  "2 thessalonien": "2 thessalonians",
   // 1/2 Timothy — French dropped-final-vowel mishearing ("Timothée" -> "Timothe").
   "1 timothe": "1 timothy",
   "2 timothe": "2 timothy",
+  "1 timotee": "1 timothy",
+  "2 timotee": "2 timothy",
+  "1 timoty": "1 timothy",
+  "2 timoty": "2 timothy",
   // Philemon — Observed live (2026-09-29): "Phélemone" for "Philémon".
   phelemone: "philemon",
   // Observed in a final live transcript: "Phelemon" and the partial variant

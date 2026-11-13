@@ -5519,6 +5519,15 @@ miss added `phelemon` (and the related ASR variant `philimon`) as explicit
 Philemon aliases and added the canonical French/English names to Deepgram's
 static vocabulary hints.
 
+**Cross-book follow-up (2026-11-13).** Added explicit spelling variants across
+both testaments, including numbered Samuel, Ecclesiastes, Ezekiel, Hosea,
+Obadiah, Nahum, Zechariah, Malachi, Galatians, Corinthians, Thessalonians and
+Timothy. The aliases are exercised as full references, and a catalog-wide test
+checks that every book still normalizes from its English name and has a French
+name. This remains a curated spelling-alias approach, not fuzzy matching.
+Deepgram's global hint list stays deliberately short; Groq's static prompt
+already includes all catalog book names.
+
 Voice navigation keeps its existing specific-phrase behavior (including
 "go to the next verse"). It additionally accepts a short, fixed set of
 whole-utterance alternatives such as "go to the next one", "go back one
