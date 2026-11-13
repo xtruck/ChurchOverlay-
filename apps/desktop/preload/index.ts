@@ -77,6 +77,15 @@ contextBridge.exposeInMainWorld("churchOverlay", {
   exportSession: () => ipcRenderer.invoke("export-session"),
   exportRehearsal: () => ipcRenderer.invoke("export-rehearsal"),
   exportDiagnostics: () => ipcRenderer.invoke("export-diagnostics"),
+  // B1: persistent log folder, and non-blocking notices from the main process
+  // (uncaught errors, crash recovery, failed service start). The history is
+  // what a freshly loaded dashboard reads; live notices arrive through the callback.
+  openLogsFolder: () => ipcRenderer.invoke("open-logs-folder"),
+  getMainNotices: () => ipcRenderer.invoke("get-main-notices"),
+  onMainNotice: (callback: (notice: unknown) => void) => {
+    ipcRenderer.removeAllListeners("main-notice")
+    ipcRenderer.on("main-notice", (_event, notice) => callback(notice))
+  },
   generateServiceSummary: (sermonNotesText: string) => ipcRenderer.invoke("generate-service-summary", sermonNotesText),
   generateServiceExtras: (sermonNotesText: string) => ipcRenderer.invoke("generate-service-extras", sermonNotesText),
   exportServiceExtras: () => ipcRenderer.invoke("export-service-extras"),

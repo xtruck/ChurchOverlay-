@@ -7,8 +7,10 @@ import type {
   CanvasShowPayload,
   DefinitionShowPayload,
   DetectorNearMissPayload,
+  VerseLookupFailedPayload,
   MicAutoGainPayload,
   MicHealthPayload,
+  MicStartFailedPayload,
   MediaCue,
   MediaShowPayload,
   MediaSetDurationPayload,
@@ -74,7 +76,7 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0
 }
 
-const MIC_HEALTH_STATES = new Set(["warming-up", "ok", "listening", "too-quiet", "clipping", "noisy", "no-signal"])
+const MIC_HEALTH_STATES = new Set(["warming-up", "ok", "listening", "too-quiet", "clipping", "noisy", "no-signal", "no-audio"])
 
 function isNullableNumber(value: unknown): boolean {
   return value === null || (typeof value === "number" && Number.isFinite(value))
@@ -93,6 +95,10 @@ function isMicHealthPayload(payload: unknown): payload is MicHealthPayload {
     typeof payload.gainDb === "number" &&
     typeof payload.autoGain === "boolean"
   )
+}
+
+function isMicStartFailedPayload(payload: unknown): payload is MicStartFailedPayload {
+  return isPlainObject(payload) && Object.keys(payload).length === 1 && typeof payload.reason === "string" && payload.reason.length > 0 && payload.reason.length <= 500
 }
 
 function isMicAutoGainPayload(payload: unknown): payload is MicAutoGainPayload {
@@ -536,6 +542,29 @@ function isDetectorNearMissPayload(payload: unknown): payload is DetectorNearMis
   return isPlainObject(payload) && typeof payload.text === "string" && isOptionalSuggestionList(payload.suggestions)
 }
 
+/** SF-03: operator-only lookup-failure notice. Shape-checked and bounded like every other payload. */
+const LOOKUP_FAILURE_REASONS = new Set(["unavailable", "not-found", "invalid", "superseded"])
+const LOOKUP_FAILURE_ORIGINS = new Set(["detected", "override", "navigate"])
+function isVerseLookupFailedPayload(payload: unknown): payload is VerseLookupFailedPayload {
+  if (!isPlainObject(payload) || !isPlainObject(payload.reference)) return false
+  const reference = payload.reference
+  return (
+    typeof reference.book === "string" &&
+    reference.book.length > 0 &&
+    reference.book.length <= 64 &&
+    Number.isInteger(reference.chapter) &&
+    (reference.chapter as number) >= 0 &&
+    (reference.chapter as number) <= 9999 &&
+    Number.isInteger(reference.verse) &&
+    (reference.verse as number) >= 0 &&
+    (reference.verse as number) <= 9999 &&
+    typeof payload.reason === "string" &&
+    LOOKUP_FAILURE_REASONS.has(payload.reason) &&
+    typeof payload.origin === "string" &&
+    LOOKUP_FAILURE_ORIGINS.has(payload.origin)
+  )
+}
+
 /** ARCHITECTURE.md section 94: both fields optional — absence is valid ("show nothing extra"), not corruption. */
 function isBrandingUpdatePayload(payload: unknown): payload is BrandingUpdatePayload {
   if (!isPlainObject(payload)) return false
@@ -809,6 +838,11 @@ export const ACTION_REGISTRY: Readonly<Record<WsCommandType | WsEventType, Actio
     allowedSenders: [],
     validatePayload: isDetectorNearMissPayload,
   },
+  "verse:lookup-failed": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isVerseLookupFailedPayload,
+  },
   "branding:update": {
     kind: "event",
     allowedSenders: [],
@@ -825,6 +859,12 @@ export const ACTION_REGISTRY: Readonly<Record<WsCommandType | WsEventType, Actio
     kind: "event",
     allowedSenders: [],
     validatePayload: isMicHealthPayload,
+  },
+  // SF-06: operator-only (not in the viewer outbound allow-list); no sender may emit it.
+  "mic:start-failed": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isMicStartFailedPayload,
   },
   "timer:start": {
     kind: "command",

@@ -2,6 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { EventEmitter } from "node:events"
 import type { spawn } from "node:child_process"
+import { cpus } from "node:os"
 import { WhisperServerProcess, localEngineThreads, watchSystemResume } from "./local-whisper-server"
 import { Logger } from "../../../packages/shared/logger"
 
@@ -49,20 +50,64 @@ function harness() {
   return { server, children, state }
 }
 
-test("localEngineThreads: offline-first leaves half the cores to OBS, NDI and the UI; the default is unchanged", () => {
-  // Default (the engine is only a fallback): cpus - 1, between 2 and 8.
-  assert.equal(localEngineThreads(8), 7)
+test("localEngineThreads: the engine takes half the logical cores (2..8), never cores - 1", () => {
+  // Was cpus - 1 for the fallback engine (~72% of the machine while decoding).
+  assert.equal(localEngineThreads(8), 4)
   assert.equal(localEngineThreads(16), 8)
+  assert.equal(localEngineThreads(4), 2)
   assert.equal(localEngineThreads(2), 2)
   assert.equal(localEngineThreads(1), 2)
-  // Offline-first (the engine carries every sentence): half the logical cores, between 2 and 8.
-  assert.equal(localEngineThreads(8, true), 4)
-  assert.equal(localEngineThreads(4, true), 2)
-  assert.equal(localEngineThreads(2, true), 2)
-  assert.equal(localEngineThreads(32, true), 8)
+  assert.equal(localEngineThreads(32), 8)
   // Garbage in, a safe number out.
-  assert.equal(localEngineThreads(Number.NaN, true), 2)
+  assert.equal(localEngineThreads(Number.NaN), 2)
   assert.equal(localEngineThreads(0), 2)
+})
+
+test("WhisperServerProcess: the default thread count is half the cores and an explicit option still overrides it", async () => {
+  const seen: string[][] = []
+  const spawnImpl = ((_cmd: string, args: string[]) => {
+    seen.push(args)
+    return new FakeChild()
+  }) as unknown as typeof spawn
+  const fetchImpl = (() => Promise.resolve(new Response('{"status":"ok"}', { status: 200 }))) as typeof fetch
+  const a = new WhisperServerProcess({ serverPath: "C:/e/w.exe", modelPath: "m", spawnImpl, fetchImpl })
+  await a.ensureStarted()
+  await a.stop()
+  const b = new WhisperServerProcess({ serverPath: "C:/e/w.exe", modelPath: "m", spawnImpl, fetchImpl, threads: 3 })
+  await b.ensureStarted()
+  await b.stop()
+  const threadsOf = (args: string[]): number => Number(args[args.indexOf("-t") + 1])
+  assert.equal(threadsOf(seen[0]!), localEngineThreads(cpus().length))
+  assert.equal(threadsOf(seen[1]!), 3)
+})
+
+test("SF-13: a child that fails to spawn (error event) is logged and fails the start instead of throwing uncaught", async () => {
+  const lines: Array<{ event?: string }> = []
+  const logger = new Logger({ write: (line) => lines.push(JSON.parse(line)) })
+  const spawnImpl = (() => {
+    const child = new FakeChild()
+    setImmediate(() => child.emit("error", Object.assign(new Error("spawn whisper-server.exe ENOENT"), { code: "ENOENT" })))
+    return child
+  }) as unknown as typeof spawn
+  const fetchImpl = (() => Promise.reject(new TypeError("fetch failed"))) as typeof fetch
+  const server = new WhisperServerProcess({ serverPath: "C:/e/w.exe", modelPath: "m", spawnImpl, fetchImpl, readyTimeoutMs: 2_000, logger })
+  await assert.rejects(() => server.ensureStarted(), /exited during startup/)
+  assert.ok(lines.some((l) => l.event === "local-whisper.spawn-failed"))
+  await server.stop()
+})
+
+test("SF-22: exhausting the automatic restarts notifies onRestartAbandoned", () => {
+  const calls: number[] = []
+  const server = new WhisperServerProcess({
+    serverPath: "C:/e/w.exe",
+    modelPath: "m",
+    onRestartAbandoned: ({ attempts }) => calls.push(attempts),
+  })
+  const internals = server as unknown as { stopped: boolean; restartAttempts: number; scheduleRestart(): void }
+  internals.stopped = false
+  internals.restartAttempts = 8
+  internals.scheduleRestart()
+  assert.deepEqual(calls, [8])
 })
 
 test("WhisperServerProcess.onSystemResume: a healthy engine is left alone", async () => {

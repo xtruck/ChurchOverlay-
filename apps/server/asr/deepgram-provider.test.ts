@@ -430,3 +430,82 @@ test("DeepgramProvider: after 5 off-language drops in a row it stops dropping, w
   assert.deepEqual(policy.ledger.openValves(), [])
   assert.equal(policy.ledger.perMinute()["off-language"], 5)
 })
+
+
+// ---- SF-19: reconnect when Deepgram is the only / last provider ----
+
+function reconnectFixture(options: { reconnectOnClose: boolean }, refuse: { failAfterOpens?: number } = {}) {
+  const sockets: MockWebSocket[] = []
+  let opens = 0
+  class AutoSocket extends MockWebSocket {
+    constructor(url: string, opts: unknown) {
+      super(url, opts)
+      sockets.push(this)
+      opens += 1
+      if (refuse.failAfterOpens !== undefined && opens > refuse.failAfterOpens) {
+        queueMicrotask(() => this.emit("error", new Error("connect refused")))
+      } else {
+        this.readyState = MockWebSocket.OPEN
+        queueMicrotask(() => this.emit("open"))
+      }
+    }
+  }
+  const clock = { t: 1_000_000 }
+  const provider = new DeepgramProvider({ apiKey: "k", WebSocketImpl: AutoSocket as never, now: () => clock.t, ...options })
+  const errors: Error[] = []
+  provider.onError((e) => errors.push(e))
+  const frame: AudioFrame = { samples: Int16Array.from([1, 2, 3]), sampleRate: 16000, sequence: 1 }
+  return { provider, sockets, clock, errors, frame }
+}
+
+test("DeepgramProvider SF-19: with reconnectOnClose, audio after an unexpected close reopens the socket (after the backoff) and resumes", async () => {
+  const f = reconnectFixture({ reconnectOnClose: true })
+  await f.provider.start()
+  f.sockets[0]!.close() // dropped mid-service
+  assert.equal(f.errors.length, 1)
+  await assert.rejects(() => f.provider.sendAudio(f.frame), /not connected/, "inside the first 1 s backoff nothing is reopened")
+  assert.equal(f.sockets.length, 1)
+  f.clock.t += 1_000
+  await f.provider.sendAudio(f.frame)
+  assert.equal(f.sockets.length, 2, "reconnected")
+  assert.equal(f.sockets[1]!.sent.length, 1, "the frame went out on the new socket")
+  await f.provider.sendAudio(f.frame)
+  assert.equal(f.sockets.length, 2, "no further reconnects while connected")
+  await f.provider.stop()
+})
+
+test("DeepgramProvider SF-19: failed reconnects back off exponentially, each failure is reported, concurrent frames share one attempt", async () => {
+  const f = reconnectFixture({ reconnectOnClose: true }, { failAfterOpens: 1 }) // the first connection works, every later one is refused
+  await f.provider.start()
+  f.sockets[0]!.close()
+  const baseErrors = f.errors.length
+  f.clock.t += 1_000
+  await Promise.allSettled([f.provider.sendAudio(f.frame), f.provider.sendAudio(f.frame), f.provider.sendAudio(f.frame)])
+  assert.equal(f.sockets.length, 2, "one shared attempt")
+  assert.ok(f.errors.length > baseErrors, "the failure is reported")
+  f.clock.t += 1_999
+  await assert.rejects(() => f.provider.sendAudio(f.frame))
+  assert.equal(f.sockets.length, 2, "backing off 2 s")
+  f.clock.t += 1
+  await assert.rejects(() => f.provider.sendAudio(f.frame))
+  assert.equal(f.sockets.length, 3)
+  f.clock.t += 3_999
+  await assert.rejects(() => f.provider.sendAudio(f.frame))
+  assert.equal(f.sockets.length, 3, "then 4 s")
+})
+test("DeepgramProvider SF-19: without reconnectOnClose nothing is reopened, and stop() ends reconnecting", async () => {
+  const off = reconnectFixture({ reconnectOnClose: false })
+  await off.provider.start()
+  off.sockets[0]!.close()
+  off.clock.t += 60_000
+  await assert.rejects(() => off.provider.sendAudio(off.frame), /not connected/)
+  assert.equal(off.sockets.length, 1)
+
+  const on = reconnectFixture({ reconnectOnClose: true })
+  await on.provider.start()
+  on.sockets[0]!.close()
+  await on.provider.stop()
+  on.clock.t += 60_000
+  await assert.rejects(() => on.provider.sendAudio(on.frame), /not connected/)
+  assert.equal(on.sockets.length, 1, "stopped on purpose: never reopened")
+})

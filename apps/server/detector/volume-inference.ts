@@ -1,3 +1,5 @@
+import { nullProto } from "../../../packages/shared/type-guards"
+
 /**
  * Which volume does "Corinthiens 5 verset 2" mean — 1 or 2?
  *
@@ -19,14 +21,14 @@
  */
 
 /** family -> spoken forms (accent-free, lower-case), including live mishearings. */
-const FAMILY_WORDS: Readonly<Record<string, readonly string[]>> = {
+const FAMILY_WORDS: Readonly<Record<string, readonly string[]>> = nullProto({
   corinthians: ["corinthiens", "corinthians", "corinthien", "corentin", "corentien", "corretien", "corretine", "corintien"],
   thessalonians: ["thessaloniciens", "thessalonians"],
   timothy: ["timothee", "timothy"],
   samuel: ["samuel"],
   kings: ["rois", "kings"],
   chronicles: ["chroniques", "chronicles"],
-}
+})
 
 const FAMILY_BY_WORD: ReadonlyMap<string, string> = new Map(
   Object.entries(FAMILY_WORDS).flatMap(([family, words]) => words.map((word) => [word, family] as const)),

@@ -12,11 +12,12 @@
  * Anything else is null. Pure and deterministic.
  */
 
+import { nullProto } from "../../../packages/shared/type-guards"
 import { BOOK_CATALOG } from "../verse/book-catalog"
 import { CATALOG_IDS, FRENCH_BOOK_ALIASES, normalizeBookName, stripAccents } from "./regex-detector"
 
 /** Common French and English abbreviations. Numbered books list the bare name: "1co" is `1` + `co`. */
-const ABBREVIATIONS: Readonly<Record<string, string>> = {
+const ABBREVIATIONS: Readonly<Record<string, string>> = nullProto({
   gn: "genesis", gen: "genesis", ge: "genesis",
   ex: "exodus", exo: "exodus",
   lv: "leviticus", lev: "leviticus", le: "leviticus",
@@ -74,7 +75,7 @@ const ABBREVIATIONS: Readonly<Record<string, string>> = {
   p: "peter", pe: "peter", pt: "peter", pet: "peter",
   jud: "jude", jd: "jude",
   ap: "revelation", apo: "revelation", re: "revelation", rev: "revelation",
-}
+})
 
 /** Most-read first: breaks a tie only between genuinely ambiguous prefixes ("ma", "jo", "ph"). */
 const PREFERRED: readonly string[] = [

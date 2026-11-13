@@ -4,7 +4,7 @@ import assert from "node:assert/strict"
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { ConfigStore, type SecretCodec } from "./config-store"
+import { CONFIG_SCHEMA_VERSION, ConfigStore, type SecretCodec } from "./config-store"
 import type { AppConfig } from "./config-store"
 
 /** Named per AGENTS.md section 45 — a reversible test double, not real encryption. */
@@ -74,24 +74,6 @@ test("ConfigStore: organizationName and accentColor are absent (not defaulted) w
     const loaded = await store.load()
     assert.equal(loaded?.organizationName, undefined)
     assert.equal(loaded?.accentColor, undefined)
-  })
-})
-
-test("ConfigStore: load() throws on a present but invalid organizationName/accentColor (real corruption)", async () => {
-  await withTempDir(async (dir) => {
-    const path = join(dir, "config.json")
-    const codec = new FakeSecretCodec()
-    const baseStored = {
-      groqApiKeyEncrypted: codec.encrypt(SAMPLE_CONFIG.groqApiKey).toString("base64"),
-      microphoneId: SAMPLE_CONFIG.microphoneId,
-      operatorTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.operatorToken).toString("base64"),
-      viewerTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.viewerToken).toString("base64"),
-    }
-    const { writeFile } = await import("node:fs/promises")
-    await writeFile(path, JSON.stringify({ ...baseStored, organizationName: 42 }), "utf8")
-    await assert.rejects(() => new ConfigStore(path, codec).load(), /invalid organizationName/)
-    await writeFile(path, JSON.stringify({ ...baseStored, accentColor: 42 }), "utf8")
-    await assert.rejects(() => new ConfigStore(path, codec).load(), /invalid accentColor/)
   })
 })
 
@@ -249,29 +231,6 @@ test("ConfigStore: a config saved before displayMode/uiLanguage existed loads wi
 
 })
 
-test("ConfigStore: load() throws on a present but invalid displayMode or uiLanguage (real corruption, not an old file)", async () => {
-  await withTempDir(async (dir) => {
-    const path = join(dir, "config.json")
-    const codec = new FakeSecretCodec()
-    const baseStored = {
-      groqApiKeyEncrypted: codec.encrypt(SAMPLE_CONFIG.groqApiKey).toString("base64"),
-      microphoneId: SAMPLE_CONFIG.microphoneId,
-      operatorTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.operatorToken).toString("base64"),
-      viewerTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.viewerToken).toString("base64"),
-    }
-    const { writeFile } = await import("node:fs/promises")
-
-    await writeFile(path, JSON.stringify({ ...baseStored, displayMode: "spanish" }), "utf8")
-    await assert.rejects(() => new ConfigStore(path, codec).load(), /invalid displayMode/)
-
-    await writeFile(path, JSON.stringify({ ...baseStored, uiLanguage: "de" }), "utf8")
-    await assert.rejects(() => new ConfigStore(path, codec).load(), /invalid uiLanguage/)
-  })
-})
-
-// ARCHITECTURE.md section 65.6: allowPhoneRemote was added after this
-// file format already existed — same backward-compatible defaulting
-// (to false, the confirmed opt-in-only default) as displayMode/uiLanguage.
 test("ConfigStore: a config saved before allowPhoneRemote existed loads with allowPhoneRemote defaulting to false", async () => {
   await withTempDir(async (dir) => {
     const path = join(dir, "config.json")
@@ -294,25 +253,6 @@ test("ConfigStore: a config saved before allowPhoneRemote existed loads with all
   })
 })
 
-test("ConfigStore: load() throws on a present but non-boolean allowPhoneRemote (real corruption, not an old file)", async () => {
-  await withTempDir(async (dir) => {
-    const path = join(dir, "config.json")
-    const codec = new FakeSecretCodec()
-    const baseStored = {
-      groqApiKeyEncrypted: codec.encrypt(SAMPLE_CONFIG.groqApiKey).toString("base64"),
-      microphoneId: SAMPLE_CONFIG.microphoneId,
-      operatorTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.operatorToken).toString("base64"),
-      viewerTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.viewerToken).toString("base64"),
-    }
-    const { writeFile } = await import("node:fs/promises")
-    await writeFile(path, JSON.stringify({ ...baseStored, allowPhoneRemote: "yes" }), "utf8")
-    await assert.rejects(() => new ConfigStore(path, codec).load(), /invalid allowPhoneRemote/)
-  })
-})
-
-// ARCHITECTURE.md section 65.3: verseConfirmationMode was added after this
-// file format already existed — same backward-compatible defaulting (to
-// "auto", the confirmed unchanged-behavior default) as the others above.
 test("ConfigStore: a config saved before verseConfirmationMode existed loads with it defaulting to 'auto'", async () => {
   await withTempDir(async (dir) => {
     const path = join(dir, "config.json")
@@ -336,25 +276,6 @@ test("ConfigStore: a config saved before verseConfirmationMode existed loads wit
   })
 })
 
-test("ConfigStore: load() throws on a present but invalid verseConfirmationMode (real corruption, not an old file)", async () => {
-  await withTempDir(async (dir) => {
-    const path = join(dir, "config.json")
-    const codec = new FakeSecretCodec()
-    const baseStored = {
-      groqApiKeyEncrypted: codec.encrypt(SAMPLE_CONFIG.groqApiKey).toString("base64"),
-      microphoneId: SAMPLE_CONFIG.microphoneId,
-      operatorTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.operatorToken).toString("base64"),
-      viewerTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.viewerToken).toString("base64"),
-    }
-    const { writeFile } = await import("node:fs/promises")
-    await writeFile(path, JSON.stringify({ ...baseStored, verseConfirmationMode: "sometimes" }), "utf8")
-    await assert.rejects(() => new ConfigStore(path, codec).load(), /invalid verseConfirmationMode/)
-  })
-})
-
-// ARCHITECTURE.md section 65.7: enableSermonNotes was added after this
-// file format already existed — same backward-compatible defaulting (to
-// false, the confirmed opt-in-for-cost default) as allowPhoneRemote above.
 test("ConfigStore: a config saved before enableSermonNotes existed loads with it defaulting to false", async () => {
   await withTempDir(async (dir) => {
     const path = join(dir, "config.json")
@@ -407,26 +328,6 @@ test("ConfigStore: a config saved before verseLayout existed loads with it defau
   })
 })
 
-test("ConfigStore: load() throws on a present but invalid verseLayout (real corruption, not an old file)", async () => {
-  await withTempDir(async (dir) => {
-    const path = join(dir, "config.json")
-    const codec = new FakeSecretCodec()
-    const baseStored = {
-      groqApiKeyEncrypted: codec.encrypt(SAMPLE_CONFIG.groqApiKey).toString("base64"),
-      microphoneId: SAMPLE_CONFIG.microphoneId,
-      operatorTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.operatorToken).toString("base64"),
-      viewerTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.viewerToken).toString("base64"),
-    }
-    const { writeFile } = await import("node:fs/promises")
-    await writeFile(path, JSON.stringify({ ...baseStored, verseLayout: "sidebar" }), "utf8")
-    await assert.rejects(() => new ConfigStore(path, codec).load(), /invalid verseLayout/)
-  })
-})
-
-// ARCHITECTURE.md section 107: frenchTranslation was added after this file
-// format already existed — same backward-compatible defaulting (to
-// "ls1910", the sole translation every existing install already has) as
-// verseLayout above.
 test("ConfigStore: a config saved before frenchTranslation existed loads with it defaulting to 'ls1910'", async () => {
   await withTempDir(async (dir) => {
     const path = join(dir, "config.json")
@@ -447,25 +348,6 @@ test("ConfigStore: a config saved before frenchTranslation existed loads with it
   })
 })
 
-test("ConfigStore: load() throws on a present but invalid frenchTranslation (real corruption, not an old file)", async () => {
-  await withTempDir(async (dir) => {
-    const path = join(dir, "config.json")
-    const codec = new FakeSecretCodec()
-    const baseStored = {
-      groqApiKeyEncrypted: codec.encrypt(SAMPLE_CONFIG.groqApiKey).toString("base64"),
-      microphoneId: SAMPLE_CONFIG.microphoneId,
-      operatorTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.operatorToken).toString("base64"),
-      viewerTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.viewerToken).toString("base64"),
-    }
-    const { writeFile } = await import("node:fs/promises")
-    await writeFile(path, JSON.stringify({ ...baseStored, frenchTranslation: "niv" }), "utf8")
-    await assert.rejects(() => new ConfigStore(path, codec).load(), /invalid frenchTranslation/)
-  })
-})
-
-// ARCHITECTURE.md section 108: overlayTemplate, same backward-compatible
-// defaulting shape (to "classic", the overlay's one and only look before
-// this existed).
 test("ConfigStore: a config saved before overlayTemplate existed loads with it defaulting to 'classic'", async () => {
   await withTempDir(async (dir) => {
     const path = join(dir, "config.json")
@@ -486,39 +368,6 @@ test("ConfigStore: a config saved before overlayTemplate existed loads with it d
   })
 })
 
-test("ConfigStore: load() throws on a present but invalid overlayTemplate (real corruption, not an old file)", async () => {
-  await withTempDir(async (dir) => {
-    const path = join(dir, "config.json")
-    const codec = new FakeSecretCodec()
-    const baseStored = {
-      groqApiKeyEncrypted: codec.encrypt(SAMPLE_CONFIG.groqApiKey).toString("base64"),
-      microphoneId: SAMPLE_CONFIG.microphoneId,
-      operatorTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.operatorToken).toString("base64"),
-      viewerTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.viewerToken).toString("base64"),
-    }
-    const { writeFile } = await import("node:fs/promises")
-    await writeFile(path, JSON.stringify({ ...baseStored, overlayTemplate: "holographic" }), "utf8")
-    await assert.rejects(() => new ConfigStore(path, codec).load(), /invalid overlayTemplate/)
-  })
-})
-
-test("ConfigStore: load() throws on a present but non-boolean enableSermonNotes (real corruption, not an old file)", async () => {
-  await withTempDir(async (dir) => {
-    const path = join(dir, "config.json")
-    const codec = new FakeSecretCodec()
-    const baseStored = {
-      groqApiKeyEncrypted: codec.encrypt(SAMPLE_CONFIG.groqApiKey).toString("base64"),
-      microphoneId: SAMPLE_CONFIG.microphoneId,
-      operatorTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.operatorToken).toString("base64"),
-      viewerTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.viewerToken).toString("base64"),
-    }
-    const { writeFile } = await import("node:fs/promises")
-    await writeFile(path, JSON.stringify({ ...baseStored, enableSermonNotes: "yes" }), "utf8")
-    await assert.rejects(() => new ConfigStore(path, codec).load(), /invalid enableSermonNotes/)
-  })
-})
-
-// ARCHITECTURE.md section 110: overlayStyle is optional and self-healing.
 test("ConfigStore: overlayStyle round-trips normalized, and a pre-section-110 file loads without one", async () => {
   await withTempDir(async (dir) => {
     const path = join(dir, "config.json")
@@ -603,20 +452,6 @@ test("ConfigStore: local ASR engine, model and enabled flag round-trip", async (
   })
 })
 
-test("ConfigStore: an unknown localAsrEngine is rejected on load, not silently defaulted", async () => {
-  await withTempDir(async (dir) => {
-    const file = join(dir, "config.json")
-    const store = new ConfigStore(file, new FakeSecretCodec())
-    await store.save({ ...SAMPLE_CONFIG, localAsrEngine: "faster-whisper" })
-    const raw = JSON.parse(await readFile(file, "utf8"))
-    raw.localAsrEngine = "mystery"
-    await writeFile(file, JSON.stringify(raw))
-    await assert.rejects(store.load(), /invalid localAsrEngine/)
-  })
-})
-
-// ARCHITECTURE.md sections 123-125: the three AI feature toggles are optional,
-// off when absent (old files), preserved when present, and corruption is loud.
 test("ConfigStore: AI feature toggles round-trip, and an older file loads with none of them set (= off)", async () => {
   await withTempDir(async (dir) => {
     const path = join(dir, "config.json")
@@ -636,26 +471,7 @@ test("ConfigStore: AI feature toggles round-trip, and an older file loads with n
   })
 })
 
-test("ConfigStore: load() throws on a non-boolean AI feature toggle", async () => {
-  await withTempDir(async (dir) => {
-    const path = join(dir, "config.json")
-    const codec = new FakeSecretCodec()
-    const baseStored = {
-      groqApiKeyEncrypted: codec.encrypt(SAMPLE_CONFIG.groqApiKey).toString("base64"),
-      microphoneId: SAMPLE_CONFIG.microphoneId,
-      operatorTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.operatorToken).toString("base64"),
-      viewerTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.viewerToken).toString("base64"),
-    }
-    const { writeFile } = await import("node:fs/promises")
-    for (const name of ["aiTranscriptCleanup", "aiSemanticDetection", "aiSermonCopilot"]) {
-      await writeFile(path, JSON.stringify({ ...baseStored, [name]: "yes" }), "utf8")
-      await assert.rejects(() => new ConfigStore(path, codec).load(), new RegExp(`invalid ${name}`))
-    }
-  })
-})
-
-// ARCHITECTURE.md section 128: the AI provider choice is optional (absent = Anthropic when a key exists), preserved when present, and corruption is loud.
-test("ConfigStore: aiProvider round-trips, an older file loads without it, and an unknown value is loud corruption", async () => {
+test("ConfigStore: aiProvider round-trips, an older file loads without it, and an an unknown value falls back to absent", async () => {
   await withTempDir(async (dir) => {
     const path = join(dir, "config.json")
     const codec = new FakeSecretCodec()
@@ -670,7 +486,7 @@ test("ConfigStore: aiProvider round-trips, an older file loads without it, and a
     const raw = JSON.parse(await readFile(path, "utf8"))
     raw.aiProvider = "openai"
     await writeFile(path, JSON.stringify(raw))
-    await assert.rejects(store.load(), /invalid aiProvider/)
+    assert.equal((await store.load())?.aiProvider, undefined) // unknown value falls back (B6), see tolerance test
   })
 })
 
@@ -683,21 +499,212 @@ test("ConfigStore: customBibleApiUrl round-trips when present and valid HTTPS UR
   })
 })
 
-test("ConfigStore: customBibleApiUrl throws on non-string or non-HTTPS URL", async () => {
+// ---------------------------------------------------------------------------
+// B6 (audit REPORT.md): tolerant load. One bad optional field, an unknown enum
+// value (downgrade/rollback) or one undecryptable secret must never take the
+// whole config (keys, tokens) down with it.
+// ---------------------------------------------------------------------------
+
+type StoredBase = Record<string, unknown>
+
+function storedBase(codec: SecretCodec): StoredBase {
+  return {
+    groqApiKeyEncrypted: codec.encrypt(SAMPLE_CONFIG.groqApiKey).toString("base64"),
+    deepgramApiKeyEncrypted: codec.encrypt(SAMPLE_CONFIG.deepgramApiKey as string).toString("base64"),
+    anthropicApiKeyEncrypted: codec.encrypt(SAMPLE_CONFIG.anthropicApiKey as string).toString("base64"),
+    microphoneId: SAMPLE_CONFIG.microphoneId,
+    operatorTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.operatorToken).toString("base64"),
+    viewerTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.viewerToken).toString("base64"),
+  }
+}
+
+const TOLERANCE_CASES: ReadonlyArray<readonly [field: string, bad: unknown, read: (c: AppConfig) => unknown, expected: unknown]> = [
+  ["organizationName", 42, (c) => c.organizationName, undefined],
+  ["accentColor", 42, (c) => c.accentColor, undefined],
+  ["displayMode", "spanish", (c) => c.displayMode, "english"],
+  ["uiLanguage", "de", (c) => c.uiLanguage, "en"],
+  ["allowPhoneRemote", "yes", (c) => c.allowPhoneRemote, false],
+  ["verseConfirmationMode", "sometimes", (c) => c.verseConfirmationMode, "auto"],
+  ["enableSermonNotes", "yes", (c) => c.enableSermonNotes, false],
+  ["verseLayout", "sidebar", (c) => c.verseLayout, "fullscreen"],
+  ["frenchTranslation", "niv", (c) => c.frenchTranslation, "ls1910"],
+  ["overlayTemplate", "holographic", (c) => c.overlayTemplate, "classic"],
+  ["localAsrEngine", "mystery", (c) => c.localAsrEngine, undefined],
+  ["localAsrModel", "huge", (c) => c.localAsrModel, undefined],
+  ["localAsrEnabled", "yes", (c) => c.localAsrEnabled, undefined],
+  ["audioProfile", "turbo", (c) => c.audioProfile, undefined],
+  ["asrStrategy", "quantum", (c) => c.asrStrategy, undefined],
+  ["aiProvider", "openai", (c) => c.aiProvider, undefined],
+  ["autoGain", "yes", (c) => c.autoGain, undefined],
+  ["ndiEnabled", "yes", (c) => c.ndiEnabled, undefined],
+  ["aiTranscriptCleanup", "yes", (c) => c.aiTranscriptCleanup, undefined],
+  ["aiSemanticDetection", "yes", (c) => c.aiSemanticDetection, undefined],
+  ["aiSermonCopilot", "yes", (c) => c.aiSermonCopilot, undefined],
+  ["noiseMode", "deafening", (c) => c.noiseMode, undefined],
+  ["customBibleApiUrl", 12345, (c) => c.customBibleApiUrl, undefined],
+  ["customBibleApiUrl", "http://insecure-bible.com", (c) => c.customBibleApiUrl, undefined],
+  ["microphoneId", 7, (c) => c.microphoneId, null],
+]
+
+test("ConfigStore: ONE invalid optional field / unknown enum falls back to its default; keys, tokens and other fields survive and nothing is quarantined", async () => {
+  for (const [field, bad, read, expected] of TOLERANCE_CASES) {
+    await withTempDir(async (dir) => {
+      const path = join(dir, "config.json")
+      const codec = new FakeSecretCodec()
+      await writeFile(path, JSON.stringify({ ...storedBase(codec), organizationName: "Grace", [field]: bad }), "utf8")
+      const warnings: string[] = []
+      const store = new ConfigStore(path, codec, { warn: (f) => warnings.push(`${f.event}:${String(f.metadata?.field)}`) })
+
+      const loaded = await store.load()
+      assert.ok(loaded, `${field}: config must load`)
+      assert.equal(read(loaded), expected, `${field}: falls back`)
+      assert.equal(loaded.groqApiKey, SAMPLE_CONFIG.groqApiKey, `${field}: groq key kept`)
+      assert.equal(loaded.deepgramApiKey, SAMPLE_CONFIG.deepgramApiKey, `${field}: deepgram key kept`)
+      assert.equal(loaded.anthropicApiKey, SAMPLE_CONFIG.anthropicApiKey, `${field}: anthropic key kept`)
+      assert.equal(loaded.operatorToken, SAMPLE_CONFIG.operatorToken, `${field}: tokens kept`)
+      if (field !== "organizationName") assert.equal(loaded.organizationName, "Grace", `${field}: other fields kept`)
+      assert.ok(warnings.some((w) => w.endsWith(`:${field}`)), `${field}: a warning was logged`)
+      assert.deepEqual((await readdir(dir)).sort(), ["config.json"], `${field}: file not quarantined`)
+      assert.deepEqual(store.getRecovery(), [], `${field}: not reported as a recovery`)
+    })
+  }
+})
+
+test("ConfigStore: one undecryptable secret does not discard the others or the rest of the config, and is reported by name", async () => {
   await withTempDir(async (dir) => {
     const path = join(dir, "config.json")
     const codec = new FakeSecretCodec()
+    const stored = { ...storedBase(codec), deepgramApiKeyEncrypted: Buffer.from("garbage").toString("base64"), organizationName: "Grace" }
+    await writeFile(path, JSON.stringify(stored), "utf8")
+    const warnings: string[] = []
+    const store = new ConfigStore(path, codec, { warn: (f) => warnings.push(JSON.stringify(f)) })
+
+    const loaded = await store.load()
+    assert.ok(loaded)
+    assert.equal(loaded.groqApiKey, SAMPLE_CONFIG.groqApiKey)
+    assert.equal(loaded.anthropicApiKey, SAMPLE_CONFIG.anthropicApiKey)
+    assert.equal(loaded.deepgramApiKey, undefined)
+    assert.equal(loaded.operatorToken, SAMPLE_CONFIG.operatorToken)
+    assert.equal(loaded.viewerToken, SAMPLE_CONFIG.viewerToken)
+    assert.equal(loaded.organizationName, "Grace")
+    assert.deepEqual(store.getRecovery(), ["key-unreadable:deepgram"])
+    assert.deepEqual((await readdir(dir)).sort(), ["config.json"], "never quarantined")
+    assert.ok(warnings.length > 0, "the failure is logged")
+    for (const line of warnings) {
+      for (const secret of [SAMPLE_CONFIG.groqApiKey, SAMPLE_CONFIG.anthropicApiKey as string, SAMPLE_CONFIG.operatorToken]) {
+        assert.equal(line.includes(secret), false, "no secret in logs")
+      }
+    }
+  })
+})
+
+test("ConfigStore: an unreadable Groq key is reported; a later save keeps the raw blob until the operator re-enters it, then the report clears", async () => {
+  await withTempDir(async (dir) => {
+    const path = join(dir, "config.json")
+    const codec = new FakeSecretCodec()
+    const garbage = Buffer.from("garbage").toString("base64")
+    await writeFile(path, JSON.stringify({ ...storedBase(codec), groqApiKeyEncrypted: garbage }), "utf8")
     const store = new ConfigStore(path, codec)
+
+    const loaded = await store.load()
+    assert.equal(loaded?.groqApiKey, "")
+    assert.equal(loaded?.deepgramApiKey, SAMPLE_CONFIG.deepgramApiKey)
+    assert.deepEqual(store.getRecovery(), ["key-unreadable:groq"])
+
+    await store.update((c) => ({ ...c, organizationName: "Grace" }))
+    assert.equal(JSON.parse(await readFile(path, "utf8")).groqApiKeyEncrypted, garbage, "unreadable blob is not destroyed")
+
+    await store.update((c) => ({ ...c, groqApiKey: "gsk_new_key" }))
+    assert.deepEqual(store.getRecovery(), [])
+    assert.equal((await store.load())?.groqApiKey, "gsk_new_key")
+  })
+})
+
+test("ConfigStore: schemaVersion is always written, and a file without one loads fine", async () => {
+  await withTempDir(async (dir) => {
+    const path = join(dir, "config.json")
+    const store = new ConfigStore(path, new FakeSecretCodec())
     await store.save(SAMPLE_CONFIG)
+    assert.equal(typeof JSON.parse(await readFile(path, "utf8")).schemaVersion, "number")
+    assert.equal(JSON.parse(await readFile(path, "utf8")).schemaVersion, CONFIG_SCHEMA_VERSION)
 
-    const { readFile, writeFile } = await import("node:fs/promises")
-    const raw = JSON.parse(await readFile(path, "utf8"))
-    raw.customBibleApiUrl = 12345
-    await writeFile(path, JSON.stringify(raw))
-    await assert.rejects(store.load(), /invalid customBibleApiUrl/)
+    const legacy = storedBase(new FakeSecretCodec())
+    await writeFile(path, JSON.stringify(legacy), "utf8")
+    assert.equal((await store.load())?.groqApiKey, SAMPLE_CONFIG.groqApiKey)
+  })
+})
 
-    raw.customBibleApiUrl = "http://insecure-bible.com"
-    await writeFile(path, JSON.stringify(raw))
-    await assert.rejects(store.load(), /must be an HTTPS URL/)
+test("ConfigStore: a NEWER schemaVersion loads tolerantly and is not downgraded destructively", async () => {
+  await withTempDir(async (dir) => {
+    const path = join(dir, "config.json")
+    const codec = new FakeSecretCodec()
+    const future = { ...storedBase(codec), schemaVersion: CONFIG_SCHEMA_VERSION + 1, displayMode: "klingon", futureFeature: { on: true } }
+    const original = JSON.stringify(future)
+    await writeFile(path, original, "utf8")
+    const store = new ConfigStore(path, codec)
+
+    const loaded = await store.load()
+    assert.equal(loaded?.groqApiKey, SAMPLE_CONFIG.groqApiKey)
+    assert.equal(loaded?.displayMode, "english")
+    assert.deepEqual(await readdir(dir), ["config.json"], "loading alone writes nothing")
+
+    await store.update((c) => ({ ...c, organizationName: "Grace" }))
+    const after = JSON.parse(await readFile(path, "utf8"))
+    assert.equal(after.schemaVersion, CONFIG_SCHEMA_VERSION + 1, "version is not lowered")
+    assert.deepEqual(after.futureFeature, { on: true }, "unknown fields are carried through")
+    const files = await readdir(dir)
+    const keep = files.find((name) => name.includes(`schema-v${CONFIG_SCHEMA_VERSION + 1}`))
+    assert.ok(keep, "the original newer-version file is kept before it is first rewritten")
+    assert.equal(await readFile(join(dir, keep), "utf8"), original)
+  })
+})
+
+test("ConfigStore: a truly unparseable main file is restored from config.json.bak before anything is quarantined, and the damaged copy is kept", async () => {
+  await withTempDir(async (dir) => {
+    const path = join(dir, "config.json")
+    const store = new ConfigStore(path, new FakeSecretCodec())
+    await store.save({ ...SAMPLE_CONFIG, organizationName: "First" })
+    await store.save({ ...SAMPLE_CONFIG, organizationName: "Second" })
+    await writeFile(path, "{ truncated", "utf8")
+
+    const loaded = await store.load()
+    assert.equal(loaded?.organizationName, "First", "the backup (previous good save) is used")
+    assert.equal(loaded?.operatorToken, SAMPLE_CONFIG.operatorToken, "tokens unchanged")
+    assert.deepEqual(store.getRecovery(), ["bak"])
+    const files = await readdir(dir)
+    const aside = files.find((name) => name.startsWith("config.json.corrupt-"))
+    assert.ok(aside, "damaged copy kept")
+    assert.equal(await readFile(join(dir, aside), "utf8"), "{ truncated")
+    assert.equal((await new ConfigStore(path, new FakeSecretCodec()).load())?.organizationName, "First", "main is valid again")
+  })
+})
+
+test("ConfigStore: when both main and backup are unusable it quarantines, reports it and throws", async () => {
+  await withTempDir(async (dir) => {
+    const path = join(dir, "config.json")
+    const store = new ConfigStore(path, new FakeSecretCodec())
+    await writeFile(path, "{ broken", "utf8")
+    await writeFile(`${path}.bak`, "also broken", "utf8")
+
+    await assert.rejects(() => store.load(), /invalid JSON/)
+    assert.deepEqual(store.getRecovery(), ["quarantined"])
+    const files = await readdir(dir)
+    assert.equal(files.includes("config.json"), false)
+    assert.ok(files.some((name) => name.startsWith("config.json.corrupt-")))
+  })
+})
+
+test("ConfigStore: concurrent loads are serialized - one quarantine, one restore, every caller gets the config", async () => {
+  await withTempDir(async (dir) => {
+    const path = join(dir, "config.json")
+    const store = new ConfigStore(path, new FakeSecretCodec())
+    await store.save({ ...SAMPLE_CONFIG, organizationName: "First" })
+    await store.save({ ...SAMPLE_CONFIG, organizationName: "Second" })
+    await writeFile(path, "{ truncated", "utf8")
+
+    const results = await Promise.all([store.load(), store.load(), store.load()])
+    for (const r of results) assert.equal(r?.organizationName, "First")
+    const asides = (await readdir(dir)).filter((name) => name.startsWith("config.json.corrupt-"))
+    assert.equal(asides.length, 1, "double-quarantine is impossible")
   })
 })

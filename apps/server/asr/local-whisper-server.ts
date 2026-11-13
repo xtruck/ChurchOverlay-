@@ -27,6 +27,8 @@ export type WhisperServerOptions = {
   readonly readyTimeoutMs?: number
   /** How long the post-wake /health check may take before the engine counts as hung. */
   readonly resumeHealthTimeoutMs?: number
+  /** SF-22: called once when automatic restarts are exhausted, so the dashboard stops advertising a dead backup. */
+  readonly onRestartAbandoned?: (info: { readonly attempts: number }) => void
 }
 
 const MAX_RESTART_DELAY_MS = 30_000
@@ -83,15 +85,15 @@ export function watchSystemResume(
  * encodes a whole 30 s window), so threads decide how much of the computer a
  * decode takes. Measured on a 4-core/8-thread laptop (ARCHITECTURE.md section
  * 139): 7 threads used ~72% of the machine while decoding, 4 threads ~28-37%.
- * By default the engine is only a fallback, so it keeps cpus - 1. In
- * offline-first mode it transcribes every sentence next to OBS, NDI and the
- * dashboard, so it takes half the logical cores (never fewer than 2 or more
- * than 8; more threads scale poorly on a CPU).
+ * The engine runs next to OBS, NDI and the dashboard, so it takes half the
+ * logical cores (never fewer than 2 or more than 8; more threads scale poorly
+ * on a CPU). The old fallback default of cpus - 1 (~72% of the machine while
+ * decoding) starved the stream just when the cloud was down. Callers can still
+ * override it through WhisperServerOptions.threads.
  */
-export function localEngineThreads(cpuCount: number, offlineFirst = false): number {
+export function localEngineThreads(cpuCount: number): number {
   const cores = Number.isFinite(cpuCount) ? Math.max(1, Math.floor(cpuCount)) : 1
-  const threads = offlineFirst ? Math.floor(cores / 2) : cores - 1
-  return Math.max(2, Math.min(8, threads))
+  return Math.max(2, Math.min(8, Math.floor(cores / 2)))
 }
 
 export class WhisperServerProcess {
@@ -214,6 +216,21 @@ export class WhisperServerProcess {
     this.lowerPriority(child)
     this.child = child
     this.port = port
+    // SF-13: a failed spawn (missing/blocked executable, antivirus) emits
+    // "error". Without a listener that is an uncaught exception in main.
+    // Treat it like an exit: log, detach (waitUntilReady then fails the start)
+    // and let the bounded restart schedule decide.
+    child.once("error", (error) => {
+      if (this.child !== child) return
+      this.child = null
+      this.port = 0
+      this.options.logger?.error({
+        component: "asr",
+        event: "local-whisper.spawn-failed",
+        error: error instanceof Error ? error.message : String(error),
+      })
+      if (!this.stopped) this.scheduleRestart()
+    })
     child.once("exit", (code) => {
       if (this.child !== child) return
       this.child = null
@@ -265,6 +282,7 @@ export class WhisperServerProcess {
         event: "local-whisper.restart-abandoned",
         metadata: { attempts: this.restartAttempts },
       })
+      this.options.onRestartAbandoned?.({ attempts: this.restartAttempts })
       return
     }
     const delay = Math.min(1000 * 2 ** this.restartAttempts, MAX_RESTART_DELAY_MS)

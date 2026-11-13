@@ -9,6 +9,8 @@ import {
   DEFAULT_RATE_LIMIT_REQUESTS,
   RateLimitError,
   GroqNetworkError,
+  GroqHttpError,
+  MAX_SERVER_ERROR_BACKOFF_MS,
 } from "./groq-provider"
 import type { AudioFrame, TranscriptResult } from "../../../packages/contracts"
 import { Logger } from "../../../packages/shared/logger"
@@ -1350,4 +1352,128 @@ test("GroqProvider: drops are logged at info (rate limited) and a short referenc
   assert.deepEqual(results.map((r) => r.text), ["Jean 3 16"])
   const rescued = lines.find((l) => (l as { event: string }).event === "groq.segment-kept-reference") as { level: string } | undefined
   assert.equal(rescued?.level, "info")
+})
+
+
+// ---- SF-05: 401/403/5xx ----
+
+function groqErrorFixture(status: number, bodyMessage = "boom") {
+  const { logger, lines } = capturingLogger()
+  const clock = { t: 1_000_000 }
+  const captured: CapturedRequest[] = []
+  let failing = true
+  const fetchImpl = fakeFetch(
+    () => (failing ? jsonResponse({ error: { message: bodyMessage } }, status) : jsonResponse({ text: "Jean 3:16" })),
+    captured,
+  )
+  const policy = new TranscriptionPolicy()
+  const provider = new GroqProvider({ apiKey: "test-key", chunkDurationMs: 1000, fetchImpl, logger, policy, now: () => clock.t })
+  const errors: Error[] = []
+  const results: TranscriptResult[] = []
+  provider.onError((e) => errors.push(e))
+  provider.onTranscript((r) => results.push(r))
+  return { provider, errors, results, lines, clock, captured, policy, heal: () => { failing = false } }
+}
+
+for (const status of [401, 403]) {
+  test(`GroqProvider SF-05: HTTP ${status} is a distinct key-refused state, signalled once, every discarded chunk logged and counted`, async () => {
+    const f = groqErrorFixture(status, "Invalid API Key")
+    let refused = 0
+    f.provider.onKeyRefused(() => { refused += 1 })
+    await f.provider.start()
+    for (let i = 0; i < 3; i += 1) {
+      f.clock.t += 6_000
+      await f.provider.sendAudio(oneSecondFrame(i))
+    }
+    assert.equal(refused, 1, "one signal per refusal streak")
+    assert.ok(f.errors.length >= 3)
+    const first = f.errors[0] as GroqHttpError
+    assert.ok(first instanceof GroqHttpError)
+    assert.equal(first.kind, "key-refused")
+    assert.equal(first.status, status)
+    assert.match(first.message, /refus/i)
+    const discards = f.lines.filter((l) => (l as { event: string }).event === "asr.audio-discarded") as Array<{ metadata: { reason: string; durationMs: number } }>
+    assert.equal(discards.length, 1, "logged (rate-limited per reason by the ledger; the others are counted as suppressed)")
+    assert.equal(discards[0]!.metadata.reason, "groq-key-refused")
+    assert.equal(discards[0]!.metadata.durationMs, 1000)
+    assert.equal((discards[0]!.metadata as unknown as { total: number }).total, 1)
+    assert.equal(f.policy.ledger.snapshotTotals()["segment:groq-key-refused"], 3, "counted in the DropLedger")
+    assert.equal(f.captured.length, 3, "a refused key is not retried with the same chunk")
+  })
+}
+
+test("GroqProvider SF-05: a refused key re-arms its signal after a successful request", async () => {
+  const f = groqErrorFixture(401)
+  let refused = 0
+  f.provider.onKeyRefused(() => { refused += 1 })
+  await f.provider.start()
+  await f.provider.sendAudio(oneSecondFrame(0))
+  f.heal()
+  f.clock.t += 6_000
+  await f.provider.sendAudio(oneSecondFrame(1))
+  assert.equal(f.results.length, 1)
+  assert.equal(refused, 1)
+})
+
+test("GroqProvider SF-05: a 5xx requeues the chunk behind a bounded backoff and sends it with the next flush", async () => {
+  const f = groqErrorFixture(503, "overloaded")
+  await f.provider.start()
+  await f.provider.sendAudio(oneSecondFrame(0))
+  assert.ok(f.errors[0] instanceof GroqHttpError)
+  assert.equal((f.errors[0] as GroqHttpError).kind, "server")
+  assert.equal(f.captured.length, 1)
+  // Still inside the 2 s backoff: no new request is fired.
+  f.clock.t += 1_000
+  await f.provider.sendAudio(oneSecondFrame(1))
+  assert.equal(f.captured.length, 1, "backing off, nothing hammered")
+  // Backoff over and the service is back: the first second travels with the next chunk.
+  f.heal()
+  f.clock.t += 1_500
+  await f.provider.sendAudio(oneSecondFrame(2))
+  assert.equal(f.captured.length, 2)
+  const file = (f.captured[1]!.init!.body as FormData).get("file") as Blob
+  assert.equal(file.size, 44 + 3 * 16000 * 2, "nothing lost: all three seconds were sent")
+  assert.equal(f.results.length, 1)
+})
+
+test("GroqProvider SF-05: backoff after repeated 5xx doubles up to the cap and is never longer than MAX_SERVER_ERROR_BACKOFF_MS", async () => {
+  const f = groqErrorFixture(500)
+  await f.provider.start()
+  const internals = f.provider as unknown as { throttledUntil: number }
+  const waits: number[] = []
+  for (let i = 0; i < 8; i += 1) {
+    // Jump past any current backoff so every chunk reaches the server.
+    f.clock.t = Math.max(f.clock.t, internals.throttledUntil) + 1
+    const before = f.clock.t
+    await f.provider.sendAudio(oneSecondFrame(i))
+    waits.push(internals.throttledUntil - before)
+  }
+  assert.deepEqual(waits.slice(0, 4), [2_000, 4_000, 8_000, 16_000])
+  assert.ok(waits.every((w) => w <= MAX_SERVER_ERROR_BACKOFF_MS))
+  assert.equal(waits[7], MAX_SERVER_ERROR_BACKOFF_MS)
+})
+
+test("GroqProvider SF-05: sustained 5xx raises the sustained signal at 3 and again every 3 (a failed failover is retried)", async () => {
+  const f = groqErrorFixture(502)
+  let sustained = 0
+  f.provider.onRateLimitedSustained(() => { sustained += 1 })
+  await f.provider.start()
+  const internals = f.provider as unknown as { throttledUntil: number }
+  const counts: number[] = []
+  for (let i = 0; i < 7; i += 1) {
+    f.clock.t = Math.max(f.clock.t, internals.throttledUntil) + 1
+    await f.provider.sendAudio(oneSecondFrame(i))
+    counts.push(sustained)
+  }
+  assert.deepEqual(counts, [0, 0, 1, 1, 1, 2, 2])
+})
+
+test("GroqProvider SF-05: a 5xx chunk that cannot be requeued (buffer full) is discarded through the ledger, not silently", async () => {
+  const f = groqErrorFixture(500)
+  await f.provider.start()
+  const internals = f.provider as unknown as { requeueRefusedChunk(s: Int16Array, r?: string): void; bufferedSampleCount: number }
+  internals.bufferedSampleCount = (MAX_THROTTLED_BUFFER_MS / 1000) * 16000
+  internals.requeueRefusedChunk(new Int16Array(16000), "groq-server-error-buffer-full")
+  assert.equal(f.policy.ledger.snapshotTotals()["segment:groq-server-error-buffer-full"], 1)
+  assert.ok(f.lines.some((l) => (l as { event: string }).event === "asr.audio-discarded"))
 })

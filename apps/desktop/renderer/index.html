@@ -48,6 +48,11 @@
     as one family. Decorative icons are aria-hidden; icon-only buttons
     carry an aria-label.
   -->
+  <!-- Shown only when main reports the settings file was restored/set aside or a key could not be read (audit B6). -->
+  <div id="config-recovery-banner" role="alert" style="display: none; position: fixed; top: 0; left: 0; right: 0; z-index: 10000; padding: 10px 16px; background: #3a2a05; color: #ffe3a3; border-bottom: 1px solid #e9b13f; font-size: 14px; align-items: center; gap: 12px;">
+    <span id="config-recovery-text" style="flex: 1"></span>
+    <button id="config-recovery-dismiss" type="button" class="btn-secondary" data-i18n="config.recovered.dismiss">Dismiss</button>
+  </div>
   <div id="setup-screen" class="setup-screen" style="display: none">
     <div class="setup-card glass">
       <div class="setup-brand">
@@ -310,6 +315,8 @@
             <div id="near-miss-indicator" class="near-miss-indicator" role="status" style="display: none"></div>
             <!-- State of the optional AI helpers: shown only while they are paused or unavailable. Fixed codes, textContent only. -->
             <div id="ai-helpers-indicator" class="near-miss-indicator" role="status" hidden></div>
+            <!-- SF-03: shown while a verse lookup failed because the Bible source is unavailable; clears when a verse loads. -->
+            <div id="bible-source-indicator" class="near-miss-indicator" role="status" hidden></div>
           </div>
 
           <aside class="cell-side">
@@ -396,6 +403,7 @@
               <div id="echo-warning" class="echo-warning" role="status" hidden></div>
               <div id="asr-provider-line" class="asr-provider-line"></div>
               <div id="audio-diagnostics" class="mic-diagnostics" aria-live="off"></div>
+              <div id="mic-capture-status" class="mic-diagnostics" data-state="idle" role="status" aria-live="assertive"></div>
               <div id="audio-transport-status" class="mic-diagnostics" data-state="idle" role="status" aria-live="polite"></div>
             </section>
           </aside>
@@ -412,6 +420,7 @@
                   <button id="export-session-btn" class="btn-secondary btn-small" data-i18n="session.exportButton">Export session</button>
                   <button id="export-rehearsal-btn" class="btn-secondary btn-small" data-i18n="session.exportRehearsalButton">Export rehearsal report</button>
                   <button id="export-diagnostics-btn" class="btn-secondary btn-small" data-i18n="session.exportDiagnosticsButton">Export diagnostics</button>
+                  <button id="open-logs-btn" class="btn-secondary btn-small" data-i18n="session.openLogsButton">Open logs folder</button>
                   <button id="export-transcript-btn" class="btn-secondary btn-small" data-i18n="session.exportTranscriptButton">Export transcript</button>
                 </div>
                 <div id="log"></div>
@@ -1227,6 +1236,7 @@
 
   <script src="./i18n.js"></script>
   <script src="./audio-stream.js"></script>
+  <script src="./mic-capture-guard.js"></script>
   <script src="./dashboard.js"></script>
   <script src="./overlay-settings.js"></script>
   <script src="./bible-browser.js"></script>

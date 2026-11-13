@@ -146,15 +146,46 @@ test("NavigationCommandDetector: a book name immediately before a bare 'verse N'
   assert.deepEqual(detector.detect("Look at verse 17."), [{ kind: "goto-bare-verse", verse: 17 }])
 })
 
-test("NavigationCommandDetector: voice commands to switch display mode", () => {
+test("NavigationCommandDetector: voice commands to switch display mode (short imperative forms only)", () => {
   const detector = new NavigationCommandDetector()
-  assert.deepEqual(detector.detect("Let's switch to French for this next part."), [
-    { kind: "goto-display-mode", mode: "french" },
-  ])
-  assert.deepEqual(detector.detect("English only from here."), [{ kind: "goto-display-mode", mode: "english" }])
-  assert.deepEqual(detector.detect("Please switch to bilingual mode."), [
-    { kind: "goto-display-mode", mode: "bilingual" },
-  ])
+  assert.deepEqual(detector.detect("Switch to French."), [{ kind: "goto-display-mode", mode: "french" }])
+  assert.deepEqual(detector.detect("English only"), [{ kind: "goto-display-mode", mode: "english" }])
+  assert.deepEqual(detector.detect("Please switch to bilingual mode."), [{ kind: "goto-display-mode", mode: "bilingual" }])
+  assert.deepEqual(detector.detect("Display in English"), [{ kind: "goto-display-mode", mode: "english" }])
+  assert.deepEqual(detector.detect("Switch to bilingual"), [{ kind: "goto-display-mode", mode: "bilingual" }])
+})
+
+// AUDIT TS-01: a display-mode switch must only fire when the utterance IS the
+// command, never because "en français"/"in english" appears inside prose.
+test("NavigationCommandDetector: display-mode phrases inside ordinary sentences never switch mode (TS-01, FR+EN)", () => {
+  const detector = new NavigationCommandDetector()
+  const prose = [
+    "il parle en français",
+    "Ce mot se traduit en français.",
+    "en anglais on dit grace",
+    "Il a écrit ce livre en anglais et en français.",
+    "Let's switch to French for this next part.",
+    "English only from here.",
+    "He said it in english only because the crowd was small.",
+    "The text was translated to french and then switch to english later in the sermon",
+    "Passons en français maintenant pour lire ce passage ensemble.",
+    "Mets-toi en anglais pour ce passage.",
+    "Français seulement pour ce passage.",
+    "Mode bilingue pour la suite.",
+    "En anglais.",
+    "En français",
+    "the display in english is nice",
+  ]
+  for (const text of prose) {
+    assert.deepEqual(detector.detect(text), [], text)
+  }
+})
+
+test("NavigationCommandDetector: narrative 'in the next verse' / 'go back to' are not navigation commands", () => {
+  const detector = new NavigationCommandDetector()
+  assert.deepEqual(detector.detect("In the next verse Paul says something else."), [])
+  assert.deepEqual(detector.detect("Dans le verset suivant Paul explique."), [])
+  assert.deepEqual(detector.detect("Let's go back to the beginning of the story."), [])
 })
 
 // French phrases (ARCHITECTURE.md section 65 — confirmed explicitly: the
@@ -264,21 +295,17 @@ test("NavigationCommandDetector: a typographic apostrophe matches the same phras
 
 test("NavigationCommandDetector: French voice commands to switch display mode, independent of verb conjugation", () => {
   const detector = new NavigationCommandDetector()
-  // "en français"/"en anglais" deliberately avoids depending on a specific
-  // verb conjugation — it matches "passons en français", "mets en
-  // français", "passe en français" and any other phrasing alike.
-  assert.deepEqual(detector.detect("Passons en français maintenant."), [
-    { kind: "goto-display-mode", mode: "french" },
-  ])
-  assert.deepEqual(detector.detect("Mets-toi en anglais pour ce passage."), [
-    { kind: "goto-display-mode", mode: "english" },
-  ])
-  assert.deepEqual(detector.detect("Français seulement pour ce passage."), [
-    { kind: "goto-display-mode", mode: "french" },
-  ])
-  assert.deepEqual(detector.detect("Mode bilingue pour la suite."), [
-    { kind: "goto-display-mode", mode: "bilingual" },
-  ])
+  // Any conjugation of a short imperative is accepted, but the utterance must
+  // BE the command (TS-01): nothing but optional politeness around it.
+  for (const text of ["Passons en français.", "Passe en français", "Passez en français", "Mets en français", "Affichage en français", "Passons en français maintenant.", "Mode français", "Français seulement"]) {
+    assert.deepEqual(detector.detect(text), [{ kind: "goto-display-mode", mode: "french" }], text)
+  }
+  for (const text of ["Passons en anglais", "Affichage en anglais", "Anglais seulement", "S'il vous plaît passe en anglais"]) {
+    assert.deepEqual(detector.detect(text), [{ kind: "goto-display-mode", mode: "english" }], text)
+  }
+  for (const text of ["Mode bilingue", "Passons en bilingue", "Affichage bilingue"]) {
+    assert.deepEqual(detector.detect(text), [{ kind: "goto-display-mode", mode: "bilingual" }], text)
+  }
 })
 
 // ---------------------------------------------------------------------------

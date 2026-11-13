@@ -1735,7 +1735,7 @@ test("AppCore: rundown:load activates the first scene, broadcasting rundown:stat
   })
   try {
     const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
-    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
 
     const rundown: Rundown = {
       id: "01RUNDOWN",
@@ -1783,7 +1783,7 @@ test("AppCore: a detected verse while a rundown's media scene is active immediat
     })
     try {
       const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
-      const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+      const viewerSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
 
       const rundown: Rundown = {
         id: "01RUNDOWN",
@@ -1849,7 +1849,7 @@ test("AppCore: an explicit scene:next during a verse interrupt switches scenes i
     })
     try {
       const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
-      const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+      const viewerSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
 
       const rundown: Rundown = {
         id: "01RUNDOWN",
@@ -1919,7 +1919,7 @@ test("AppCore: a 'blank' scene broadcasts verse:clear, media:clear, and announce
   })
   try {
     const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
-    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
 
     const rundown: Rundown = {
       id: "01RUNDOWN",
@@ -1984,7 +1984,7 @@ test("AppCore: activating a 'canvas' scene broadcasts rundown:state then canvas:
   })
   try {
     const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
-    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
 
     const rundown: Rundown = {
       id: "01RUNDOWN",
@@ -2027,7 +2027,7 @@ test("AppCore: a 'blank' scene after a 'canvas' scene also broadcasts canvas:cle
   })
   try {
     const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
-    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
 
     const rundown: Rundown = {
       id: "01RUNDOWN",
@@ -2074,7 +2074,8 @@ test("AppCore: a viewer connecting while a 'canvas' scene is active immediately 
       title: "Sunday Service",
       scenes: [{ kind: "canvas", canvas: { layers: SAMPLE_CANVAS_LAYERS } }],
     }
-    const loadMessages = waitForMessages(firstViewer, 2)
+    // S-01: rundown:state is operator-only now, so a viewer only sees the scene content.
+    const loadMessages = waitForMessages(firstViewer, 1)
     operatorSocket.send(JSON.stringify({ id: "01A", type: "rundown:load", timestamp: Date.now(), payload: { rundown } }))
     await loadMessages
 
@@ -2086,9 +2087,8 @@ test("AppCore: a viewer connecting while a 'canvas' scene is active immediately 
     // listener via a raw WebSocket first (matching the existing
     // media-sync test's own pattern) avoids racing and missing them.
     const secondViewer = new WebSocket(`ws://127.0.0.1:${app.wsServer.port}`, [TOKENS.viewerToken])
-    const syncMessages = waitForMessages(secondViewer, 2)
-    const [syncState, syncShow] = await syncMessages
-    assert.equal(syncState?.type, "rundown:state")
+    const syncMessages = waitForMessages(secondViewer, 1)
+    const [syncShow] = await syncMessages
     assert.equal(syncShow?.type, "canvas:show")
     assert.deepEqual(syncShow?.payload, { layers: SAMPLE_CANVAS_LAYERS })
 
@@ -2162,11 +2162,12 @@ test("AppCore: a viewer connecting during a verse-interrupt is resynced with the
         title: "Sunday Service",
         scenes: [{ kind: "media", mediaCueId: cue.id }],
       }
-      const loadMessages = waitForMessages(viewerSocket, 2)
+      // S-01: rundown:state is operator-only now; the overlay only sees media:show / verse:show.
+      const loadMessages = waitForMessages(viewerSocket, 1)
       operatorSocket.send(JSON.stringify({ id: "01A", type: "rundown:load", timestamp: Date.now(), payload: { rundown } }))
       await loadMessages
 
-      const interruptMessages = waitForMessages(viewerSocket, 2)
+      const interruptMessages = waitForMessages(viewerSocket, 1)
       asr.emitTranscript({
         id: "01T",
         correlationId: "01B",
@@ -2181,14 +2182,12 @@ test("AppCore: a viewer connecting during a verse-interrupt is resynced with the
       const lateViewer = new WebSocket(`ws://127.0.0.1:${app.wsServer.port}`, [TOKENS.viewerToken])
       // media:show (mediaPlayback's own independent resync, unaffected by the
       // interrupt) + rundown:state + verse:show (the fix under test).
-      const synced = await waitForMessages(lateViewer, 3)
+      const synced = await waitForMessages(lateViewer, 2)
       const types = synced.map((m) => m.type).sort()
-      assert.deepEqual(types, ["media:show", "rundown:state", "verse:show"])
+      assert.deepEqual(types, ["media:show", "verse:show"])
 
       const verseMsg = synced.find((m) => m.type === "verse:show")
       assert.deepEqual((verseMsg?.payload as Verse).reference, { book: "john", chapter: 3, verse: 16 })
-      const rundownStateMsg = synced.find((m) => m.type === "rundown:state")
-      assert.equal((rundownStateMsg?.payload as { interrupted: boolean }).interrupted, true)
 
       operatorSocket.close()
       viewerSocket.close()
@@ -2260,7 +2259,7 @@ test("AppCore: scene:goto with an out-of-range index is a no-op, broadcasting no
   })
   try {
     const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
-    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
 
     const rundown: Rundown = { id: "01RUNDOWN", title: "Sunday Service", scenes: [{ kind: "blank" }] }
     const loadMessages = waitForMessages(viewerSocket, 5)
@@ -2575,7 +2574,7 @@ test("AppCore: 'switch to french' calls the source's setMode() and invokes onDis
       id: "01T",
       correlationId: "01A",
       sequence: 1,
-      text: "Let's switch to French for this next part.",
+      text: "Switch to French.",
       state: "final",
       timestamp: Date.now(),
     })
@@ -2629,7 +2628,7 @@ test("AppCore: verse:show's trigger field reflects how each verse got there — 
   })
   try {
     const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
-    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
 
     const detected = waitForMessage(viewerSocket)
     asr.emitTranscript({
@@ -2813,7 +2812,7 @@ test("AppCore: in review mode, a detected verse broadcasts verse:pending, not ve
     verseConfirmationMode: "review",
   })
   try {
-    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
 
     const pending = waitForMessage(viewerSocket)
     asr.emitTranscript({
@@ -2848,7 +2847,7 @@ test("AppCore: confirming a pending verse broadcasts verse:show with trigger 'de
   })
   try {
     const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
-    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
 
     const pending = waitForMessage(viewerSocket)
     asr.emitTranscript({
@@ -2896,7 +2895,7 @@ test("AppCore: a new pending detection replaces (not queues behind) an earlier u
   })
   try {
     const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
-    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
 
     const firstPending = waitForMessage(viewerSocket)
     asr.emitTranscript({
@@ -2984,7 +2983,7 @@ test("AppCore: setVerseConfirmationMode() switches modes live, without restartin
     // starts in "auto" (the default)
   })
   try {
-    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
 
     app.setVerseConfirmationMode("review")
 
@@ -3213,7 +3212,7 @@ test("AppCore: once enabled, sermon notes accumulate final-transcript text and b
     sermonNotesIntervalMs: 30,
   })
   try {
-    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
 
     asr.emitTranscript({
       id: "01T",
@@ -3293,7 +3292,7 @@ test("AppCore: an empty accumulated buffer never calls summarize(), and a failed
     // The failure must not affect mic/ASR/verse display: recover and
     // succeed cleanly on the very next cycle with fresh text.
     generator.setResponse("- Recovered")
-    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
     asr.emitTranscript({
       id: "01T2",
       correlationId: "01B",
@@ -3348,7 +3347,7 @@ test("AppCore: setSermonNotesEnabled() is a live toggle — turning it on starts
     assert.equal(generator.calls.length, 0)
 
     app.setSermonNotesEnabled(true)
-    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
     asr.emitTranscript({
       id: "01T2",
       correlationId: "01B",
@@ -3969,7 +3968,7 @@ test("AppCore: correctTranscription is wired into the transcript pipeline — 'V
     tokens: TOKENS,
   })
   try {
-    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
 
     // Collect the transcript:final broadcast on the raw socket. This is the
     // operator-dashboard echo (ARCHITECTURE.md section 70) and, crucially, it
@@ -4317,7 +4316,7 @@ test("AppCore: a near-miss transcript broadcasts detector:near-miss, ARCHITECTUR
     tokens: TOKENS,
   })
   try {
-    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
     // isAutoSyncNoise (this file's own WS test helper) filters out the
     // transcript:final echo, so detector:near-miss is the only message
     // waitForMessage actually observes here.
@@ -4445,7 +4444,7 @@ test("AppCore: broadcasts mic:health about once per second of processed audio, w
   })
   try {
     const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
-    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
     const health: { state: string; autoGain: boolean; gainDb: number }[] = []
     viewerSocket.on("message", (data) => {
       const message = JSON.parse(data.toString()) as WsMessage
@@ -4593,7 +4592,7 @@ test("AppCore: a verse read aloud without reference is only SUGGESTED (verse:pen
   })
   try {
     const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
-    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
     const seen: WsMessage[] = []
     viewerSocket.on("message", (data) => {
       const message = JSON.parse(data.toString()) as WsMessage
@@ -4797,7 +4796,7 @@ test("AppCore: rundown:load prefetches every verse scene so stepping to one need
   })
   try {
     const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
-    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
     const rundown: Rundown = {
       id: "01RUNDOWN",
       title: "Sunday Service",
@@ -4940,7 +4939,7 @@ test("AppCore: rundown:load is a harmless no-op for an ASR provider that does no
   })
   try {
     const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
-    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
     const rundown: Rundown = {
       id: "01RUNDOWN",
       title: "Sunday Service",
@@ -5019,7 +5018,7 @@ test("AppCore: 'Corinthiens 5 verset 2' after 1 Corinthians 13 is a pending sugg
     tokens: TOKENS,
   })
   try {
-    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
     const seen: WsMessage[] = []
     viewerSocket.on("message", (data) => {
       const message = JSON.parse(data.toString()) as WsMessage
@@ -5106,7 +5105,7 @@ test("AppCore: in review mode the interpreter's repeat marks the waiting verse a
     verseConfirmationMode: "review",
   })
   try {
-    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
     const seen: WsMessage[] = []
     viewerSocket.on("message", (data) => {
       const message = JSON.parse(data.toString()) as WsMessage
@@ -5141,7 +5140,7 @@ test("AppCore: transcript broadcasts carry a language hint for the operator badg
     tokens: TOKENS,
   })
   try {
-    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
     const finals: WsMessage[] = []
     viewerSocket.on("message", (data) => {
       const message = JSON.parse(data.toString()) as WsMessage
@@ -5184,7 +5183,7 @@ test("AppCore (AI): a near-miss sentence repaired by the model becomes a PENDING
     claudeClient: claude,
   })
   try {
-    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
     const seen: WsMessage[] = []
     viewerSocket.on("message", (data) => {
       const message = JSON.parse(data.toString()) as WsMessage
@@ -5245,7 +5244,7 @@ test("AppCore (AI): a final English sentence is translated to French for the ope
     claudeClient: claude,
   })
   try {
-    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
     const translations: WsMessage[] = []
     viewerSocket.on("message", (data) => {
       const message = JSON.parse(data.toString()) as WsMessage
@@ -5271,7 +5270,7 @@ test("AppCore (AI): a final English sentence is translated to French for the ope
     tokens: TOKENS,
   })
   try {
-    const viewerSocket = await connect(plain.wsServer.port, TOKENS.viewerToken)
+    const viewerSocket = await connect(plain.wsServer.port, TOKENS.operatorToken)
     const types: string[] = []
     viewerSocket.on("message", (data) => types.push((JSON.parse(data.toString()) as WsMessage).type))
     plainAsr.emitTranscript({ id: "01B", correlationId: "C2", sequence: 1, text: "Let us read the word of God today", state: "final", timestamp: Date.now() })
@@ -5310,11 +5309,16 @@ async function startAiApp(claude: AiTestClaude, extra: AiTestOptions = {}) {
     claudeClient: claude,
     ...extra,
   })
-  const viewer = await connect(app.wsServer.port, TOKENS.viewerToken)
+  // S-01: the AI helpers' output (pending suggestions, translations, copilot) is operator-only, so `viewer` here is an
+  // operator connection; `overlay` is a real viewer-role connection that must never see any of it.
+  const viewer = await connect(app.wsServer.port, TOKENS.operatorToken)
   const seen: WsMessage[] = []
   viewer.on("message", (data) => seen.push(JSON.parse(data.toString()) as WsMessage))
+  const overlay = await connect(app.wsServer.port, TOKENS.viewerToken)
+  const overlaySeen: WsMessage[] = []
+  overlay.on("message", (data) => overlaySeen.push(JSON.parse(data.toString()) as WsMessage))
   const verses = () => seen.filter((m) => m.type === "verse:pending" || m.type === "verse:show")
-  return { asr, app, viewer, seen, verses }
+  return { asr, app, viewer, overlay, overlaySeen, seen, verses }
 }
 
 function final(id: string, text: string): TranscriptResult {
@@ -5656,7 +5660,7 @@ async function startCopilotApp(claude: AiTestClaude, extra: AiTestOptions = {}) 
 
 test("AppCore (AI copilot): operator-only suggestions: validated related verses (unknown and already-shown dropped), a key point, nothing shown", async () => {
   const claude = fakeClaude((system) => (system.includes(COPILOT_MARK) ? COPILOT_ANSWER : ""))
-  const { asr, app, viewer, operator, seen, operatorSeen, suggestions } = await startCopilotApp(claude, { aiFeatures: { sermonCopilot: true } })
+  const { asr, app, viewer, operator, overlaySeen, operatorSeen, suggestions } = await startCopilotApp(claude, { aiFeatures: { sermonCopilot: true } })
   try {
     asr.emitTranscript(final("01A", "Lisons Jean 3 verset 16"))
     await waitFor(() => operatorSeen.some((m) => m.type === "verse:show"))
@@ -5671,7 +5675,7 @@ test("AppCore (AI copilot): operator-only suggestions: validated related verses 
     assert.ok(call?.user.includes("john 3:16") && call.user.includes("fidélité"))
     // never reaches a viewer-role client; never turns into a displayed or pending verse
     await new Promise((resolve) => setTimeout(resolve, 100))
-    assert.ok(!seen.some((m) => m.type === "copilot:suggestions"))
+    assert.ok(!overlaySeen.some((m) => m.type === "copilot:suggestions"))
     assert.equal(operatorSeen.filter((m) => m.type === "verse:show").length, 1)
     assert.ok(!operatorSeen.some((m) => m.type === "verse:pending"))
   } finally {
@@ -5989,7 +5993,7 @@ test("AppCore: an operator Clear invalidates a pending verse, so a late Confirm 
   })
   try {
     const operator = await connect(app.wsServer.port, TOKENS.operatorToken)
-    const viewer = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const viewer = await connect(app.wsServer.port, TOKENS.operatorToken)
     const types: string[] = []
     viewer.on("message", (data) => types.push(JSON.parse(data.toString()).type))
     const send = (type: string) => operator.send(JSON.stringify({ id: "01A", type, timestamp: Date.now(), payload: null }))
@@ -6116,7 +6120,7 @@ test("AppCore: a pending verse carries what was heard, and the confirmed verse:s
   })
   try {
     const operator = await connect(app.wsServer.port, TOKENS.operatorToken)
-    const viewer = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const viewer = await connect(app.wsServer.port, TOKENS.operatorToken)
     const pendingMsg = waitForMessage(viewer)
     asr.emitTranscript({ id: "01T", correlationId: "01A", sequence: 1, text: "  Turn   to John 3:16. ", state: "final", timestamp: Date.now() })
     const pending = await pendingMsg
@@ -6152,7 +6156,7 @@ test("AppCore: an EMPTY sermon-notes answer is never broadcast (it would blank/a
     sermonNotesIntervalMs: 30,
   })
   try {
-    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
     const received: Array<{ type: string; payload: unknown }> = []
     viewerSocket.on("message", (data) => received.push(JSON.parse(String(data))))
     asr.emitTranscript({ id: "01T", correlationId: "01A", sequence: 1, text: "Grace is enough for every season.", state: "final", timestamp: Date.now() })
@@ -6166,5 +6170,217 @@ test("AppCore: an EMPTY sermon-notes answer is never broadcast (it would blank/a
     viewerSocket.close()
   } finally {
     await app.stop()
+  }
+})
+
+
+// ---- SF-08 / SF-06 / TS-11 / SF-09: mic lifecycle and watchdog (injected clock and timers) ----
+
+function fakeTimers() {
+  const state = { t: 5_000_000, nextId: 1 }
+  const intervals = new Map<number, { cb: () => void; ms: number }>()
+  const timeouts = new Map<number, () => void>()
+  return {
+    state,
+    timeouts,
+    options: {
+      now: () => state.t,
+      setInterval: (cb: () => void, ms: number) => { const id = state.nextId++; intervals.set(id, { cb, ms }); return id },
+      clearInterval: (h: unknown) => { intervals.delete(h as number) },
+      setTimeout: (cb: () => void) => { const id = state.nextId++; timeouts.set(id, cb); return id },
+      clearTimeout: (h: unknown) => { timeouts.delete(h as number) },
+    },
+    /** Advances the fake wall clock, running the watchdog interval once per elapsed interval. */
+    advance(ms: number): void {
+      const end = state.t + ms
+      while (state.t < end) {
+        const step = Math.min(1000, end - state.t)
+        state.t += step
+        for (const { cb } of [...intervals.values()]) cb()
+      }
+    },
+    intervalCount: () => intervals.size,
+  }
+}
+
+async function micCoreFixture(asr: FakeAsrProvider, timers: ReturnType<typeof fakeTimers>, extra: Record<string, unknown> = {}) {
+  const gate = new SilenceGate({ calibrationDurationMs: 10 })
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    silenceGate: gate,
+    timers: timers.options,
+    ...extra,
+  })
+  const operator = await connect(app.wsServer.port, TOKENS.operatorToken)
+  const viewer = await connect(app.wsServer.port, TOKENS.viewerToken)
+  const opMessages: WsMessage[] = []
+  const viewerMessages: WsMessage[] = []
+  operator.on("message", (data) => opMessages.push(JSON.parse(data.toString()) as WsMessage))
+  viewer.on("message", (data) => viewerMessages.push(JSON.parse(data.toString()) as WsMessage))
+  const send = (type: string): void => operator.send(JSON.stringify({ id: `01${type}${Math.random()}`, type, timestamp: Date.now(), payload: null }))
+  const frame = (sequence: number, value = 5000): void =>
+    operator.send(encodeAudioFrame({ samples: Int16Array.from(new Array(320).fill(value)), sampleRate: 16000, sequence }))
+  return { app, gate, operator, viewer, opMessages, viewerMessages, send, frame }
+}
+
+test("SF-08: when audio frames stop arriving, mic:health goes to no-audio after ~4 s and one dropout is counted; resuming recovers it", async () => {
+  const asr = new FakeAsrProvider()
+  const timers = fakeTimers()
+  const f = await micCoreFixture(asr, timers)
+  try {
+    f.send("mic:start")
+    await waitFor(() => asr.startCalls >= 1)
+    await waitFor(() => timers.intervalCount() === 1)
+    for (let i = 0; i < 60; i++) f.frame(i, i === 0 ? 20 : 400) // ~1 s of audio: a normal "ok"/"listening" reading
+    await waitFor(() => f.opMessages.some((m) => m.type === "mic:health"))
+    const healthStates = (): string[] => f.opMessages.filter((m) => m.type === "mic:health").map((m) => (m.payload as { state: string }).state)
+    assert.ok(!healthStates().includes("no-audio"))
+
+    timers.advance(3_000) // under the limit: nothing yet
+    assert.ok(!healthStates().includes("no-audio"))
+    timers.advance(2_000) // 5 s with no frame at all
+    await waitFor(() => healthStates().includes("no-audio"))
+    assert.equal(f.app.getServiceHealth().micDropouts.length, 1)
+    assert.equal(f.app.getServiceHealth().micDropouts[0]!.endedAt, null, "dropout is open while the frames are missing")
+    timers.advance(10_000) // stays one episode, no event spam
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    assert.equal(healthStates().filter((s) => s === "no-audio").length, 1)
+    assert.equal(f.app.getServiceHealth().micDropouts.length, 1)
+
+    // The frames come back: the state leaves no-audio by itself and the dropout is closed.
+    const before = healthStates().length
+    f.frame(100)
+    await waitFor(() => healthStates().length > before)
+    assert.notEqual(healthStates().at(-1), "no-audio")
+    assert.notEqual(f.app.getServiceHealth().micDropouts[0]!.endedAt, null)
+    assert.equal(f.app.getServiceHealth().micDropouts.length, 1)
+  } finally {
+    f.operator.close()
+    f.viewer.close()
+    await f.app.stop()
+  }
+})
+
+test("SF-08: the watchdog is off while the mic is stopped (no phantom no-audio between sessions)", async () => {
+  const asr = new FakeAsrProvider()
+  const timers = fakeTimers()
+  const f = await micCoreFixture(asr, timers)
+  try {
+    f.send("mic:start")
+    await waitFor(() => asr.startCalls >= 1)
+    await waitFor(() => timers.intervalCount() === 1)
+    f.send("mic:stop")
+    await waitFor(() => asr.stopCalls >= 1)
+    assert.equal(timers.intervalCount(), 0)
+    timers.advance(30_000)
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    assert.ok(!f.opMessages.some((m) => m.type === "mic:health" && (m.payload as { state: string }).state === "no-audio"))
+    assert.equal(f.app.getServiceHealth().micDropouts.length, 0)
+  } finally {
+    f.operator.close()
+    f.viewer.close()
+    await f.app.stop()
+  }
+})
+
+test("SF-06: a failed mic:start tells the operator (and only the operator), reverts to not-running and ignores later frames", async () => {
+  class UnreachableAsr extends FakeAsrProvider {
+    override async start(): Promise<void> {
+      this.startCalls += 1
+      throw new Error("Deepgram unreachable key=sk-live-SECRETSECRET1234567890")
+    }
+  }
+  const asr = new UnreachableAsr()
+  const timers = fakeTimers()
+  const f = await micCoreFixture(asr, timers)
+  try {
+    f.send("mic:start")
+    await waitFor(() => f.opMessages.some((m) => m.type === "mic:start-failed"))
+    const failed = f.opMessages.find((m) => m.type === "mic:start-failed")!
+    const reason = (failed.payload as { reason: string }).reason
+    assert.match(reason, /unreachable/)
+    assert.ok(!reason.includes("SECRETSECRET"), "credentials are scrubbed")
+    const status = f.opMessages.filter((m) => m.type === "status:update").map((m) => m.payload as { asrHealth: string; micCalibrating?: boolean })
+    assert.ok(status.some((p) => p.asrHealth === "error"), "an operator-visible error status accompanies it")
+    assert.equal(timers.intervalCount(), 0, "no watchdog for a mic that never started")
+    // The server really is "not running" again: frames are not processed and a retry starts cleanly.
+    f.frame(1)
+    f.frame(2)
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    assert.equal(asr.sentFrames.length, 0)
+    assert.ok(!f.viewerMessages.some((m) => m.type === "mic:start-failed"), "never reaches viewer pages")
+  } finally {
+    f.operator.close()
+    f.viewer.close()
+    await f.app.stop()
+  }
+})
+
+test("TS-11: a hung asr.start times out, reports the failure and does not park mic:stop behind it", async () => {
+  class HungStartAsr extends FakeAsrProvider {
+    override async start(): Promise<void> {
+      this.startCalls += 1
+      await new Promise<void>(() => {})
+    }
+  }
+  const asr = new HungStartAsr()
+  const timers = fakeTimers()
+  const f = await micCoreFixture(asr, timers)
+  try {
+    f.send("mic:start")
+    await waitFor(() => asr.startCalls === 1 && timers.timeouts.size === 1)
+    f.send("mic:stop") // queued behind the hung start on the serial chain
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    assert.equal(asr.stopCalls, 0, "still waiting for the start")
+    // The bound elapses.
+    for (const cb of [...timers.timeouts.values()]) cb()
+    await waitFor(() => f.opMessages.some((m) => m.type === "mic:start-failed"))
+    await waitFor(() => asr.stopCalls >= 1)
+    assert.match((f.opMessages.find((m) => m.type === "mic:start-failed")!.payload as { reason: string }).reason, /did not finish/)
+  } finally {
+    f.operator.close()
+    f.viewer.close()
+    await f.app.stop()
+  }
+})
+
+test("SF-09: a mic:start while the mic is already running changes nothing (no ASR restart, no recalibration); a start after mic:stop does", async () => {
+  const asr = new FakeAsrProvider()
+  const timers = fakeTimers()
+  const f = await micCoreFixture(asr, timers)
+  try {
+    f.send("mic:start")
+    await waitFor(() => asr.startCalls >= 1)
+    f.frame(0)
+    await waitFor(() => !f.gate.isCalibrating())
+    const thresholdBefore = f.gate.getThreshold()
+    const statusCount = (): number => f.opMessages.filter((m) => m.type === "status:update").length
+    const statusBefore = statusCount()
+
+    f.send("mic:start") // what the dashboard does on every WS reconnect
+    await waitFor(() => statusCount() > statusBefore) // the idempotent no-op resyncs the dashboard
+    assert.equal(asr.startCalls, 1, "ASR not restarted")
+    assert.equal(f.gate.isCalibrating(), false, "silence gate not recalibrated on live speech")
+    assert.equal(f.gate.getThreshold(), thresholdBefore)
+    const resync = f.opMessages.filter((m) => m.type === "status:update").at(-1)!.payload as { micCalibrating?: boolean; micThreshold?: number }
+    assert.equal(resync.micCalibrating, false)
+    assert.equal(resync.micThreshold, thresholdBefore)
+
+    // A real restart still works.
+    f.send("mic:stop")
+    await waitFor(() => asr.stopCalls >= 1)
+    f.send("mic:start")
+    await waitFor(() => asr.startCalls === 2)
+    assert.equal(f.gate.isCalibrating(), true)
+  } finally {
+    f.operator.close()
+    f.viewer.close()
+    await f.app.stop()
   }
 })

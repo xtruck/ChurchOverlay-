@@ -183,3 +183,42 @@ test("LocalizedVerseSource: bilingual mode with an English (secondary) failure d
   assert.equal(entry.event, "secondary-language-failed")
   assert.equal(entry.error, "bible-api.com is down")
 })
+
+// B5 (audit): the English source is changed IN PLACE. AppCore keeps the instance it was given, so
+// replacing the instance orphaned it (new URL unused, later mode switches landing on a dead copy).
+test("LocalizedVerseSource: setEnglishSource() swaps English lookups on the SAME instance and keeps mode and French intact", async () => {
+  const oldEnglish = new StubVerseSource(ENGLISH_VERSE)
+  const newVerse = makeVerse("From the custom server", "kjv", "church-bible.example")
+  const newEnglish = new StubVerseSource(newVerse)
+  const french = new StubVerseSource(FRENCH_VERSE)
+  const source = new LocalizedVerseSource(oldEnglish, french, "english")
+  const held = source // what AppCore holds
+
+  source.setEnglishSource(newEnglish, "https://church-bible.example")
+  assert.deepEqual(await held.getVerse(JOHN_3_16), newVerse)
+  assert.equal(oldEnglish.callCount, 0)
+
+  // The live toggles keep working on the instance AppCore holds.
+  held.setMode("french")
+  assert.deepEqual(await held.getVerse(JOHN_3_16), FRENCH_VERSE)
+  held.setMode("bilingual")
+  const both = await held.getVerse(JOHN_3_16)
+  assert.equal(both?.secondary?.source, "church-bible.example")
+  assert.equal(held.getMode(), "bilingual")
+})
+
+test("LocalizedVerseSource: the cache identity changes with the English source, and returns to the plain default", () => {
+  const source = new LocalizedVerseSource(new StubVerseSource(null), new StubVerseSource(null), "english")
+  assert.equal(source.getTranslationId(), "english")
+  source.setEnglishSource(new StubVerseSource(null), "https://a.example")
+  const a = source.getTranslationId()
+  source.setEnglishSource(new StubVerseSource(null), "https://b.example")
+  assert.notEqual(source.getTranslationId(), a, "verses cached from endpoint A must not be served for endpoint B")
+  source.setMode("bilingual")
+  assert.match(source.getTranslationId(), /^bilingual:ls1910:/)
+  source.setMode("french")
+  assert.equal(source.getTranslationId(), "french:ls1910", "French identity is independent of the English endpoint")
+  source.setEnglishSource(new StubVerseSource(null))
+  source.setMode("english")
+  assert.equal(source.getTranslationId(), "english")
+})

@@ -52,11 +52,11 @@ export class ServiceHealthLog {
     if (this.droppedSamples.length > MAX_DROP_SAMPLES) this.droppedSamples.shift()
   }
 
-  /** Fed with every mic:health state. A "no-signal" run is one dropout. */
+  /** Fed with every mic:health state. A "no-signal" (silent frames) or "no-audio" (no frames at all, SF-08) run is one dropout. */
   observeMicState(now: number, state: string): void {
     const open = this.micDropouts.at(-1)
     const isOpen = open !== undefined && open.endedAt === null
-    if (state === "no-signal") {
+    if (state === "no-signal" || state === "no-audio") {
       if (!isOpen) {
         this.micDropouts.push({ startedAt: now, endedAt: null })
         if (this.micDropouts.length > MAX_EVENTS) this.micDropouts.shift()

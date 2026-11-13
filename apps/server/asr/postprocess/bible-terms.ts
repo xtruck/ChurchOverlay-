@@ -1,4 +1,6 @@
-const BIBLE_TERM_ALIASES: Readonly<Record<string, string>> = {
+import { nullProto } from "../../../../packages/shared/type-guards"
+
+const BIBLE_TERM_ALIASES: Readonly<Record<string, string>> = nullProto({
   "saint-esprit": "Saint-Esprit",
   "saint esprit": "Saint-Esprit",
   "jésus": "Jésus",
@@ -6,7 +8,7 @@ const BIBLE_TERM_ALIASES: Readonly<Record<string, string>> = {
   "évangile": "Évangile",
   "evangile": "Évangile",
   "psaume": "Psaume",
-}
+})
 
 /** Applies only exact, known term casing; it does not infer references. */
 export function normalizeBibleTerms(text: string): string {

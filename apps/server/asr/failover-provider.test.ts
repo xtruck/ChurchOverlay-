@@ -503,3 +503,183 @@ test("auto-return: concurrent utterance ends start only one attempt", async () =
   await Promise.all([a, b])
   assert.equal(primary.startCalls, 2)
 })
+
+
+// ---- TS-02 / SF-07 / SF-21: secondary activation storm, backoff, leaks ----
+
+function outageFixture(retry = { initialDelayMs: 2000, maxDelayMs: 8000 }) {
+  const primary = new FakeProvider()
+  const secondary = new FakeProvider()
+  const clock = { t: 1_000_000 }
+  const errors: Error[] = []
+  const provider = new FailoverAsrProvider({
+    primary,
+    secondary,
+    trigger: "primary-error",
+    activationRetry: { ...retry, now: () => clock.t },
+  })
+  provider.onError((e) => errors.push(e))
+  return { primary, secondary, clock, errors, provider }
+}
+
+test("TS-02: a secondary that cannot start is not re-activated by every audio frame", async () => {
+  const f = outageFixture()
+  await f.provider.start()
+  f.primary.failSend = true
+  f.secondary.failStart = true
+  for (let i = 1; i <= 100; i += 1) await f.provider.sendAudio(frame(i))
+  assert.equal(f.secondary.startCalls, 1, "one activation attempt, not one per frame")
+  assert.equal(f.primary.stopCalls, 1, "primary stopped once")
+  assert.equal(f.errors.length, 1, "unavailability reported once")
+  const state = f.provider.secondaryUnavailable()
+  assert.ok(state)
+  assert.equal(state?.attempts, 1)
+  assert.equal(state?.framesDropped, 100)
+})
+
+test("TS-02: re-attempts follow exponential backoff with a cap and never stop the primary again", async () => {
+  const f = outageFixture({ initialDelayMs: 2000, maxDelayMs: 8000 })
+  await f.provider.start()
+  f.primary.failSend = true
+  f.primary.failStart = true
+  f.secondary.failStart = true
+  await f.provider.sendAudio(frame(1))
+  assert.equal(f.secondary.startCalls, 1)
+  f.clock.t += 1999
+  await f.provider.sendAudio(frame(2))
+  assert.equal(f.secondary.startCalls, 1, "still backing off")
+  f.clock.t += 1
+  await f.provider.sendAudio(frame(3))
+  assert.equal(f.secondary.startCalls, 2)
+  f.clock.t += 3999
+  await f.provider.sendAudio(frame(4))
+  assert.equal(f.secondary.startCalls, 2, "second delay is 4 s")
+  f.clock.t += 1
+  await f.provider.sendAudio(frame(5))
+  assert.equal(f.secondary.startCalls, 3)
+  f.clock.t += 8000
+  await f.provider.sendAudio(frame(6))
+  assert.equal(f.secondary.startCalls, 4)
+  f.clock.t += 7999
+  await f.provider.sendAudio(frame(7))
+  assert.equal(f.secondary.startCalls, 4, "capped at 8 s, not 16 s")
+  f.clock.t += 1
+  await f.provider.sendAudio(frame(8))
+  assert.equal(f.secondary.startCalls, 5)
+  assert.equal(f.primary.stopCalls, 1)
+  assert.equal(f.errors.length, 1)
+})
+
+test("TS-02: the secondary coming back during the outage takes over and clears the unavailable state", async () => {
+  const f = outageFixture()
+  await f.provider.start()
+  f.primary.failSend = true
+  f.secondary.failStart = true
+  let activated = 0
+  f.provider.onFailoverActivated(() => { activated += 1 })
+  await f.provider.sendAudio(frame(1))
+  f.secondary.failStart = false
+  f.clock.t += 2000
+  await f.provider.sendAudio(frame(2))
+  assert.equal(f.provider.secondaryUnavailable(), null)
+  assert.equal(activated, 1)
+  assert.deepEqual(f.secondary.frames.map((x) => x.sequence), [2])
+})
+
+test("TS-02: a recovered primary is restarted during the outage retry", async () => {
+  const f = outageFixture()
+  await f.provider.start()
+  f.primary.failSend = true
+  f.secondary.failStart = true
+  await f.provider.sendAudio(frame(1))
+  f.primary.failSend = false
+  f.clock.t += 2000
+  await f.provider.sendAudio(frame(2))
+  assert.equal(f.provider.secondaryUnavailable(), null)
+  assert.equal(f.primary.startCalls, 2)
+  assert.deepEqual(f.primary.frames.map((x) => x.sequence), [2])
+})
+
+test("TS-02: concurrent frames share one in-flight activation", async () => {
+  const f = outageFixture()
+  await f.provider.start()
+  f.primary.failSend = true
+  f.secondary.failStart = true
+  await Promise.all([1, 2, 3, 4, 5].map((i) => f.provider.sendAudio(frame(i))))
+  assert.equal(f.secondary.startCalls, 1)
+  assert.equal(f.errors.length, 1)
+})
+
+test("TS-02: onSecondaryUnavailable fires once per outage and again after a fresh start()", async () => {
+  const f = outageFixture()
+  let reports = 0
+  f.provider.onSecondaryUnavailable(() => { reports += 1 })
+  await f.provider.start()
+  f.primary.failSend = true
+  f.secondary.failStart = true
+  for (let i = 1; i <= 10; i += 1) await f.provider.sendAudio(frame(i))
+  f.clock.t += 2000
+  await f.provider.sendAudio(frame(11))
+  assert.equal(reports, 1)
+  await f.provider.stop()
+  assert.equal(f.provider.secondaryUnavailable(), null)
+  f.secondary.failStart = false
+  await f.provider.start()
+  f.primary.failSend = true
+  f.secondary.failStart = true
+  await f.provider.sendAudio(frame(12))
+  assert.equal(reports, 2)
+})
+
+test("SF-07: a sustained-rate-limit failover whose secondary cannot start does not raise an unhandled rejection", async () => {
+  const primary = new FakeProvider()
+  const secondary = new FakeProvider()
+  secondary.failStart = true
+  const provider = new FailoverAsrProvider({ primary, secondary })
+  const errors: Error[] = []
+  provider.onError((e) => errors.push(e))
+  const rejections: unknown[] = []
+  const onRejection = (reason: unknown): void => { rejections.push(reason) }
+  process.on("unhandledRejection", onRejection)
+  try {
+    await provider.start()
+    primary.triggerSustainedLimit()
+    primary.triggerSustainedLimit()
+    await new Promise((resolve) => setImmediate(resolve))
+    await new Promise((resolve) => setImmediate(resolve))
+  } finally {
+    process.off("unhandledRejection", onRejection)
+  }
+  assert.deepEqual(rejections, [])
+  assert.equal(secondary.startCalls, 1, "backoff also guards repeated sustained signals")
+  assert.equal(errors.length, 1)
+})
+
+test("SF-21: start() while the secondary is on air stops the secondary and resets the failed-over flag", async () => {
+  const f = outageFixture()
+  await f.provider.start()
+  f.primary.failSend = true
+  await f.provider.sendAudio(frame(1))
+  assert.equal(f.provider.isFailedOver(), true)
+  f.primary.failSend = false
+  const stopsBefore = f.secondary.stopCalls
+  await f.provider.start()
+  assert.equal(f.secondary.stopCalls, stopsBefore + 1, "secondary released, not leaked")
+  assert.equal(f.provider.isFailedOver(), false)
+  await f.provider.sendAudio(frame(2))
+  assert.deepEqual(f.primary.frames.map((x) => x.sequence), [2])
+})
+
+test("SF-21: a failed returnToPrimary where the secondary also fails to restart uses the outage state, not a stopped provider", async () => {
+  const f = outageFixture()
+  await f.provider.start()
+  f.primary.failSend = true
+  await f.provider.sendAudio(frame(1))
+  f.primary.failStart = true
+  f.secondary.failStart = true
+  await assert.rejects(() => f.provider.returnToPrimary())
+  const startsBefore = f.secondary.startCalls
+  for (let i = 2; i <= 30; i += 1) await f.provider.sendAudio(frame(i))
+  assert.equal(f.secondary.startCalls, startsBefore, "frames do not each throw or retry")
+  assert.ok(f.provider.secondaryUnavailable())
+})

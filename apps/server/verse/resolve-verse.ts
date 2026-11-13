@@ -67,8 +67,26 @@ export async function resolveVerse(
   translation: string = DEFAULT_TRANSLATION,
   logger?: Logger
 ): Promise<Verse | null> {
+  return (await resolveVerseDetailed(reference, source, cache, circuitBreaker, translation, logger)).verse
+}
+
+/**
+ * Why a lookup produced no verse (AUDIT SF-03). "unavailable": the circuit is open or the source
+ * threw; "not-found": the source confirmed there is no such verse (or a recent confirmed miss is cached).
+ */
+export type VerseLookupFailure = "unavailable" | "not-found"
+
+/** resolveVerse() plus the reason it came back empty, so a caller can tell the operator. */
+export async function resolveVerseDetailed(
+  reference: VerseReference,
+  source: VerseSource,
+  cache: VerseCache,
+  circuitBreaker: CircuitBreaker,
+  translation: string = DEFAULT_TRANSLATION,
+  logger?: Logger
+): Promise<{ readonly verse: Verse | null; readonly failure: VerseLookupFailure | null }> {
   const cached = cache.getVerse(reference, translation)
-  if (cached) return cached
+  if (cached) return { verse: cached, failure: null }
 
   if (cache.isNegativelyCached(reference, translation)) {
     // ARCHITECTURE.md production audit (section 74): a hypothesis for an
@@ -86,7 +104,7 @@ export async function resolveVerse(
       event: "suppressed-negative-cache",
       metadata: { reference, translation, remainingMs: cache.negativeCacheRemainingMs(reference, translation) },
     })
-    return null
+    return { verse: null, failure: "not-found" }
   }
 
   if (!circuitBreaker.canProceed()) {
@@ -95,7 +113,7 @@ export async function resolveVerse(
       event: "circuit-open",
       metadata: { reference, translation },
     })
-    return null
+    return { verse: null, failure: "unavailable" }
   }
 
   try {
@@ -114,7 +132,7 @@ export async function resolveVerse(
     } else {
       cache.setNotFound(reference, translation)
     }
-    return verse
+    return { verse, failure: verse ? null : "not-found" }
   } catch (err) {
     circuitBreaker.recordFailure()
     logger?.error({
@@ -123,6 +141,6 @@ export async function resolveVerse(
       metadata: { reference, translation },
       error: err instanceof Error ? err.message : String(err),
     })
-    return null
+    return { verse: null, failure: "unavailable" }
   }
 }

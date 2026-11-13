@@ -1,3 +1,4 @@
+import { constants } from "node:fs"
 import { copyFile, mkdir, open, readFile, rename, unlink } from "node:fs/promises"
 import { dirname } from "node:path"
 import type { DisplayMode, VerseConfirmationMode, VerseLayout } from "../../../packages/contracts"
@@ -6,6 +7,7 @@ import { ASR_STRATEGIES, type AsrStrategy } from "../../server/asr/asr-strategy"
 import { AI_PROVIDERS, type AiProvider } from "../../server/ai/ai-provider"
 import type { OverlayStyleSettings } from "../../../packages/contracts/overlay-style"
 import { normalizeOverlayStyleSettings } from "../../server/overlay/overlay-style"
+import type { LogFields } from "../../../packages/shared/logger"
 import { isNotFoundError, isPlainObject } from "../../../packages/shared/type-guards"
 
 /** Desktop-app-only concern (not part of the WS protocol) — the operator dashboard/setup UI's own language, ARCHITECTURE.md section 63.5. */
@@ -148,43 +150,74 @@ export type AppConfig = {
   readonly customBibleApiUrl?: string
 }
 
-type StoredConfig = {
-  readonly groqApiKeyEncrypted: string
-  readonly deepgramApiKeyEncrypted?: string
-  readonly anthropicApiKeyEncrypted?: string
-  readonly microphoneId: string | null
-  readonly operatorTokenEncrypted: string
-  readonly viewerTokenEncrypted: string
-  /** Optional in storage: absent in configs saved before ARCHITECTURE.md section 63 existed. */
-  readonly displayMode?: string
-  readonly uiLanguage?: string
-  /** Optional in storage: absent in configs saved before ARCHITECTURE.md section 65.6 existed. */
-  readonly allowPhoneRemote?: boolean
-  /** Optional in storage: absent in configs saved before ARCHITECTURE.md section 65.3 existed. */
-  readonly verseConfirmationMode?: string
-  /** Optional in storage: absent in configs saved before ARCHITECTURE.md section 65.7 existed. */
-  readonly enableSermonNotes?: boolean
-  /** Optional in storage: absent in configs saved before ARCHITECTURE.md section 82 existed. */
-  readonly verseLayout?: string
-  readonly ndiEnabled?: boolean
-  readonly aiTranscriptCleanup?: boolean
-  readonly aiSemanticDetection?: boolean
-  readonly aiSermonCopilot?: boolean
-  readonly audioProfile?: string
-  readonly organizationName?: string
-  readonly accentColor?: string
-  readonly asrStrategy?: string
-  readonly aiProvider?: string
-  readonly autoGain?: boolean
-  readonly noiseMode?: string
-  readonly localAsrEnabled?: boolean
-  readonly localAsrModel?: string
-  readonly localAsrEngine?: string
-  readonly frenchTranslation?: string
-  readonly overlayTemplate?: string
-  readonly overlayStyle?: unknown
-  readonly customBibleApiUrl?: string
+/**
+ * Bumped whenever the stored shape changes in a way an older app could misread.
+ * Written on every save. A file WITHOUT one (every pre-B6 install) is read as version 0.
+ * A file with a HIGHER number than this (written by a newer app, then rolled back) is read
+ * tolerantly and never downgraded destructively (see ConfigStore.write).
+ */
+export const CONFIG_SCHEMA_VERSION = 1
+
+export type SecretName = "groq" | "deepgram" | "anthropic"
+
+/**
+ * What the operator must be told after a load that did not go cleanly:
+ * "bak" = the settings file was damaged and was restored from config.json.bak;
+ * "quarantined" = it was damaged with no usable backup and was moved aside;
+ * "key-unreadable:<name>" = that one secret could not be decrypted (re-enter it).
+ */
+export type ConfigRecovery = "bak" | "quarantined" | `key-unreadable:${SecretName}`
+
+/** A minimal slice of the shared Logger, so tests can capture warnings. */
+export type ConfigLogger = { warn(fields: LogFields): void }
+
+const KNOWN_STORED_FIELDS: ReadonlySet<string> = new Set([
+  "schemaVersion",
+  "groqApiKeyEncrypted",
+  "deepgramApiKeyEncrypted",
+  "anthropicApiKeyEncrypted",
+  "microphoneId",
+  "operatorTokenEncrypted",
+  "viewerTokenEncrypted",
+  "displayMode",
+  "uiLanguage",
+  "allowPhoneRemote",
+  "verseConfirmationMode",
+  "enableSermonNotes",
+  "verseLayout",
+  "ndiEnabled",
+  "aiTranscriptCleanup",
+  "aiSemanticDetection",
+  "aiSermonCopilot",
+  "audioProfile",
+  "organizationName",
+  "accentColor",
+  "asrStrategy",
+  "aiProvider",
+  "autoGain",
+  "noiseMode",
+  "localAsrEnabled",
+  "localAsrModel",
+  "localAsrEngine",
+  "frenchTranslation",
+  "overlayTemplate",
+  "overlayStyle",
+  "customBibleApiUrl",
+])
+
+type DecodedConfig = {
+  readonly config: AppConfig
+  /** Encrypted blobs that could not be decrypted, kept so a later save does not destroy them. */
+  readonly unreadable: ReadonlyMap<SecretName, string>
+  /** Fields this app does not know (only retained when the file came from a newer schema). */
+  readonly extras: Readonly<Record<string, unknown>>
+  readonly schemaVersion: number
 }
+
+type Candidate =
+  | { readonly kind: "missing" }
+  | { readonly kind: "ok"; readonly decoded: DecodedConfig }
+  | { readonly kind: "bad"; readonly error: Error }
 
 /**
  * Secure, crash-safe configuration storage (ARCHITECTURE.md sections
@@ -199,41 +232,108 @@ type StoredConfig = {
  * a write can never leave the previous valid configuration corrupted or
  * missing — the rename is the only step that can affect the real file,
  * and a rename either fully happens or fully doesn't.
+ *
+ * Loads are tolerant (audit B6): one invalid optional field or unknown enum falls back to
+ * its default with a logged warning, one undecryptable secret is reported without losing
+ * the others, and a truly unparseable file is restored from config.json.bak before it is
+ * quarantined. What happened is available from getRecovery() so the operator can be told.
  */
 export class ConfigStore {
-  // Saves run one at a time (ARCHITECTURE.md section 112): several
+  // Saves AND loads run one at a time on this chain (ARCHITECTURE.md section 112): several
   // handlers save in response to independent events, and two saves in the
   // same millisecond used to share a temp-file name and race each other.
+  // A load can quarantine/restore the file, so two concurrent loads must not interleave either.
   private saveChain: Promise<unknown> = Promise.resolve()
   private tempCounter = 0
+  private readonly stickyRecovery = new Set<"bak" | "quarantined">()
+  private unreadable: ReadonlyMap<SecretName, string> = new Map()
+  private extras: Readonly<Record<string, unknown>> = {}
+  private loadedSchemaVersion = 0
+  private newerVersionBackedUp = false
 
   constructor(
     private readonly filePath: string,
-    private readonly codec: SecretCodec
+    private readonly codec: SecretCodec,
+    private readonly logger?: ConfigLogger
   ) {}
 
-  async load(): Promise<AppConfig | null> {
-    let raw: string
-    try {
-      raw = await readFile(this.filePath, "utf8")
-    } catch (err) {
-      if (isNotFoundError(err)) return null
-      throw err
+  private get backupPath(): string {
+    return `${this.filePath}.bak`
+  }
+
+  /**
+   * Everything the operator should hear about from the loads so far. "bak" and "quarantined"
+   * stay for the session; "key-unreadable:*" always reflects the last load or save.
+   */
+  getRecovery(): ConfigRecovery[] {
+    return [...this.stickyRecovery, ...[...this.unreadable.keys()].map((name) => `key-unreadable:${name}` as const)]
+  }
+
+  load(): Promise<AppConfig | null> {
+    return this.enqueue(() => this.loadNow())
+  }
+
+  private enqueue<T>(step: () => Promise<T>): Promise<T> {
+    const run = this.saveChain.then(step, step)
+    this.saveChain = run.catch(() => undefined)
+    return run
+  }
+
+  private async loadNow(): Promise<AppConfig | null> {
+    const primary = await this.readCandidate(this.filePath, true)
+    if (primary.kind === "missing") {
+      this.adopt(null)
+      return null
+    }
+    if (primary.kind === "ok") {
+      this.adopt(primary.decoded)
+      return primary.decoded.config
     }
 
+    // Truly unreadable. Move it aside first (never overwritten, never lost), then try the
+    // last known good copy before giving up on the operator's settings.
+    const movedAside = await this.quarantine()
+    const backup = await this.readCandidate(this.backupPath, false)
+    if (backup.kind === "ok") {
+      if (movedAside) await this.restoreFromBackup()
+      this.stickyRecovery.add("bak")
+      this.logger?.warn({
+        component: "config-store",
+        event: "config.restored-from-backup",
+        error: primary.error.message,
+      })
+      this.adopt(backup.decoded)
+      return backup.decoded.config
+    }
+    this.stickyRecovery.add("quarantined")
+    this.adopt(null)
+    throw primary.error
+  }
+
+  private adopt(decoded: DecodedConfig | null): void {
+    this.unreadable = decoded?.unreadable ?? new Map()
+    this.extras = decoded?.extras ?? {}
+    this.loadedSchemaVersion = decoded?.schemaVersion ?? 0
+  }
+
+  private async readCandidate(path: string, rethrowIo: boolean): Promise<Candidate> {
+    let raw: string
+    try {
+      raw = await readFile(path, "utf8")
+    } catch (err) {
+      if (isNotFoundError(err) || !rethrowIo) return { kind: "missing" }
+      throw err
+    }
     let stored: unknown
     try {
       stored = JSON.parse(raw)
     } catch {
-      await this.quarantine()
-      throw new Error(`ConfigStore: ${this.filePath} contains invalid JSON`)
+      return { kind: "bad", error: new Error(`ConfigStore: ${path} contains invalid JSON`) }
     }
-
     try {
-      return this.decode(stored)
+      return { kind: "ok", decoded: this.decode(stored, path) }
     } catch (err) {
-      await this.quarantine()
-      throw err
+      return { kind: "bad", error: err instanceof Error ? err : new Error(String(err)) }
     }
   }
 
@@ -241,23 +341,38 @@ export class ConfigStore {
    * An unreadable config is moved aside, never left in place: the setup
    * screen that follows writes a fresh file, and without this the old file
    * (with its encrypted API keys) would be overwritten and lost.
+   * Returns whether the move succeeded.
    */
-  private async quarantine(): Promise<void> {
+  private async quarantine(): Promise<boolean> {
     const aside = `${this.filePath}.corrupt-${Date.now()}`
     try {
       await rename(this.filePath, aside)
+      return true
     } catch {
       // Best effort: the original error is what the caller needs to see.
+      return false
+    }
+  }
+
+  private async restoreFromBackup(): Promise<void> {
+    this.tempCounter += 1
+    const tempPath = `${this.filePath}.${process.pid}.${Date.now()}.${this.tempCounter}.restore.tmp`
+    try {
+      await copyFile(this.backupPath, tempPath)
+      await rename(tempPath, this.filePath)
+    } catch (err) {
+      await unlink(tempPath).catch(() => undefined)
+      // Not fatal: the backup content is still used for this session, and the next save rewrites the file.
+      this.logger?.warn({
+        component: "config-store",
+        event: "config.restore-write-failed",
+        error: err instanceof Error ? err.message : String(err),
+      })
     }
   }
 
   save(config: AppConfig): Promise<void> {
-    const run = this.saveChain.then(
-      () => this.write(config),
-      () => this.write(config)
-    )
-    this.saveChain = run.catch(() => undefined)
-    return run
+    return this.enqueue(() => this.write(config))
   }
 
   /**
@@ -267,23 +382,33 @@ export class ConfigStore {
    * config, or null when no config exists yet (nothing is created).
    */
   update(mutate: (current: AppConfig) => AppConfig): Promise<AppConfig | null> {
-    const step = async (): Promise<AppConfig | null> => {
-      const current = await this.load()
+    return this.enqueue(async (): Promise<AppConfig | null> => {
+      const current = await this.loadNow()
       if (!current) return null
       const next = mutate(current)
       await this.write(next)
       return next
-    }
-    const run = this.saveChain.then(step, step)
-    this.saveChain = run.catch(() => undefined)
-    return run
+    })
   }
 
   private async write(config: AppConfig): Promise<void> {
-    const stored: StoredConfig = {
-      groqApiKeyEncrypted: this.codec.encrypt(config.groqApiKey).toString("base64"),
-      ...(config.deepgramApiKey ? { deepgramApiKeyEncrypted: this.codec.encrypt(config.deepgramApiKey).toString("base64") } : {}),
-      ...(config.anthropicApiKey ? { anthropicApiKeyEncrypted: this.codec.encrypt(config.anthropicApiKey).toString("base64") } : {}),
+    // An unreadable secret keeps its raw blob unless the operator has supplied a new value:
+    // a transient decrypt failure (locked keyring) must not become permanent key loss.
+    const secretBlob = (name: SecretName, value: string | undefined): string | undefined => {
+      if (value) return this.codec.encrypt(value).toString("base64")
+      return this.unreadable.get(name)
+    }
+    const groqBlob = secretBlob("groq", config.groqApiKey) ?? this.codec.encrypt(config.groqApiKey).toString("base64")
+    const deepgramBlob = secretBlob("deepgram", config.deepgramApiKey)
+    const anthropicBlob = secretBlob("anthropic", config.anthropicApiKey)
+
+    const stored = {
+      // Fields from a NEWER schema (a rollback) ride along untouched; known fields below win.
+      ...(this.loadedSchemaVersion > CONFIG_SCHEMA_VERSION ? this.extras : {}),
+      schemaVersion: Math.max(CONFIG_SCHEMA_VERSION, this.loadedSchemaVersion),
+      groqApiKeyEncrypted: groqBlob,
+      ...(deepgramBlob ? { deepgramApiKeyEncrypted: deepgramBlob } : {}),
+      ...(anthropicBlob ? { anthropicApiKeyEncrypted: anthropicBlob } : {}),
       microphoneId: config.microphoneId,
       operatorTokenEncrypted: this.codec.encrypt(config.operatorToken).toString("base64"),
       viewerTokenEncrypted: this.codec.encrypt(config.viewerToken).toString("base64"),
@@ -325,27 +450,49 @@ export class ConfigStore {
       } finally {
         await handle.close()
       }
+      // A file from a newer app is about to be rewritten by this older one: keep it once, verbatim.
+      if (this.loadedSchemaVersion > CONFIG_SCHEMA_VERSION && !this.newerVersionBackedUp) {
+        this.newerVersionBackedUp = true
+        await copyFile(this.filePath, `${this.filePath}.schema-v${this.loadedSchemaVersion}.bak`, constants.COPYFILE_EXCL).catch(
+          () => undefined
+        )
+      }
       // Keep the last good file; a failed copy (e.g. no previous file) must not block the save.
-      await copyFile(this.filePath, `${this.filePath}.bak`).catch(() => undefined)
+      await copyFile(this.filePath, this.backupPath).catch(() => undefined)
       await rename(tempPath, this.filePath)
     } catch (err) {
       await unlink(tempPath).catch(() => undefined)
       throw err
     }
+
+    // A secret the operator just re-entered is no longer "unreadable".
+    const stillUnreadable = new Map(this.unreadable)
+    if (config.groqApiKey) stillUnreadable.delete("groq")
+    if (config.deepgramApiKey) stillUnreadable.delete("deepgram")
+    if (config.anthropicApiKey) stillUnreadable.delete("anthropic")
+    this.unreadable = stillUnreadable
   }
 
-  private decode(stored: unknown): AppConfig {
+  private warnField(path: string, field: string): void {
+    // The value itself is never logged (it could be anything, including something secret-shaped).
+    this.logger?.warn({
+      component: "config-store",
+      event: "config.field-invalid",
+      metadata: { field, file: path },
+    })
+  }
+
+  private decode(stored: unknown, path: string): DecodedConfig {
     if (!isPlainObject(stored)) {
-      throw new Error(`ConfigStore: ${this.filePath} does not contain a valid config object`)
+      throw new Error(`ConfigStore: ${path} does not contain a valid config object`)
     }
 
     const {
+      schemaVersion,
       groqApiKeyEncrypted,
-      deepgramApiKeyEncrypted,
-      anthropicApiKeyEncrypted,
-      microphoneId,
       operatorTokenEncrypted,
       viewerTokenEncrypted,
+      microphoneId,
       displayMode,
       uiLanguage,
       allowPhoneRemote,
@@ -372,149 +519,116 @@ export class ConfigStore {
       customBibleApiUrl,
     } = stored
 
+    // Structural: without these three there is no config to speak of (tokens cannot be invented here).
     if (
       typeof groqApiKeyEncrypted !== "string" ||
       typeof operatorTokenEncrypted !== "string" ||
       typeof viewerTokenEncrypted !== "string"
     ) {
-      throw new Error(`ConfigStore: ${this.filePath} is missing required encrypted fields`)
+      throw new Error(`ConfigStore: ${path} is missing required encrypted fields`)
     }
-    if (microphoneId !== null && typeof microphoneId !== "string") {
-      throw new Error(`ConfigStore: ${this.filePath} has an invalid microphoneId`)
+
+    // Everything below degrades per field to its default, with a warning, never to a quarantine.
+    const bad = (field: string): undefined => {
+      this.warnField(path, field)
+      return undefined
     }
-    // Absent (a config saved before section 63 existed) defaults rather than
-    // fails — this is expected for an older file, not corruption. A present
-    // but invalid value IS corruption and still throws.
-    if (displayMode !== undefined && !DISPLAY_MODES.includes(displayMode as DisplayMode)) {
-      throw new Error(`ConfigStore: ${this.filePath} has an invalid displayMode`)
-    }
-    if (uiLanguage !== undefined && !UI_LANGUAGES.includes(uiLanguage as UiLanguage)) {
-      throw new Error(`ConfigStore: ${this.filePath} has an invalid uiLanguage`)
-    }
-    if (allowPhoneRemote !== undefined && typeof allowPhoneRemote !== "boolean") {
-      throw new Error(`ConfigStore: ${this.filePath} has an invalid allowPhoneRemote`)
-    }
-    if (
-      verseConfirmationMode !== undefined &&
-      !VERSE_CONFIRMATION_MODES.includes(verseConfirmationMode as VerseConfirmationMode)
-    ) {
-      throw new Error(`ConfigStore: ${this.filePath} has an invalid verseConfirmationMode`)
-    }
-    if (enableSermonNotes !== undefined && typeof enableSermonNotes !== "boolean") {
-      throw new Error(`ConfigStore: ${this.filePath} has an invalid enableSermonNotes`)
-    }
-    if (verseLayout !== undefined && !VERSE_LAYOUTS.includes(verseLayout as VerseLayout)) {
-      throw new Error(`ConfigStore: ${this.filePath} has an invalid verseLayout`)
-    }
-    if (ndiEnabled !== undefined && typeof ndiEnabled !== "boolean") {
-      throw new Error(`ConfigStore: ${this.filePath} has an invalid ndiEnabled`)
-    }
-    for (const [name, value] of [
-      ["aiTranscriptCleanup", aiTranscriptCleanup],
-      ["aiSemanticDetection", aiSemanticDetection],
-      ["aiSermonCopilot", aiSermonCopilot],
-    ] as const) {
-      if (value !== undefined && typeof value !== "boolean") {
-        throw new Error(`ConfigStore: ${this.filePath} has an invalid ${name}`)
+    const bool = (field: string, value: unknown): boolean | undefined =>
+      value === undefined ? undefined : typeof value === "boolean" ? value : bad(field)
+    const text = (field: string, value: unknown): string | undefined =>
+      value === undefined ? undefined : typeof value === "string" ? value : bad(field)
+    const oneOf = <T extends string>(field: string, value: unknown, allowed: readonly T[]): T | undefined =>
+      value === undefined ? undefined : typeof value === "string" && (allowed as readonly string[]).includes(value) ? (value as T) : bad(field)
+
+    const version = typeof schemaVersion === "number" && Number.isInteger(schemaVersion) && schemaVersion > 0 ? schemaVersion : 0
+    if (schemaVersion !== undefined && version === 0) this.warnField(path, "schemaVersion")
+
+    const unreadable = new Map<SecretName, string>()
+    const readSecret = (name: SecretName, blob: unknown): string | undefined => {
+      if (blob === undefined) return undefined
+      if (typeof blob !== "string") return bad(`${name}ApiKeyEncrypted`)
+      try {
+        return this.codec.decrypt(Buffer.from(blob, "base64"))
+      } catch {
+        // Only the NAME is reported/logged; never the blob or the codec's error text.
+        unreadable.set(name, blob)
+        this.logger?.warn({ component: "config-store", event: "config.secret-unreadable", metadata: { name, file: path } })
+        return undefined
       }
     }
-    if (
-      audioProfile !== undefined &&
-      (typeof audioProfile !== "string" || !["responsive", "balanced", "robust"].includes(audioProfile))
-    ) {
-      throw new Error(`ConfigStore: ${this.filePath} has an invalid audioProfile`)
-    }
-    if (organizationName !== undefined && typeof organizationName !== "string") {
-      throw new Error(`ConfigStore: ${this.filePath} has an invalid organizationName`)
-    }
-    if (accentColor !== undefined && typeof accentColor !== "string") {
-      throw new Error(`ConfigStore: ${this.filePath} has an invalid accentColor`)
-    }
-    if (localAsrEnabled !== undefined && typeof localAsrEnabled !== "boolean") {
-      throw new Error(`ConfigStore: ${this.filePath} has an invalid localAsrEnabled`)
-    }
-    if (localAsrEngine !== undefined && localAsrEngine !== "whisper.cpp" && localAsrEngine !== "faster-whisper") {
-      throw new Error(`ConfigStore: ${this.filePath} has an invalid localAsrEngine`)
-    }
-    if (localAsrModel !== undefined && localAsrModel !== "base" && localAsrModel !== "small") {
-      throw new Error(`ConfigStore: ${this.filePath} has an invalid localAsrModel`)
-    }
-    if (autoGain !== undefined && typeof autoGain !== "boolean") {
-      throw new Error(`ConfigStore: ${this.filePath} has an invalid autoGain`)
-    }
-    if (asrStrategy !== undefined && !ASR_STRATEGIES.includes(asrStrategy as AsrStrategy)) {
-      throw new Error(`ConfigStore: ${this.filePath} has an invalid asrStrategy`)
-    }
-    if (aiProvider !== undefined && !AI_PROVIDERS.includes(aiProvider as AiProvider)) {
-      throw new Error(`ConfigStore: ${this.filePath} has an invalid aiProvider`)
-    }
-    if (frenchTranslation !== undefined && !FRENCH_TRANSLATIONS.includes(frenchTranslation as string)) {
-      throw new Error(`ConfigStore: ${this.filePath} has an invalid frenchTranslation`)
-    }
-    if (overlayTemplate !== undefined && !OVERLAY_TEMPLATES.includes(overlayTemplate as string)) {
-      throw new Error(`ConfigStore: ${this.filePath} has an invalid overlayTemplate`)
-    }
-    if (customBibleApiUrl !== undefined && typeof customBibleApiUrl !== "string") {
-      throw new Error(`ConfigStore: ${this.filePath} has an invalid customBibleApiUrl`)
-    }
-    if (customBibleApiUrl !== undefined && !customBibleApiUrl.startsWith("https://")) {
-      throw new Error(`ConfigStore: ${this.filePath} customBibleApiUrl must be an HTTPS URL`)
+    const groqApiKey = readSecret("groq", groqApiKeyEncrypted) ?? ""
+    const deepgramApiKey = readSecret("deepgram", stored.deepgramApiKeyEncrypted)
+    const anthropicApiKey = readSecret("anthropic", stored.anthropicApiKeyEncrypted)
+
+    let operatorToken: string
+    let viewerToken: string
+    try {
+      operatorToken = this.codec.decrypt(Buffer.from(operatorTokenEncrypted, "base64"))
+      viewerToken = this.codec.decrypt(Buffer.from(viewerTokenEncrypted, "base64"))
+    } catch {
+      throw new Error(`ConfigStore: ${path} has tokens that could not be decrypted`)
     }
 
-    return {
-      groqApiKey: this.codec.decrypt(Buffer.from(groqApiKeyEncrypted, "base64")),
-      ...(typeof deepgramApiKeyEncrypted === "string"
-        ? { deepgramApiKey: this.codec.decrypt(Buffer.from(deepgramApiKeyEncrypted, "base64")) }
-        : {}),
-      ...(typeof anthropicApiKeyEncrypted === "string"
-        ? { anthropicApiKey: this.codec.decrypt(Buffer.from(anthropicApiKeyEncrypted, "base64")) }
-        : {}),
-      microphoneId,
-      operatorToken: this.codec.decrypt(Buffer.from(operatorTokenEncrypted, "base64")),
-      viewerToken: this.codec.decrypt(Buffer.from(viewerTokenEncrypted, "base64")),
-      displayMode: (displayMode as DisplayMode | undefined) ?? "english",
-      uiLanguage: (uiLanguage as UiLanguage | undefined) ?? "en",
-      // Absent (a config saved before section 65.6 existed) defaults to
-      // false — the opt-in, off-by-default confirmed decision applies
-      // just as much to an existing install upgrading as to a fresh one.
-      allowPhoneRemote: allowPhoneRemote ?? false,
-      // Absent (a config saved before section 65.3 existed) defaults to
-      // "auto" — the confirmed unchanged-behavior default applies just as
-      // much to an existing install upgrading as to a fresh one.
-      verseConfirmationMode: (verseConfirmationMode as VerseConfirmationMode | undefined) ?? "auto",
-      // Absent (a config saved before section 65.7 existed) defaults to
-      // false — same opt-in-for-cost reasoning as allowPhoneRemote above.
-      enableSermonNotes: enableSermonNotes ?? false,
-      // Absent (a config saved before section 82 existed) defaults to
-      // "fullscreen" — the confirmed default for every existing install
-      // upgrading, not just fresh ones.
-      verseLayout: (verseLayout as VerseLayout | undefined) ?? "fullscreen",
-      ...(ndiEnabled === undefined ? {} : { ndiEnabled }),
-      // Absent (saved before sections 123-125) stays absent and means off: the opt-in default applies to upgrades too.
-      ...(aiTranscriptCleanup === undefined ? {} : { aiTranscriptCleanup: aiTranscriptCleanup as boolean }),
-      ...(aiSemanticDetection === undefined ? {} : { aiSemanticDetection: aiSemanticDetection as boolean }),
-      ...(aiSermonCopilot === undefined ? {} : { aiSermonCopilot: aiSermonCopilot as boolean }),
-      ...(audioProfile === undefined ? {} : { audioProfile: audioProfile as AudioProfile }),
-      ...(organizationName === undefined ? {} : { organizationName }),
-      ...(accentColor === undefined ? {} : { accentColor }),
-      ...(asrStrategy === undefined ? {} : { asrStrategy: asrStrategy as AsrStrategy }),
-      ...(aiProvider === undefined ? {} : { aiProvider: aiProvider as AiProvider }),
-      ...(autoGain === undefined ? {} : { autoGain }),
-      // Lenient on purpose: an unknown value falls back to "normal" instead of refusing to load the whole config.
-      ...(noiseMode === "normal" || noiseMode === "noisy" || noiseMode === "tongues" ? { noiseMode } : {}),
-      ...(localAsrEnabled === undefined ? {} : { localAsrEnabled }),
-      ...(localAsrModel === undefined ? {} : { localAsrModel: localAsrModel as "base" | "small" }),
-      ...(localAsrEngine === undefined ? {} : { localAsrEngine: localAsrEngine as "whisper.cpp" | "faster-whisper" }),
-      // Absent (a config saved before section 107 existed) defaults to
-      // "ls1910" — the confirmed unchanged-behavior default, same shape as
-      // verseLayout/verseConfirmationMode above.
-      frenchTranslation: (frenchTranslation as string | undefined) ?? "ls1910",
-      // Absent (a config saved before section 108 existed) defaults to
-      // "classic" — the overlay's existing appearance, unchanged.
-      overlayTemplate: (overlayTemplate as string | undefined) ?? "classic",
-      ...(overlayStyle === undefined ? {} : { overlayStyle: normalizeOverlayStyleSettings(overlayStyle) }),
-      ...(customBibleApiUrl === undefined ? {} : { customBibleApiUrl }),
+    const mic = microphoneId === null || typeof microphoneId === "string" ? microphoneId : bad("microphoneId")
+    const noise = oneOf("noiseMode", noiseMode, ["normal", "noisy", "tongues"] as const)
+    const url = text("customBibleApiUrl", customBibleApiUrl)
+    const safeUrl = url !== undefined && !url.startsWith("https://") ? bad("customBibleApiUrl") : url
+
+    const ndi = bool("ndiEnabled", ndiEnabled)
+    const cleanup = bool("aiTranscriptCleanup", aiTranscriptCleanup)
+    const semantic = bool("aiSemanticDetection", aiSemanticDetection)
+    const copilot = bool("aiSermonCopilot", aiSermonCopilot)
+    const profile = oneOf("audioProfile", audioProfile, ["responsive", "balanced", "robust"] as const)
+    const org = text("organizationName", organizationName)
+    const accent = text("accentColor", accentColor)
+    const strategy = oneOf("asrStrategy", asrStrategy, ASR_STRATEGIES)
+    const provider = oneOf("aiProvider", aiProvider, AI_PROVIDERS)
+    const gain = bool("autoGain", autoGain)
+    const localEnabled = bool("localAsrEnabled", localAsrEnabled)
+    const localModel = oneOf("localAsrModel", localAsrModel, ["base", "small"] as const)
+    const localEngine = oneOf("localAsrEngine", localAsrEngine, ["whisper.cpp", "faster-whisper"] as const)
+
+    const extras: Record<string, unknown> = {}
+    if (version > CONFIG_SCHEMA_VERSION) {
+      for (const [field, value] of Object.entries(stored)) {
+        if (!KNOWN_STORED_FIELDS.has(field)) extras[field] = value
+      }
     }
+
+    const config: AppConfig = {
+      groqApiKey,
+      ...(deepgramApiKey === undefined ? {} : { deepgramApiKey }),
+      ...(anthropicApiKey === undefined ? {} : { anthropicApiKey }),
+      microphoneId: mic ?? null,
+      operatorToken,
+      viewerToken,
+      // Absent or unrecognised (a config from an older or NEWER version) both mean "the default".
+      displayMode: oneOf("displayMode", displayMode, DISPLAY_MODES) ?? "english",
+      uiLanguage: oneOf("uiLanguage", uiLanguage, UI_LANGUAGES) ?? "en",
+      // Opt-in, off-by-default settings default to off just as much for an upgrade as for a fresh install.
+      allowPhoneRemote: bool("allowPhoneRemote", allowPhoneRemote) ?? false,
+      verseConfirmationMode: oneOf("verseConfirmationMode", verseConfirmationMode, VERSE_CONFIRMATION_MODES) ?? "auto",
+      enableSermonNotes: bool("enableSermonNotes", enableSermonNotes) ?? false,
+      verseLayout: oneOf("verseLayout", verseLayout, VERSE_LAYOUTS) ?? "fullscreen",
+      ...(ndi === undefined ? {} : { ndiEnabled: ndi }),
+      ...(cleanup === undefined ? {} : { aiTranscriptCleanup: cleanup }),
+      ...(semantic === undefined ? {} : { aiSemanticDetection: semantic }),
+      ...(copilot === undefined ? {} : { aiSermonCopilot: copilot }),
+      ...(profile === undefined ? {} : { audioProfile: profile }),
+      ...(org === undefined ? {} : { organizationName: org }),
+      ...(accent === undefined ? {} : { accentColor: accent }),
+      ...(strategy === undefined ? {} : { asrStrategy: strategy }),
+      ...(provider === undefined ? {} : { aiProvider: provider }),
+      ...(gain === undefined ? {} : { autoGain: gain }),
+      ...(noise === undefined ? {} : { noiseMode: noise }),
+      ...(localEnabled === undefined ? {} : { localAsrEnabled: localEnabled }),
+      ...(localModel === undefined ? {} : { localAsrModel: localModel }),
+      ...(localEngine === undefined ? {} : { localAsrEngine: localEngine }),
+      frenchTranslation: oneOf("frenchTranslation", frenchTranslation, FRENCH_TRANSLATIONS) ?? "ls1910",
+      overlayTemplate: oneOf("overlayTemplate", overlayTemplate, OVERLAY_TEMPLATES) ?? "classic",
+      ...(overlayStyle === undefined ? {} : { overlayStyle: normalizeOverlayStyleSettings(overlayStyle) }),
+      ...(safeUrl === undefined ? {} : { customBibleApiUrl: safeUrl }),
+    }
+    return { config, unreadable, extras, schemaVersion: version }
   }
 }
-

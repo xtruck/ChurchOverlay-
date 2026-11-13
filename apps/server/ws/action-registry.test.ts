@@ -27,6 +27,7 @@ test("ACTION_REGISTRY: contains all registered actions including Phase 2 and inn
       "verse:show",
       "verse:pending",
       "verse:confirm-pending",
+      "verse:lookup-failed",
       "media:select",
       "media:play",
       "media:pause",
@@ -59,6 +60,7 @@ test("ACTION_REGISTRY: contains all registered actions including Phase 2 and inn
       "overlay:style",
       "mic:auto-gain",
       "mic:health",
+      "mic:start-failed",
       "timer:start",
       "timer:stop",
       "timer:reset",
@@ -1088,4 +1090,26 @@ test("status:update aiHelpers: optional, fixed state and reason vocabulary only 
   assert.equal(status.validatePayload({ asrHealth: "ok", aiHelpers: { state: "broken" } }), false)
   assert.equal(status.validatePayload({ asrHealth: "ok", aiHelpers: { state: "paused", reason: "Groq text request failed (404)" } }), false)
   assert.equal(status.validatePayload({ asrHealth: "ok", aiHelpers: "paused" }), false)
+})
+
+
+test("mic:start-failed (SF-06) is a server-only event with a bounded string reason", () => {
+  const def = ACTION_REGISTRY["mic:start-failed"]
+  assert.equal(def.kind, "event")
+  assert.deepEqual(def.allowedSenders, [])
+  assert.equal(def.validatePayload({ reason: "Deepgram unreachable" }), true)
+  assert.equal(def.validatePayload({ reason: "" }), false)
+  assert.equal(def.validatePayload({ reason: "x".repeat(501) }), false)
+  assert.equal(def.validatePayload({ reason: "ok", extra: 1 }), false)
+  assert.equal(def.validatePayload(null), false)
+  const sent = validateWsMessage({ id: "01X", type: "mic:start-failed", timestamp: 1, payload: { reason: "x" } }, "operator")
+  assert.equal(sent.ok, false, "clients can never send it")
+})
+
+test("mic:health accepts the additive no-audio state (SF-08) and still rejects unknown states", () => {
+  const base = { speechDbfs: null, noiseDbfs: null, snrDb: null, peakDbfs: null, clippingRatio: 0, gainDb: 0, autoGain: true }
+  const def = ACTION_REGISTRY["mic:health"]
+  assert.equal(def.validatePayload({ ...base, state: "no-audio" }), true)
+  assert.equal(def.validatePayload({ ...base, state: "no-signal" }), true)
+  assert.equal(def.validatePayload({ ...base, state: "dead" }), false)
 })

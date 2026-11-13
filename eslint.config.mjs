@@ -20,12 +20,15 @@ export default tseslint.config(
     },
   },
   {
-    files: ["apps/desktop/renderer/audio-stream.js"],
+    files: ["apps/desktop/renderer/audio-stream.js", "apps/desktop/renderer/mic-capture-guard.js"],
     languageOptions: {
       globals: {
         ArrayBuffer: "readonly",
+        Boolean: "readonly",
         DataView: "readonly",
+        Math: "readonly",
         Number: "readonly",
+        Object: "readonly",
         globalThis: "readonly",
         Uint8Array: "readonly",
       },

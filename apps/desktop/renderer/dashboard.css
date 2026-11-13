@@ -668,8 +668,8 @@ header.topbar {
 .statusbar-item[data-state="ok"], .statusbar-item[data-state="listening"] { color: var(--text); }
 .statusbar-item[data-state="too-quiet"], .statusbar-item[data-state="noisy"] { color: var(--warn-text); }
 .statusbar-item[data-state="too-quiet"] .icon, .statusbar-item[data-state="noisy"] .icon { color: var(--warn); }
-.statusbar-item[data-state="clipping"], .statusbar-item[data-state="no-signal"] { color: var(--on-air-text); }
-.statusbar-item[data-state="clipping"] .icon, .statusbar-item[data-state="no-signal"] .icon { color: var(--on-air); }
+.statusbar-item[data-state="clipping"], .statusbar-item[data-state="no-signal"], .statusbar-item[data-state="no-audio"] { color: var(--on-air-text); }
+.statusbar-item[data-state="clipping"] .icon, .statusbar-item[data-state="no-signal"] .icon, .statusbar-item[data-state="no-audio"] .icon { color: var(--on-air); }
 .statusbar-item[data-health="error"], .statusbar-item[data-health="rate-limited"] { color: var(--on-air-text); }
 .statusbar-item[data-health="throttled"], .statusbar-item[data-health="failover"] { color: var(--warn-text); }
 .statusbar-item[data-health="error"] .icon, .statusbar-item[data-health="rate-limited"] .icon { color: var(--on-air); }
@@ -975,8 +975,8 @@ header.topbar {
 .mic-health[data-state="listening"] .mic-health-dot { background: var(--live-ok); }
 .mic-health[data-state="too-quiet"], .mic-health[data-state="noisy"] { border-color: var(--warn); }
 .mic-health[data-state="too-quiet"] .mic-health-dot, .mic-health[data-state="noisy"] .mic-health-dot { background: var(--warn); }
-.mic-health[data-state="clipping"], .mic-health[data-state="no-signal"] { border-color: var(--on-air); }
-.mic-health[data-state="clipping"] .mic-health-dot, .mic-health[data-state="no-signal"] .mic-health-dot { background: var(--on-air); }
+.mic-health[data-state="clipping"], .mic-health[data-state="no-signal"], .mic-health[data-state="no-audio"] { border-color: var(--on-air); }
+.mic-health[data-state="clipping"] .mic-health-dot, .mic-health[data-state="no-signal"] .mic-health-dot, .mic-health[data-state="no-audio"] .mic-health-dot { background: var(--on-air); }
 .mic-calibrating-status { color: var(--pending); font-size: var(--fs-13); margin: calc(var(--space-1) * -1) 0 var(--space-3); }
 .mic-actions { flex-wrap: nowrap; margin-bottom: var(--space-3); }
 .mic-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); margin-bottom: var(--space-3); }
@@ -1012,6 +1012,9 @@ header.topbar {
 .mic-diagnostics[data-state="disconnected"],
 .mic-diagnostics[data-state="backpressure"],
 .mic-diagnostics[data-state="error"] { color: var(--warn); }
+/* Lost capture must not read as "listening": red bars and a bold line (mic-capture-guard.js states). */
+.mic-visual.lost .mic-bar { background: var(--danger); }
+#mic-capture-status[data-state="error"] { color: var(--danger); font-weight: 600; }
 
 /* Tools drawer */
 .drawer { padding: 0; }

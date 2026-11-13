@@ -679,6 +679,30 @@
   }
   window.addEventListener("churchoverlay:languagechange", renderAiHelpersStatus)
 
+  // SF-03: a verse that was asked for but could not be looked up (the server sends verse:lookup-failed to the
+  // operator only). A toast says which verse; a persistent indicator says the Bible source is degraded, and
+  // clears by itself the next time a verse loads (verse:show or verse:pending). textContent only.
+  const bibleSourceIndicatorEl = document.getElementById("bible-source-indicator")
+  let bibleSourceDegraded = false
+  function renderBibleSourceIndicator() {
+    if (!bibleSourceIndicatorEl) return
+    bibleSourceIndicatorEl.hidden = !bibleSourceDegraded
+    bibleSourceIndicatorEl.textContent = bibleSourceDegraded ? t("verse.source.degraded") : ""
+  }
+  function setBibleSourceDegraded(degraded) {
+    if (bibleSourceDegraded === degraded) return
+    bibleSourceDegraded = degraded
+    renderBibleSourceIndicator()
+  }
+  function handleVerseLookupFailed(payload) {
+    if (!payload || !payload.reference) return
+    const reason = payload.reason
+    const key = reason === "unavailable" ? "verse.lookupFailed.unavailable" : reason === "invalid" ? "verse.lookupFailed.invalid" : reason === "superseded" ? "verse.lookupFailed.superseded" : "verse.lookupFailed.notFound"
+    log(t(key, { reference: formatReference(payload.reference) }), "error")
+    if (reason === "unavailable") setBibleSourceDegraded(true)
+  }
+  window.addEventListener("churchoverlay:languagechange", renderBibleSourceIndicator)
+
   function handleStatusUpdate(payload) {
     if (!payload) return
     if (payload.aiHelpers !== undefined && payload.aiHelpers !== null && typeof payload.aiHelpers.state === "string") {
@@ -3092,7 +3116,70 @@
     log(t("log.sentVerseClear"), "sent")
   })
 
+  // ---- B2 / SF-02: honest microphone capture --------------------------------
+  // "Listening" is shown ONLY while audio frames are really arriving. Device
+  // loss, a suspended AudioContext, a muted or silent track and a stalled
+  // worklet each get their own visible state; lost capture is re-acquired a
+  // bounded number of times. The decisions live in mic-capture-guard.js
+  // (unit-tested); this block owns the DOM, the timers and the media objects.
+  const micGuard = globalThis.ChurchOverlayMicGuard
+  const micWatchdog = micGuard.createMicWatchdog()
+  const micRecovery = micGuard.createRecoveryPolicy()
+  const micCaptureStatusEl = document.getElementById("mic-capture-status")
+  const MIC_WANTED_KEY = "churchoverlay.micWanted"
+  const MIC_WATCH_INTERVAL_MS = 1000
+  const MIC_SUSPENDED_ESCALATE_MS = 8000
+  let micWanted = false // the operator pressed Start and has not pressed Stop
+  let micGeneration = 0 // bumped on every release: callbacks of an old capture become no-ops
+  let micCaptureState = "idle"
+  let micCaptureParams = {}
+  let micWatchTimer = null
+  let micRecoverTimer = null
+  let micAcquiring = false
+  let micGaveUp = false
+  let micBadSince = null
+  let micSequenceOffset = 0
+  let micLastSequence = -1
+  let micDeviceChangeTimer = null
+
+  // Read once at load, then cleared: only a crash-reload (main says so) may turn it into a restart.
+  let micWantedAtLoad = false
+  try {
+    micWantedAtLoad = localStorage.getItem(MIC_WANTED_KEY) === "1"
+    localStorage.removeItem(MIC_WANTED_KEY)
+  } catch {
+    // Storage unavailable: the microphone simply is not auto-resumed after a reload.
+  }
+
+  function setMicWanted(wanted) {
+    micWanted = wanted
+    try {
+      if (wanted) localStorage.setItem(MIC_WANTED_KEY, "1")
+      else localStorage.removeItem(MIC_WANTED_KEY)
+    } catch {
+      // Best effort only (see micWantedAtLoad).
+    }
+  }
+
+  function renderMicCaptureState(state, params) {
+    micCaptureState = state
+    micCaptureParams = params || {}
+    micVisualEl.classList.toggle("active", state === "live")
+    micVisualEl.classList.toggle("lost", state !== "idle" && state !== "live" && state !== "starting")
+    if (!micCaptureStatusEl) return
+    if (state === "idle") {
+      micCaptureStatusEl.dataset.state = "idle"
+      micCaptureStatusEl.textContent = ""
+      return
+    }
+    micCaptureStatusEl.dataset.state = state === "live" ? "ok" : state === "starting" ? "idle" : "error"
+    micCaptureStatusEl.textContent = t("mic.state." + state, micCaptureParams)
+  }
+
+  window.addEventListener("churchoverlay:languagechange", () => renderMicCaptureState(micCaptureState, micCaptureParams))
+
   function releaseMic() {
+    micGeneration++
     if (mediaStream) {
       mediaStream.getTracks().forEach((track) => track.stop())
       mediaStream = null
@@ -3103,43 +3190,98 @@
     }
   }
 
-  async function startMic() {
-    // Disable at once: a double click used to open two streams.
-    if (micStartBtn.disabled) return
-    micStartBtn.disabled = true
+  function describeMicError(err) {
+    const info = micGuard.classifyMicError(err)
+    const detail = err && err.message ? err.message : info.name || "unknown"
+    return { info, text: t("mic.error." + info.kind, { error: detail }) }
+  }
+
+  // Opens the device and the worklet. Resolves { ok: true } or { ok: false, error } /
+  // { ok: false, cancelled: true } (the operator pressed Stop meanwhile). `beforeConnect`
+  // runs just before audio starts to flow (startMic uses it to send mic:start first).
+  async function acquireMic(beforeConnect) {
+    const generation = ++micGeneration
+    let stream
     try {
       // ARCHITECTURE.md section 8.3's recommended baseline.
-      mediaStream = await navigator.mediaDevices.getUserMedia({
+      stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       })
     } catch (err) {
-      log(t("log.micPermissionDenied", { error: err.message }), "error")
-      micStartBtn.disabled = false
-      return
+      return { ok: false, error: err }
+    }
+    const abandon = () => stream.getTracks().forEach((track) => track.stop())
+    if (generation !== micGeneration || !micWanted) {
+      abandon()
+      return { ok: false, cancelled: true }
     }
 
+    let context
     let source
     let workletNode
     try {
       // Requesting the canonical sample rate directly lets the browser
       // handle resampling from the device's native rate (ARCHITECTURE.md
       // section 8.1) — this codebase does not implement its own resampler.
-      audioContext = new AudioContext({ sampleRate: CANONICAL_SAMPLE_RATE })
-      await audioContext.audioWorklet.addModule("./pcm-worklet-processor.js")
-      source = audioContext.createMediaStreamSource(mediaStream)
-      workletNode = new AudioWorkletNode(audioContext, "pcm-capture-processor")
+      context = new AudioContext({ sampleRate: CANONICAL_SAMPLE_RATE })
+      await context.audioWorklet.addModule("./pcm-worklet-processor.js")
+      source = context.createMediaStreamSource(stream)
+      workletNode = new AudioWorkletNode(context, "pcm-capture-processor")
     } catch (err) {
       // Any failure after getUserMedia used to leave the microphone open and
-      // the start button dead; release everything and let the operator retry.
-      releaseMic()
-      micStartBtn.disabled = false
-      log(t("log.micPermissionDenied", { error: err.message }), "error")
-      return
+      // the start button dead; release everything and let the caller decide.
+      abandon()
+      if (context) context.close().catch(() => {})
+      return { ok: false, error: err }
+    }
+    if (generation !== micGeneration || !micWanted) {
+      abandon()
+      context.close().catch(() => {})
+      return { ok: false, cancelled: true }
     }
 
+    mediaStream = stream
+    audioContext = context
+    micWatchdog.start(Date.now())
+
+    const track = stream.getAudioTracks()[0]
+    if (track) {
+      track.addEventListener("ended", () => {
+        if (generation !== micGeneration) return
+        micWatchdog.trackEnded()
+        log(t("log.micTrackEnded"), "error", { toast: false })
+        micWatchTick()
+      })
+      track.addEventListener("mute", () => {
+        if (generation !== micGeneration) return
+        micWatchdog.trackMuted(true)
+        micWatchTick()
+      })
+      track.addEventListener("unmute", () => {
+        if (generation !== micGeneration) return
+        micWatchdog.trackMuted(false)
+        micWatchTick()
+      })
+      if (track.muted) micWatchdog.trackMuted(true)
+    }
+    context.addEventListener("statechange", () => {
+      if (generation !== micGeneration) return
+      micWatchdog.contextState(context.state)
+      // Wake from sleep / OS policy: a suspended context is resumable without reopening the device.
+      if (context.state === "suspended") context.resume().catch(() => {})
+      micWatchTick()
+    })
+    micWatchdog.contextState(context.state)
+
     workletNode.port.onmessage = (event) => {
+      if (generation !== micGeneration) return
       const { samples, sequence } = event.data
       const pcm16 = float32ToInt16(samples)
+      const now = Date.now()
+      micWatchdog.frame(micGuard.peakInt16(pcm16), now)
+      // Sequence numbers continue across a re-acquire so the server sees no false gap or reset.
+      const outSequence = (micSequenceOffset + sequence) >>> 0
+      micLastSequence = outSequence
       // A production audit found this feedback bar was purely decorative
       // (a canned CSS animation, unconditional on real signal) — an
       // operator had no way to tell "my voice isn't registering" from
@@ -3149,42 +3291,192 @@
       // against makes that gap actually observable, not just fixed in
       // theory: what the operator sees IS what's being evaluated.
       updateMicLevel(computeRmsInt16(pcm16))
-      audioFrameSender.send(ws, pcm16, sequence, (frameSamples, frameSequence) =>
+      audioFrameSender.send(ws, pcm16, outSequence, (frameSamples, frameSequence) =>
         encodeAudioFrame(frameSamples, frameSequence)
       )
-      const now = Date.now()
+      // The first frames flip "starting"/"lost" to "live" at once instead of waiting for the next tick.
+      if (micCaptureState !== "live" && micWatchdog.status(now) === "live") micWatchTick()
       if (now - lastAudioTransportRenderAt >= 500) {
         lastAudioTransportRenderAt = now
         renderAudioTransportStatus()
       }
     }
 
-    // Send mic:start command so the backend ASR and calibration initialize before first audio frame
-    micRunning = true
-    audioFrameSender.reset()
-    serverMicMayBeRunning = sendJson(
-      { id: crypto.randomUUID(), type: "mic:start", timestamp: Date.now(), payload: null },
-      { reportDisconnected: false }
-    )
+    if (beforeConnect) beforeConnect()
     source.connect(workletNode)
+    return { ok: true }
+  }
+
+  function startMicWatch() {
+    if (micWatchTimer === null) micWatchTimer = setInterval(micWatchTick, MIC_WATCH_INTERVAL_MS)
+  }
+
+  function stopMicWatch() {
+    if (micWatchTimer !== null) clearInterval(micWatchTimer)
+    micWatchTimer = null
+    if (micRecoverTimer !== null) clearTimeout(micRecoverTimer)
+    micRecoverTimer = null
+    if (micDeviceChangeTimer !== null) clearTimeout(micDeviceChangeTimer)
+    micDeviceChangeTimer = null
+    micBadSince = null
+  }
+
+  function micWatchTick() {
+    if (!micWanted || micAcquiring) return
+    const now = Date.now()
+    const state = micWatchdog.status(now)
+    if (micGaveUp) {
+      // Recovery is over; keep the (honest) lost state on screen until the operator acts.
+      renderMicCaptureState("gave-up", { attempts: micRecovery.attempts() })
+      return
+    }
+    if (state === "live") micRecovery.noteLive(now)
+    else micRecovery.noteNotLive()
+
+    const bad = state !== "live" && state !== "starting"
+    if (bad && micBadSince === null) micBadSince = now
+    if (!bad) micBadSince = null
+
+    const previous = micCaptureState
+    const previousWasBad = previous !== "idle" && previous !== "live" && previous !== "starting"
+    // While a reconnect is in progress the "recovering" line stays up until frames are really back.
+    const holdRecovering = previous === "recovering" && state !== "live"
+    if (!holdRecovering && state !== previous) {
+      renderMicCaptureState(state)
+      if (bad) log(t("mic.state." + state), "error")
+      else if (state === "live" && previousWasBad) log(t("log.micRecovered"), "received")
+    }
+
+    if (micRecoverTimer !== null) return
+    let action = micWatchdog.recoveryAction(now)
+    // A context that stays suspended is treated like a lost device after a short wait.
+    if (action === "resume-context") {
+      if (audioContext) audioContext.resume().catch(() => {})
+      if (micBadSince !== null && now - micBadSince >= MIC_SUSPENDED_ESCALATE_MS) action = "reacquire"
+    }
+    if (action === "reacquire") scheduleMicRecovery()
+  }
+
+  function giveUpMic(reasonText) {
+    micGaveUp = true
+    renderMicCaptureState("gave-up", { attempts: micRecovery.attempts() })
+    log(reasonText || t("mic.state.gave-up", { attempts: micRecovery.attempts() }), "error")
+  }
+
+  function scheduleMicRecovery() {
+    const decision = micRecovery.next()
+    if (!decision.retry) {
+      giveUpMic()
+      return
+    }
+    renderMicCaptureState("recovering", { attempt: decision.attempt, max: micRecovery.maxAttempts() })
+    log(t("mic.state.recovering", { attempt: decision.attempt, max: micRecovery.maxAttempts() }), "error", { toast: false })
+    micRecoverTimer = setTimeout(async () => {
+      micRecoverTimer = null
+      if (!micWanted) return
+      micAcquiring = true
+      releaseMic()
+      micSequenceOffset = (micLastSequence + 1) >>> 0
+      const result = await acquireMic()
+      micAcquiring = false
+      if (!micWanted || result.cancelled) return
+      if (result.ok) return // micWatchTick promotes "recovering" to "live" once frames flow
+      const { info, text } = describeMicError(result.error)
+      log(text, "error", { toast: false })
+      if (!info.retryable) {
+        giveUpMic(text)
+        return
+      }
+      // Still no device: keep the lost state so the next tick schedules the next (bounded) attempt.
+      micWatchdog.start(Date.now())
+      micWatchdog.trackEnded()
+      renderMicCaptureState("ended")
+    }, decision.delayMs)
+  }
+
+  // A device was plugged in or out, or the default input changed: if ours is gone, treat the
+  // capture as ended now instead of waiting for the frame watchdog.
+  async function checkMicDevices() {
+    if (!micWanted || !mediaStream) return
+    try {
+      const devices = (await navigator.mediaDevices.enumerateDevices()).filter((device) => device.kind === "audioinput")
+      const track = mediaStream.getAudioTracks()[0]
+      const settings = track && track.getSettings ? track.getSettings() : {}
+      const stillThere = devices.length > 0 && (!settings.deviceId || devices.some((device) => device.deviceId === settings.deviceId))
+      log(t("log.micDeviceChanged"), "received", { toast: false })
+      if (!stillThere) {
+        micWatchdog.trackEnded()
+        micWatchTick()
+      }
+    } catch (err) {
+      log(t("log.micDeviceCheckFailed", { error: err && err.message ? err.message : String(err) }), "error", { toast: false })
+    }
+  }
+
+  if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+    navigator.mediaDevices.addEventListener("devicechange", () => {
+      if (!micWanted) return
+      if (micDeviceChangeTimer !== null) clearTimeout(micDeviceChangeTimer)
+      micDeviceChangeTimer = setTimeout(() => {
+        micDeviceChangeTimer = null
+        checkMicDevices()
+      }, 500)
+    })
+  }
+
+  async function startMic() {
+    // Disable at once: a double click used to open two streams.
+    if (micStartBtn.disabled) return
+    micStartBtn.disabled = true
+    setMicWanted(true)
+    micGaveUp = false
+    micRecovery.reset()
+    micSequenceOffset = 0
+    micLastSequence = -1
+    renderMicCaptureState("starting")
+    const result = await acquireMic(() => {
+      // Send mic:start before the first audio frame so the backend ASR and calibration initialize in time.
+      micRunning = true
+      audioFrameSender.reset()
+      serverMicMayBeRunning = sendJson(
+        { id: crypto.randomUUID(), type: "mic:start", timestamp: Date.now(), payload: null },
+        { reportDisconnected: false }
+      )
+    })
+    if (!result.ok) {
+      setMicWanted(false)
+      micWatchdog.stop()
+      renderMicCaptureState("idle")
+      micStartBtn.disabled = false
+      if (!result.cancelled) log(describeMicError(result.error).text, "error")
+      return
+    }
 
     micStartBtn.disabled = true
     micStopBtn.disabled = false
-    micVisualEl.classList.add("active")
+    startMicWatch()
     renderAudioTransportStatus()
     log(t("log.micStarted"), "sent")
   }
 
+  // SF-06: the server could not start transcription for our mic:start. It is not running, so stop
+  // showing "listening": release the capture and say why, until the operator presses Start again.
+  async function handleMicStartFailed(payload) {
+    const reason = payload && typeof payload.reason === "string" ? payload.reason : ""
+    if (!micRunning) return // already stopped here (e.g. the operator pressed Stop meanwhile)
+    log(t("mic.state.startFailed", { reason }), "error")
+    await stopMic()
+    renderMicCaptureState("startFailed", { reason })
+  }
+
   async function stopMic() {
+    setMicWanted(false)
     micRunning = false
-    if (mediaStream) {
-      mediaStream.getTracks().forEach((track) => track.stop())
-      mediaStream = null
-    }
-    if (audioContext) {
-      await audioContext.close().catch(() => {})
-      audioContext = null
-    }
+    micGaveUp = false
+    stopMicWatch()
+    micWatchdog.stop()
+    micRecovery.reset()
+    releaseMic()
     if (sendJson(
       { id: crypto.randomUUID(), type: "mic:stop", timestamp: Date.now(), payload: null },
       { reportDisconnected: false }
@@ -3194,7 +3486,7 @@
 
     micStartBtn.disabled = false
     micStopBtn.disabled = true
-    micVisualEl.classList.remove("active")
+    renderMicCaptureState("idle")
     micCalibratingStatusEl.style.display = "none"
     resetMicLevel()
     audioFrameSender.reset()
@@ -3203,10 +3495,51 @@
     log(t("log.micStopped"), "sent")
   }
 
+  // After the dashboard window crashed and was reloaded by the main process, the microphone is
+  // gone with the old renderer. If the operator had it on, bring it back once the server link is
+  // up (so exactly one mic:start is sent: startMic's own) and say plainly what happened; if that
+  // fails, make the server agree the microphone is off.
+  async function resumeMicAfterReload() {
+    if (!micWantedAtLoad) return
+    micWantedAtLoad = false
+    log(t("mic.state.resumeAfterReload"), "received")
+    for (let i = 0; i < 40 && !(ws && ws.readyState === 1); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 500))
+    }
+    if (ws && ws.readyState === 1) await startMic()
+    if (!micRunning) {
+      sendJson({ id: crypto.randomUUID(), type: "mic:stop", timestamp: Date.now(), payload: null }, { reportDisconnected: false })
+      log(t("mic.state.resumeNotRestored"), "error")
+    }
+  }
+
+  const seenMainNoticeIds = new Set()
+  const MAIN_NOTICE_TOAST_MAX_AGE_MS = 120000
+  // Non-blocking notices from the main process (uncaught errors, crash recovery, failed service start).
+  function handleMainNotice(notice) {
+    if (!notice || typeof notice.code !== "string" || seenMainNoticeIds.has(notice.id)) return
+    seenMainNoticeIds.add(notice.id)
+    const text = t("notice.main." + notice.code, { detail: typeof notice.detail === "string" ? notice.detail : "" })
+    const fresh = typeof notice.at === "number" && Date.now() - notice.at < MAIN_NOTICE_TOAST_MAX_AGE_MS
+    log(text, notice.level === "info" ? "received" : "error", { toast: fresh })
+  }
+
+  if (window.churchOverlay.onMainNotice) window.churchOverlay.onMainNotice(handleMainNotice)
+  if (window.churchOverlay.getMainNotices) {
+    window.churchOverlay
+      .getMainNotices()
+      .then((notices) => {
+        const list = Array.isArray(notices) ? notices : []
+        list.forEach(handleMainNotice)
+        if (list.some((notice) => notice && notice.resumeMic)) return resumeMicAfterReload()
+      })
+      .catch((err) => log(t("log.mainNoticesFailed", { error: err && err.message ? err.message : String(err) }), "error", { toast: false }))
+  }
+
   micStartBtn.addEventListener("click", () => startMic())
   micStopBtn.addEventListener("click", () => stopMic())
 
-  const LOG_QUIET_TYPES = new Set(["mic:health", "transcript:partial", "status:update", "verse:preview-result", "rundown:state", "bible:chapter-result", "bible:search-result"])
+  const LOG_QUIET_TYPES = new Set(["mic:health", "transcript:partial", "status:update", "verse:preview-result", "rundown:state", "bible:chapter-result", "bible:search-result", "verse:lookup-failed"])
 
   // One short, operator-readable detail for the Activity log (textContent only).
   function describeReceived(message) {
@@ -3267,7 +3600,10 @@
         log(detail ? t("log.receivedDetail", { type: message.type, detail }) : t("log.received", { type: message.type }), "received")
       }
 
-      if (message.type === "transcript:partial" || message.type === "transcript:final") {
+      if (message.type === "verse:show" || message.type === "verse:pending") setBibleSourceDegraded(false)
+      if (message.type === "verse:lookup-failed") {
+        handleVerseLookupFailed(message.payload)
+      } else if (message.type === "transcript:partial" || message.type === "transcript:final") {
         // ARCHITECTURE.md section 70: the operator needs to see what was
         // actually heard, continuously, to judge transcription accuracy
         // and latency — this field always reflects the raw ASR output,
@@ -3304,6 +3640,8 @@
       } else if (message.type === "canvas:show" || message.type === "canvas:clear") {
         onScreen.canvas = message.type === "canvas:show"
         renderTally()
+      } else if (message.type === "mic:start-failed") {
+        handleMicStartFailed(message.payload)
       } else if (message.type === "mic:health") {
         renderMicHealth(message.payload)
       } else if (message.type === "media:show") {
@@ -3977,6 +4315,27 @@
     if (event.detail.view === "history") renderHistoryView()
   })
 
+  /** Audit B6: tells the operator when the settings file was restored/set aside or one key could not be read. */
+  function renderConfigRecovery(list) {
+    const banner = document.getElementById("config-recovery-banner")
+    const text = document.getElementById("config-recovery-text")
+    if (!banner || !text || !Array.isArray(list) || list.length === 0) return
+    const KEY_NAMES = { groq: "Groq", deepgram: "Deepgram", anthropic: "Anthropic" }
+    const messages = []
+    if (list.includes("quarantined")) messages.push(t("config.recovered.quarantined"))
+    else if (list.includes("bak")) messages.push(t("config.recovered.bak"))
+    for (const entry of list) {
+      if (typeof entry !== "string" || !entry.startsWith("key-unreadable:")) continue
+      const name = KEY_NAMES[entry.slice("key-unreadable:".length)]
+      if (name) messages.push(t("config.recovered.keyUnreadable", { name }))
+    }
+    if (messages.length === 0) return
+    text.textContent = messages.join(" ")
+    banner.style.display = "flex"
+    const dismiss = document.getElementById("config-recovery-dismiss")
+    if (dismiss) dismiss.onclick = () => { banner.style.display = "none" }
+  }
+
   function showSetupScreen() {
     appShellEl.style.display = "none"
     setupScreenEl.style.display = "flex"
@@ -4129,6 +4488,22 @@
         exportDiagnosticsBtn.disabled = false
       })
   })
+
+  const openLogsBtn = document.getElementById("open-logs-btn")
+  if (openLogsBtn) {
+    openLogsBtn.addEventListener("click", () => {
+      openLogsBtn.disabled = true
+      window.churchOverlay
+        .openLogsFolder()
+        .then((result) => {
+          if (result && !result.ok) log(t("log.logsOpenFailed", { path: result.path, error: result.error }), "error")
+        })
+        .catch((err) => log(t("log.logsOpenFailed", { path: "", error: err.message }), "error"))
+        .finally(() => {
+          openLogsBtn.disabled = false
+        })
+    })
+  }
 
   if (exportTranscriptBtn) {
     exportTranscriptBtn.addEventListener("click", () => {
@@ -4449,6 +4824,7 @@
     .getStartupStatus()
     .then((status) => {
       window.i18n.setLanguage(status.uiLanguage || "en")
+      renderConfigRecovery(status.configRecovered)
       setActiveOption(setupUiLanguageEl, "lang", status.uiLanguage || "en")
       setActiveOption(uiLanguageToggleEl, "lang", status.uiLanguage || "en")
 

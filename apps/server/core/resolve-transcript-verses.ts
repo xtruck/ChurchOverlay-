@@ -3,13 +3,14 @@ import type {
   Verse,
   VerseDetector,
   VerseIndex,
+  VerseReference,
   VerseSource,
 } from "../../../packages/contracts"
 import type { VerseCache } from "../verse/verse-cache"
 import type { CircuitBreaker } from "../verse/circuit-breaker"
 import type { Logger } from "../../../packages/shared/logger"
 import { processTranscript } from "./process-transcript"
-import { resolveVerse, translationIdFor } from "../verse/resolve-verse"
+import { resolveVerseDetailed, translationIdFor, type VerseLookupFailure } from "../verse/resolve-verse"
 
 /**
  * Completes the Application Core pipeline from ARCHITECTURE.md section 23,
@@ -42,13 +43,16 @@ export async function resolveTranscriptVerses(
   source: VerseSource,
   cache: VerseCache,
   circuitBreaker: CircuitBreaker,
-  logger?: Logger
+  logger?: Logger,
+  /** SF-03: called once per looked-up reference, with the failure reason or null on success. */
+  onLookup?: (reference: VerseReference, failure: VerseLookupFailure | null) => void
 ): Promise<Verse[]> {
   const references = processTranscript(transcript, detector, index)
 
   const verses: Verse[] = []
   for (const reference of references) {
-    const verse = await resolveVerse(reference, source, cache, circuitBreaker, translationIdFor(source), logger)
+    const { verse, failure } = await resolveVerseDetailed(reference, source, cache, circuitBreaker, translationIdFor(source), logger)
+    onLookup?.(reference, failure)
     if (verse) verses.push(verse)
   }
   return verses

@@ -62,6 +62,10 @@ jobs:
       - name: Compile TypeScript
         run: npm run build
 
+      # CI (ci.yml) lints every push; the release build must not skip it.
+      - name: Lint
+        run: npm run lint
+
       # Never ship an installer from a commit whose test suite is red.
       # Runs on Windows on purpose: it's the operator's real platform, so
       # path/port quirks surface here rather than during a service.

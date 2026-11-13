@@ -17,9 +17,13 @@ import type { Logger } from "../../../packages/shared/logger"
 export class LocalizedVerseSource implements VerseSource, ChapterCapableSource {
   private mode: DisplayMode
   private french: VerseSource
+  private english: VerseSource
+  // Cache identity of the English source: "" for the built-in default (so the cache key stays
+  // the plain "english" it always was), otherwise a label the caller supplies (see setEnglishSource).
+  private englishSourceId = ""
 
   constructor(
-    private readonly english: VerseSource,
+    english: VerseSource,
     french: VerseSource,
     initialMode: DisplayMode,
     private readonly logger?: Logger,
@@ -33,6 +37,19 @@ export class LocalizedVerseSource implements VerseSource, ChapterCapableSource {
   ) {
     this.mode = initialMode
     this.french = french
+    this.english = english
+  }
+
+  /**
+   * Changes the English source IN PLACE, the twin of setFrenchSource(). AppCore holds this
+   * very instance for its whole life, so the owner must never replace the instance (that left
+   * AppCore on the old one and made later mode/translation switches hit an orphan);
+   * `sourceId` becomes part of getTranslationId() so verses cached from the previous
+   * endpoint are not served from the new one. Pass "" to go back to the default source.
+   */
+  setEnglishSource(source: VerseSource, sourceId: string = ""): void {
+    this.english = source
+    this.englishSourceId = sourceId
   }
 
   setMode(mode: DisplayMode): void {
@@ -80,9 +97,10 @@ export class LocalizedVerseSource implements VerseSource, ChapterCapableSource {
    * only ever had one translation (kjv), so its own branch is unaffected.
    */
   getTranslationId(): string {
-    if (this.mode === "english") return "english"
+    const english = this.englishSourceId ? `:${this.englishSourceId}` : ""
+    if (this.mode === "english") return `english${english}`
     if (this.mode === "french") return `french:${this.frenchTranslationId}`
-    return `bilingual:${this.frenchTranslationId}`
+    return `bilingual:${this.frenchTranslationId}${english}`
   }
 
   /**

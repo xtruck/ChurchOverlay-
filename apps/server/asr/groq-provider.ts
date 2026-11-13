@@ -91,6 +91,27 @@ export class GroqNetworkError extends Error {
   }
 }
 
+/**
+ * SF-05: a non-429 HTTP failure from Groq. "key-refused" (401/403) will not heal
+ * by retrying: the operator has to fix the key (or the backup must take over).
+ * "server" (5xx) is transient: the chunk is requeued with a bounded backoff.
+ */
+export class GroqHttpError extends Error {
+  readonly kind: "key-refused" | "server"
+  readonly status: number
+
+  constructor(kind: "key-refused" | "server", status: number, message: string) {
+    super(message)
+    this.name = "GroqHttpError"
+    this.kind = kind
+    this.status = status
+  }
+}
+
+/** Longest wait between retries of a chunk refused with a 5xx. */
+export const MAX_SERVER_ERROR_BACKOFF_MS = 30_000
+const SERVER_ERROR_BACKOFF_BASE_MS = 2_000
+
 /** French is the church's primary language: the retry language when a clip's label is a third language and none is locked yet. */
 const PRIMARY_FALLBACK_LANGUAGE = "fr"
 /** After this many language drops in a row the guard lets text through until a clip passes. */
@@ -209,6 +230,10 @@ export class GroqProvider implements AsrProvider {
   // but should trip the exact same "Groq isn't working right now, fail
   // over" signal once it happens repeatedly in a row.
   private consecutiveNetworkErrors = 0
+  // SF-05: consecutive HTTP 5xx replies (same failure streak as above) and a one-shot 401/403 signal.
+  private consecutiveServerErrors = 0
+  private keyRefusedSignalled = false
+  private keyRefusedCallback: (() => void) | null = null
 
   // TASK B: prompt for lexical bias
   private currentVerseRef: string | null = null
@@ -252,6 +277,34 @@ export class GroqProvider implements AsrProvider {
   /** Count of audio chunks/segments dropped by quality or language checks, by reason (diagnostics only). */
   getDropCounts(): Readonly<Record<string, number>> {
     return { ...this.dropCounts }
+  }
+
+  /**
+   * Every audio chunk thrown away is counted in the shared DropLedger (shown to
+   * the operator) and logged, rate-limited per reason, never silent (AGENTS.md 11, 46).
+   */
+  private discardAudio(samples: Int16Array, reason: string, extra: Record<string, unknown> = {}): void {
+    this.dropCounts[reason] = (this.dropCounts[reason] ?? 0) + 1
+    const note = this.policy?.ledger.record("segment", reason)
+    if (note !== undefined && !note.log) return
+    this.logger?.warn({
+      component: "asr",
+      event: "asr.audio-discarded",
+      metadata: {
+        durationMs: Math.round((samples.length / SAMPLE_RATE) * 1000),
+        reason,
+        suppressed: note?.suppressed ?? 1,
+        total: this.dropCounts[reason],
+        ...extra,
+      },
+    })
+  }
+
+  /** One more failure in the "Groq is not working" streak; signals sustained at the threshold and every threshold-th failure after (a failed failover is retried, the wrapper rate-limits it). */
+  private bumpFailureStreak(): void {
+    this.consecutiveNetworkErrors++
+    const over = this.consecutiveNetworkErrors - SUSTAINED_NETWORK_ERROR_THRESHOLD
+    if (over >= 0 && over % SUSTAINED_NETWORK_ERROR_THRESHOLD === 0) this.rateLimitedSustainedCallback?.()
   }
 
   private noteDrop(reason: string, metadata: Record<string, unknown> = {}): void {
@@ -645,17 +698,16 @@ export class GroqProvider implements AsrProvider {
       // resume, so the chunk that was refused goes back in front of newer audio.
       // Without this its speech (possibly a verse reference) was silently lost.
       if (err instanceof RateLimitError && err.type === "429") this.requeueRefusedChunk(samples)
+      // SF-05: a 5xx is transient (the chunk goes back, the retry waits out the
+      // backoff set in transcribe()); a refused key will not heal, so that chunk is
+      // discarded, counted and logged.
+      if (err instanceof GroqHttpError) {
+        if (err.kind === "server") this.requeueRefusedChunk(samples, "groq-server-error-buffer-full")
+        else this.discardAudio(samples, "groq-key-refused")
+      }
       const error = err instanceof Error ? err : new Error(String(err))
       if (error instanceof GroqNetworkError) {
-        this.logger?.warn({
-          component: "asr",
-          event: "asr.audio-discarded",
-          metadata: {
-            durationMs: Math.round((samples.length / SAMPLE_RATE) * 1000),
-            reason: `groq-${error.kind}`,
-            retryAttempted: false,
-          },
-        })
+        this.discardAudio(samples, `groq-${error.kind}`, { retryAttempted: false })
       }
       this.errorCallback?.(error)
       // The remote service may have completed an upload before the
@@ -671,14 +723,10 @@ export class GroqProvider implements AsrProvider {
    * AGENTS.md section 36). If it would not fit, it is dropped and logged, never
    * silently (sections 11 and 46).
    */
-  private requeueRefusedChunk(samples: Int16Array): void {
+  private requeueRefusedChunk(samples: Int16Array, fullReason = "rate-limited-buffer-full"): void {
     const totalSamples = this.bufferedSampleCount + samples.length
     if ((totalSamples / SAMPLE_RATE) * 1000 > MAX_THROTTLED_BUFFER_MS) {
-      this.logger?.warn({
-        component: "asr",
-        event: "asr.audio-discarded",
-        metadata: { durationMs: Math.round((samples.length / SAMPLE_RATE) * 1000), reason: "rate-limited-buffer-full" },
-      })
+      this.discardAudio(samples, fullReason)
       return
     }
     this.bufferedFrames.unshift(samples)
@@ -794,6 +842,11 @@ export class GroqProvider implements AsrProvider {
     this.rateLimitedSustainedCallback = callback
   }
 
+  /** SF-05: fired once when Groq answers 401/403 (until a request succeeds again). */
+  onKeyRefused(callback: () => void): void {
+    this.keyRefusedCallback = callback
+  }
+
   private async flush(): Promise<void> {
     const samples = concatenateSamples(this.bufferedFrames, this.bufferedSampleCount)
     this.bufferedFrames = []
@@ -834,10 +887,7 @@ export class GroqProvider implements AsrProvider {
       // never produced a response, so this is a connectivity failure
       // class distinct from a documented Groq error response below.
       const isTimeout = err instanceof Error && err.name === "AbortError"
-      this.consecutiveNetworkErrors++
-      if (this.consecutiveNetworkErrors === SUSTAINED_NETWORK_ERROR_THRESHOLD && this.rateLimitedSustainedCallback) {
-        this.rateLimitedSustainedCallback()
-      }
+      this.bumpFailureStreak()
       throw new GroqNetworkError(
         isTimeout ? "timeout" : "network",
         isTimeout
@@ -849,7 +899,9 @@ export class GroqProvider implements AsrProvider {
     try {
     if (!response.ok) {
       const errorBody = await safeReadJson(response, controller.signal)
-      this.consecutiveNetworkErrors = 0
+      // A 5xx is the provider being down: it joins the network-failure streak
+      // (sustained => failover) instead of resetting it.
+      if (response.status < 500) this.consecutiveNetworkErrors = 0
       const errorMessage = extractGroqErrorMessage(errorBody) ?? `Groq request failed with status ${response.status}`
       // TASK 2: detect 429 and parse retry-after delay
       if (response.status === 429) {
@@ -876,11 +928,33 @@ export class GroqProvider implements AsrProvider {
           "429"
         )
       }
+      if (response.status === 401 || response.status === 403) {
+        // The key is refused (revoked, wrong, or the account blocked): retrying
+        // cannot help. Say so plainly and let the failover (if any) take over.
+        if (!this.keyRefusedSignalled) {
+          this.keyRefusedSignalled = true
+          this.keyRefusedCallback?.()
+        }
+        throw new GroqHttpError(
+          "key-refused",
+          response.status,
+          `Clé Groq refusée (HTTP ${response.status}) — vérifiez la clé dans les réglages / Groq key refused: ${errorMessage}`
+        )
+      }
+      if (response.status >= 500) {
+        this.consecutiveServerErrors++
+        const backoff = Math.min(SERVER_ERROR_BACKOFF_BASE_MS * 2 ** (this.consecutiveServerErrors - 1), MAX_SERVER_ERROR_BACKOFF_MS)
+        this.throttledUntil = Math.max(this.throttledUntil, this.now() + backoff)
+        this.bumpFailureStreak()
+        throw new GroqHttpError("server", response.status, errorMessage)
+      }
       throw new Error(errorMessage)
     }
 
     // Reset consecutive 429 counter on successful request
     this.consecutive429s = 0
+    this.consecutiveServerErrors = 0
+    this.keyRefusedSignalled = false
 
     const body = await safeReadJson(response, controller.signal)
     this.consecutiveNetworkErrors = 0
@@ -912,19 +986,11 @@ export class GroqProvider implements AsrProvider {
     }
     } catch (err) {
       if (controller.signal.aborted || (err instanceof Error && err.name === "AbortError")) {
-        this.consecutiveNetworkErrors++
-        if (this.consecutiveNetworkErrors === SUSTAINED_NETWORK_ERROR_THRESHOLD && this.rateLimitedSustainedCallback) {
-          this.rateLimitedSustainedCallback()
-        }
+        this.bumpFailureStreak()
         throw new GroqNetworkError("timeout", `Groq request timed out after ${this.requestTimeoutMs}ms`)
       }
       if (err instanceof GroqNetworkError) {
-        if (err.kind === "network") {
-          this.consecutiveNetworkErrors++
-          if (this.consecutiveNetworkErrors === SUSTAINED_NETWORK_ERROR_THRESHOLD && this.rateLimitedSustainedCallback) {
-            this.rateLimitedSustainedCallback()
-          }
-        }
+        if (err.kind === "network") this.bumpFailureStreak()
         throw err
       }
       throw err

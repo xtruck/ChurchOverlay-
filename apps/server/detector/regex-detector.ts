@@ -1,3 +1,4 @@
+import { nullProto } from "../../../packages/shared/type-guards"
 import type { VerseDetector, VerseReference } from "../../../packages/contracts"
 import { normalizeSpokenReferences } from "./spoken-reference-normalizer"
 import { BOOK_CATALOG } from "../verse/book-catalog"
@@ -201,6 +202,15 @@ export class RegexDetector implements VerseDetector {
   }
 
   detect(rawText: string): VerseReference[] {
+    return this.collect(rawText, true)
+  }
+
+  /** Only the explicit forms (colon, "verset"/"chapitre" keyword): never the bare compact "Name N M" form. */
+  detectExplicit(rawText: string): VerseReference[] {
+    return this.collect(rawText, false)
+  }
+
+  private collect(rawText: string, includeCompact: boolean): VerseReference[] {
     const references: VerseReference[] = []
     const text = normalizeSpokenReferences(normalizeAsrTypography(rawText), isCatalogBookWord)
 
@@ -208,7 +218,7 @@ export class RegexDetector implements VerseDetector {
       REFERENCE_PATTERN,
       SPOKEN_REFERENCE_PATTERN,
       SPOKEN_REFERENCE_DOUBLE_KEYWORD_PATTERN,
-      COMPACT_REFERENCE_PATTERN,
+      ...(includeCompact ? [COMPACT_REFERENCE_PATTERN] : []),
     ]) {
       for (const match of text.matchAll(pattern)) {
         const rawBook = match[1]
@@ -251,6 +261,18 @@ export class RegexDetector implements VerseDetector {
 }
 
 /**
+ * AUDIT TS-08: keys ("book chapter:verse", the suggestionKey() shape) of references that appear in the text ONLY as the bare compact
+ * "Name N M" form ("il y avait Jean 5 6 qui", "Daniel 3 4"). That form collides with ordinary speech
+ * (first-name books followed by two numbers), so the pipeline never auto-shows it: the operator confirms.
+ */
+export function compactOnlyReferenceKeys(text: string): ReadonlySet<string> {
+  const detector = new RegexDetector()
+  const key = (r: VerseReference): string => `${r.book} ${r.chapter}:${r.verse}`
+  const explicit = new Set(detector.detectExplicit(text).map(key))
+  return new Set(detector.detect(text).map(key).filter((k) => !explicit.has(k)))
+}
+
+/**
  * Strips combining diacritical marks (accents) via Unicode NFD
  * decomposition — "Ésaïe" -> "esaie". Used so ASR output that may or may
  * not preserve accents correctly still normalizes to the same lookup key
@@ -279,7 +301,7 @@ export function stripAccents(text: string): string {
  * "Romains 8:28") would never resolve at all, since normalizeBookName()
  * previously only trimmed/lowercased without translating.
  */
-export const FRENCH_BOOK_ALIASES: Readonly<Record<string, string>> = {
+export const FRENCH_BOOK_ALIASES: Readonly<Record<string, string>> = nullProto({
   genese: "genesis",
   exode: "exodus",
   levitique: "leviticus",
@@ -381,7 +403,7 @@ export const FRENCH_BOOK_ALIASES: Readonly<Record<string, string>> = {
   "3 jean": "3 john",
   jude: "jude",
   apocalypse: "revelation",
-}
+})
 
 /**
  * ARCHITECTURE.md section 105: a second, deliberately separate tier from
@@ -413,7 +435,7 @@ export const FRENCH_BOOK_ALIASES: Readonly<Record<string, string>> = {
  * several — can make a three-word title match; that needs a regex change,
  * not an alias.
  */
-export const PHONETIC_BOOK_ALIASES: Readonly<Record<string, string>> = {
+export const PHONETIC_BOOK_ALIASES: Readonly<Record<string, string>> = nullProto({
   // Genesis — English vowel-shift mishearing.
   genisis: "genesis",
   // Exodus — English vowel-shift mishearing.
@@ -532,7 +554,7 @@ export const PHONETIC_BOOK_ALIASES: Readonly<Record<string, string>> = {
   // common everyday English mis-pluralization of this book's actual,
   // singular title.
   revelations: "revelation",
-}
+})
 
 /**
  * Normalizes captured book text to a stable lookup key: trimmed, internal

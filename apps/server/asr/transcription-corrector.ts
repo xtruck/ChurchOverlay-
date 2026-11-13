@@ -39,6 +39,7 @@
  *    gating shape "souvent"/"web"/"passé"/"bacille" already used, now
  *    applied to the whole ambiguous set (see AMBIGUOUS_ENTRIES below).
  */
+import { nullProto } from "../../../packages/shared/type-guards"
 import { BOOK_CATALOG } from "../verse/book-catalog"
 import { FRENCH_BOOK_ALIASES } from "../detector/regex-detector"
 import { parseNumberWords } from "../detector/spoken-reference-normalizer"
@@ -47,7 +48,7 @@ type CorrectionMap = Readonly<Record<string, string>>
 
 // Phonetic confusion map: WRONG → CORRECT
 // Each entry documents the real-world observation justifying the correction.
-const PHONETIC_CORRECTIONS: CorrectionMap = {
+const PHONETIC_CORRECTIONS: CorrectionMap = nullProto({
   // "verset" confusions (most frequent - 6/34 transcripts in production)
   "w.c.": "verset",
   "wc": "verset",
@@ -198,7 +199,7 @@ const PHONETIC_CORRECTIONS: CorrectionMap = {
   // "frère" confusions
   "frere": "frère",         // missing accent
   "freres": "frères",       // plural
-}
+})
 
 // ARCHITECTURE.md section 102. Every key below is also a real word — or a
 // person's name — in one of the app's two spoken languages, and every one of

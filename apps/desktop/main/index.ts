@@ -3,7 +3,7 @@ import { validateCustomBibleApiUrl } from "./custom-bible-url"
 import { randomBytes } from "node:crypto"
 import { cpus, networkInterfaces } from "node:os"
 import { join } from "node:path"
-import { stat, writeFile } from "node:fs/promises"
+import { mkdir, stat, writeFile } from "node:fs/promises"
 import { startAppCore, type AppCoreHandle } from "../../server/core/app-core"
 import type { SessionEntry } from "../../server/core/session-recorder"
 import { buildServiceHealthReport } from "../../server/core/service-health"
@@ -47,9 +47,21 @@ import {
   type UiLanguage,
 } from "./config-store"
 import type { DisplayMode, MediaCueKind, VerseConfirmationMode, VerseLayout, VerseSource } from "../../../packages/contracts"
+import { SerialQueue } from "./serial-queue"
 import { checkDroppedPath, inferMediaKind, deriveTitleFromFilename } from "./media-import"
 import { isAllowedNavigation, isExternalHttpsUrl } from "./navigation-guard"
 import { Logger, scrubSecrets } from "../../../packages/shared/logger"
+import { createLogSink, LogRing, RotatingLogFile } from "./log-file"
+import {
+  awaitWithTimeout,
+  describeError,
+  installProcessGuards,
+  isBenignRendererExit,
+  isIgnorableLoadFailure,
+  NoticeBoard,
+  ReloadBudget,
+  startupDialogText,
+} from "./resilience"
 import { NDIOutput, type PaintSource } from "./ndi-output"
 import { createNdiWindow } from "./ndi-window"
 import { PALETTES } from "../../server/overlay/palettes"
@@ -85,7 +97,35 @@ const REMOTE_HTTP_PORT = 8789
 // under dist/, not 3).
 const REPO_ROOT = join(__dirname, "..", "..", "..", "..")
 
-const logger = new Logger({ minLevel: "info" })
+// B1: every log line goes to stdout (as before), an in-memory ring (last 500
+// lines, included in the diagnostics export) and a bounded rotating file in
+// userData/logs. A failure to write the file is counted, never thrown.
+const LOG_DIR = join(app.getPath("userData"), "logs")
+const logRing = new LogRing()
+const logSink = (() => {
+  try {
+    return createLogSink(new RotatingLogFile({ dir: LOG_DIR }), logRing)
+  } catch {
+    // Cannot even build the file sink (should not happen): stdout + ring only.
+    return null
+  }
+})()
+// A closed stdout pipe raises an async 'error' event; unhandled it would reach
+// the uncaughtException handler below on every log line.
+process.stdout?.on?.("error", () => {})
+const logger = new Logger({
+  minLevel: "info",
+  write:
+    logSink?.write ??
+    ((line: string) => {
+      try {
+        console.log(line)
+      } catch {
+        // stdout unavailable: the ring below still keeps the line.
+      }
+      logRing.push(line)
+    }),
+})
 
 let appCoreHandle: AppCoreHandle | null = null
 let staticServer: StaticServer | null = null
@@ -106,6 +146,12 @@ let groqAsr: GroqProvider | null = null
 let deepgramAsr: DeepgramProvider | null = null
 let localAsr: LocalWhisperProvider | null = null
 let localWhisperServer: WhisperServerProcess | null = null
+// SF-22: set when the engine's automatic restarts are exhausted; the dashboard must stop advertising the backup.
+let localEngineAbandoned = false
+function markLocalEngineAbandoned(info: { attempts: number }): void {
+  localEngineAbandoned = true
+  logger.error({ component: "main", event: "local-whisper.backup-lost", metadata: { attempts: info.attempts } })
+}
 let localAsrInstaller: LocalAsrInstaller | null = null
 let fasterWhisperInstaller: FasterWhisperInstaller | null = null
 
@@ -315,9 +361,7 @@ function getConfigStore(): ConfigStore {
  * — called either at launch (if a key was already saved from a previous
  * run) or once the operator finishes the setup screen for the first time.
  */
-async function startServices(
-  config: AppConfig
-): Promise<{
+type StartedServices = {
   port: number
   token: string
   remoteUrl: string | null
@@ -328,7 +372,22 @@ async function startServices(
   accentColor?: string
   frenchTranslation: string
   overlayTemplate: string
-}> {
+}
+
+/**
+ * startServices/shutdown run one at a time (audit TS-07): two overlapping settings changes used to
+ * run two start-ups concurrently, double-shut-down and fight over port 8787. Code already INSIDE a
+ * lifecycle step must call startServicesNow/shutdownNow, never these (it would wait on itself).
+ */
+const serviceLifecycle = new SerialQueue()
+function startServices(config: AppConfig): Promise<StartedServices> {
+  return serviceLifecycle.run(() => startServicesNow(config))
+}
+function shutdown(): Promise<void> {
+  return serviceLifecycle.run(() => shutdownNow())
+}
+
+async function startServicesNow(config: AppConfig): Promise<StartedServices> {
   if (appCoreHandle && activeConfig && sameServiceConfig(activeConfig, config) && currentTokens && currentOverlayUrl) {
     return {
       port: appCoreHandle.wsServer.port,
@@ -346,7 +405,7 @@ async function startServices(
   // Setup can be submitted again after a partial startup failure. Tear down
   // any previous listeners first so a retry never inherits 8787/8788.
   if (appCoreHandle || staticServer || remoteStaticServer || ndiOutput) {
-    await shutdown()
+    await shutdownNow()
   }
   currentTokens = { operatorToken: config.operatorToken, viewerToken: config.viewerToken }
   // ARCHITECTURE.md section 77: a live-API outage (the venue's own
@@ -422,11 +481,12 @@ async function startServices(
   // Section 139. When the engine carries every sentence it is limited to half the
   // logical cores so OBS, NDI and the dashboard keep the rest (measured, section 139).
   const offlineFirst = config.asrStrategy === "offline-first"
-  const localThreads = offlineFirst ? localEngineThreads(cpus().length, true) : undefined
+  const localThreads = localEngineThreads(cpus().length)
   const localStatus = config.localAsrEnabled ? await getLocalEngineStatus(localEngine, localModel) : null
   await localWhisperServer?.stop()
   localWhisperServer = null
   localAsr = null
+  localEngineAbandoned = false
   if (localStatus?.state === "ready") {
     localWhisperServer =
       "pythonPath" in localStatus
@@ -438,8 +498,9 @@ async function startServices(
             readyTimeoutMs: 180_000,
             logger,
             threads: localThreads,
+            onRestartAbandoned: markLocalEngineAbandoned,
           })
-        : new WhisperServerProcess({ serverPath: localStatus.serverPath, modelPath: localStatus.modelPath, logger, threads: localThreads })
+        : new WhisperServerProcess({ serverPath: localStatus.serverPath, modelPath: localStatus.modelPath, logger, threads: localThreads, onRestartAbandoned: markLocalEngineAbandoned })
     localAsr = new LocalWhisperProvider({ server: localWhisperServer, language: whisperLanguageFor(config.displayMode), logger, policy: transcriptionPolicy })
     // Warm up now, in the background: loading the model takes seconds, and
     // the moment the internet drops is exactly when there are none to spare.
@@ -458,6 +519,8 @@ async function startServices(
     })
   }
   const chain = asrChain(plan, localAsr !== null, offlineFirst)
+  // SF-19: nothing can take over after Deepgram when it is the last link: let it reopen its own socket.
+  deepgramAsr?.setReconnectOnClose(chain[chain.length - 1] === "deepgram")
   const providers: Record<AsrProviderId, GroqProvider | DeepgramProvider | LocalWhisperProvider | null> = {
     groq: groqAsr,
     deepgram: deepgramAsr,
@@ -573,6 +636,7 @@ async function startServices(
     // so it survives a restart identically to a dashboard-toggled one.
     onDisplayModeChanged: (mode) => {
       setAsrLanguage(mode)
+      if (activeConfig) activeConfig = { ...activeConfig, displayMode: mode }
       getConfigStore()
         .update((existing) => ({ ...existing, displayMode: mode }))
         .catch((err) => {
@@ -748,15 +812,141 @@ function createDashboardWindow(): void {
       contextIsolation: true,
       sandbox: true,
       preload: join(__dirname, "..", "preload", "index.js"),
+      // The dashboard captures the microphone and runs the reconnect/watchdog
+      // timers: a minimised or occluded window must not throttle them (SF-15).
+      backgroundThrottling: false,
     },
   })
 
-  dashboardWindow.loadFile(join(REPO_ROOT, "apps", "desktop", "renderer", "index.html"))
+  loadDashboard(dashboardWindow)
+  watchDashboardHealth(dashboardWindow)
 
   dashboardWindow.on("closed", () => {
     dashboardWindow = null
   })
 }
+
+// ---- B1: failure reporting and dashboard recovery -------------------------
+
+let startupComplete = false
+let startupDialogShown = false
+
+/** Non-blocking operator notices. Live ones are sent to a loaded dashboard; a fresh load reads the history. */
+const mainNotices = new NoticeBoard((notice) => {
+  const win = dashboardWindow
+  if (!win || win.isDestroyed()) return false
+  const contents = win.webContents
+  if (contents.isDestroyed() || contents.isLoading()) return false
+  contents.send("main-notice", notice)
+  return true
+})
+
+/** Fatal startup failure: the operator sees nothing else yet, so a native dialog is the only honest channel. */
+function failStartup(key: "safeStorageUnavailable" | "startupFailed", detail = ""): void {
+  if (startupDialogShown) return
+  startupDialogShown = true
+  const text = startupDialogText(key, app.getLocale(), detail)
+  try {
+    dialog.showErrorBox(text.title, text.body)
+  } catch (err) {
+    logger.error({ component: "main", event: "startup.dialog-failed", error: String(err) })
+  }
+  logSink?.file.flushSync()
+  app.quit()
+}
+
+installProcessGuards({
+  proc: process,
+  logger,
+  notify: (notice) => {
+    mainNotices.push(notice)
+  },
+  // Fatal only while the operator has no window yet; afterwards an exception is a notice, never a quit.
+  isStarting: () => !startupComplete && dashboardWindow === null,
+  onFatalStartup: (error) => failStartup("startupFailed", describeError(error).message),
+  flushLogs: () => logSink?.file.flushSync(),
+})
+
+function loadDashboard(win: BrowserWindow): void {
+  win.loadFile(join(REPO_ROOT, "apps", "desktop", "renderer", "index.html")).catch(() => {
+    // did-fail-load (watched below) already logged this and decides about a retry.
+  })
+}
+
+const dashboardReloadBudget = new ReloadBudget()
+
+function recoverDashboard(win: BrowserWindow, reason: string, resumeMic: boolean): void {
+  const decision = dashboardReloadBudget.next()
+  if (!decision.allowed) {
+    logger.error({ component: "main", event: "dashboard.recovery-exhausted", error: reason, metadata: { attempts: decision.attempts } })
+    mainNotices.push({ level: "fatal", code: "renderer-unrecoverable", detail: reason })
+    const text = startupDialogText("dashboardUnrecoverable", app.getLocale(), reason)
+    // Non-blocking: the server and overlay must keep running while the operator reads this.
+    void dialog.showMessageBox({ type: "error", title: text.title, message: text.title, detail: text.body }).catch(() => {})
+    return
+  }
+  logger.warn({
+    component: "main",
+    event: "dashboard.reload-scheduled",
+    error: reason,
+    metadata: { attempt: decision.attempt, delayMs: decision.delayMs },
+  })
+  setTimeout(() => {
+    if (win.isDestroyed() || dashboardWindow !== win) return
+    mainNotices.push({ level: "warn", code: "renderer-recovered", detail: reason, ...(resumeMic ? { resumeMic: true } : {}) })
+    loadDashboard(win)
+  }, decision.delayMs)
+}
+
+function watchDashboardHealth(win: BrowserWindow): void {
+  const contents = win.webContents
+  let unresponsiveSince: number | null = null
+  contents.on("render-process-gone", (_event, details) => {
+    if (isBenignRendererExit(details.reason)) return
+    logger.error({
+      component: "main",
+      event: "dashboard.render-process-gone",
+      error: details.reason,
+      metadata: { exitCode: details.exitCode },
+    })
+    // The renderer owned the microphone: it is gone until the page is back and capture restarts.
+    recoverDashboard(win, `render-process-gone: ${details.reason}`, true)
+  })
+  contents.on("did-fail-load", (_event, errorCode, errorDescription, _url, isMainFrame) => {
+    if (isIgnorableLoadFailure(errorCode, isMainFrame)) return
+    logger.error({ component: "main", event: "dashboard.did-fail-load", error: errorDescription, metadata: { errorCode } })
+    recoverDashboard(win, `did-fail-load: ${errorDescription} (${errorCode})`, false)
+  })
+  win.on("unresponsive", () => {
+    unresponsiveSince = Date.now()
+    logger.warn({ component: "main", event: "dashboard.unresponsive" })
+  })
+  win.on("responsive", () => {
+    const seconds = unresponsiveSince === null ? 0 : Math.round((Date.now() - unresponsiveSince) / 1000)
+    unresponsiveSince = null
+    logger.info({ component: "main", event: "dashboard.responsive", durationMs: seconds * 1000 })
+    // Short stalls stay in the log; a long one is worth telling the operator about.
+    if (seconds >= 5) mainNotices.push({ level: "warn", code: "renderer-unresponsive", detail: String(seconds) })
+  })
+}
+
+ipcMain.handle("get-main-notices", () => mainNotices.snapshot())
+
+ipcMain.handle("open-logs-folder", async () => {
+  try {
+    await mkdir(LOG_DIR, { recursive: true })
+    const failure = await shell.openPath(LOG_DIR)
+    if (failure) {
+      logger.warn({ component: "main", event: "logs.open-failed", error: failure })
+      return { ok: false as const, path: LOG_DIR, error: scrubSecrets(failure) }
+    }
+    return { ok: true as const, path: LOG_DIR }
+  } catch (err) {
+    const message = scrubSecrets(err instanceof Error ? err.message : String(err))
+    logger.warn({ component: "main", event: "logs.open-failed", error: message })
+    return { ok: false as const, path: LOG_DIR, error: message }
+  }
+})
 
 /**
  * The dashboard renderer calls this once on load to decide whether to
@@ -812,9 +1002,17 @@ ipcMain.handle("get-startup-status", async () => {
       organizationName,
       accentColor,
       asr: currentAsrStatus(),
+      configRecovered: getConfigStore().getRecovery(),
     }
   }
-  return { ready: false, uiLanguage, ndi: { state: "disabled" as const }, organizationName, accentColor }
+  return {
+    ready: false,
+    uiLanguage,
+    ndi: { state: "disabled" as const },
+    organizationName,
+    accentColor,
+    configRecovered: getConfigStore().getRecovery(),
+  }
 })
 
 
@@ -849,7 +1047,7 @@ function currentAsrStatus(): {
     localEnabled: activeConfig?.localAsrEnabled ?? false,
     localModel: activeConfig?.localAsrModel ?? "base",
     localEngine: activeConfig?.localAsrEngine ?? "whisper.cpp",
-    localActive: localAsr !== null,
+    localActive: localAsr !== null && !localEngineAbandoned,
   }
 }
 
@@ -1010,6 +1208,7 @@ ipcMain.handle("set-display-mode", async (_event, payload: unknown) => {
   }
   localizedVerseSource.setMode(mode)
   setAsrLanguage(mode)
+  if (activeConfig) activeConfig = { ...activeConfig, displayMode: mode }
 
   await persistConfig((existing) => ({ ...existing, displayMode: mode }))
   return { displayMode: mode }
@@ -1150,14 +1349,9 @@ ipcMain.handle("set-custom-bible-api-url", async (_event, payload: unknown) => {
     return copy
   })
   if (localizedVerseSource) {
-    const frenchSource = await buildFrenchSource(currentFrenchTranslation)
-    localizedVerseSource = new LocalizedVerseSource(
-      new FreeApiSource(undefined, customBibleApiUrl),
-      frenchSource,
-      activeConfig?.displayMode ?? "english",
-      logger,
-      currentFrenchTranslation
-    )
+    // In place, never a new LocalizedVerseSource: AppCore holds the instance it was given at startup,
+    // so a replacement would be an orphan (URL unused, display-mode/translation toggles silently dead).
+    localizedVerseSource.setEnglishSource(new FreeApiSource(undefined, customBibleApiUrl), customBibleApiUrl ?? "")
   }
   return { customBibleApiUrl: customBibleApiUrl ?? null }
 })
@@ -1808,7 +2002,7 @@ ipcMain.handle("export-rehearsal", async () => {
 
 ipcMain.handle("export-diagnostics", async () => {
   if (!dashboardWindow) throw new Error("dashboard window is not available")
-  if (!appCoreHandle) throw new Error("services are not started yet")
+  // Exportable even when the services never started: that is exactly when the log is needed.
   const result = await dialog.showOpenDialog(dashboardWindow, {
     title: "Choose a folder to export diagnostics to",
     properties: ["openDirectory", "createDirectory"],
@@ -1816,7 +2010,18 @@ ipcMain.handle("export-diagnostics", async () => {
   if (result.canceled || result.filePaths.length === 0) return { canceled: true as const }
   const targetDir = result.filePaths[0] as string
   const path = join(targetDir, "churchoverlay-diagnostics.json")
-  await writeFile(path, JSON.stringify(appCoreHandle.getDiagnostics(), null, 2), "utf8")
+  const recentLines = logRing.lines()
+  const desktopLog = {
+    path: logSink?.file.path ?? null,
+    ...(logSink ? { file: logSink.file.stats(), consoleFailures: logSink.consoleFailures() } : {}),
+    recentLines: recentLines.length,
+  }
+  const diagnostics = appCoreHandle ? appCoreHandle.getDiagnostics() : { servicesStarted: false }
+  await writeFile(path, JSON.stringify({ ...diagnostics, desktopLog }, null, 2), "utf8")
+  // The in-memory ring (already secret-redacted) travels with the export.
+  await writeFile(join(targetDir, "churchoverlay-recent-log.jsonl"), recentLines.join("\n") + "\n", "utf8").catch((err) => {
+    logger.warn({ component: "main", event: "diagnostics.recent-log-failed", error: String(err) })
+  })
   logger.info({ component: "main", event: "diagnostics.exported", metadata: { targetDir } })
   return { canceled: false as const, path }
 })
@@ -1977,9 +2182,14 @@ ipcMain.handle("export-service-extras", async () => {
   }
 })
 
-async function shutdown(): Promise<void> {
-  // The last overlay edit must reach disk before AppCore (and its state) goes away.
-  await overlayStyleController?.flush()
+async function shutdownNow(): Promise<void> {
+  // The last overlay edit should reach disk before AppCore (and its state) goes away, but a failed
+  // flush must never leave the core, the ports or the engine running: best effort, always continue.
+  try {
+    await overlayStyleController?.flush()
+  } catch (err) {
+    logger.error({ component: "main", event: "shutdown.overlay-style-flush-failed", error: err instanceof Error ? err.message : String(err) })
+  }
   // The offline engine is a separate OS process: always stopped here so it
   // can never outlive the app and squat a port (this project has been
   // bitten by zombie child processes before).
@@ -2068,14 +2278,15 @@ app.whenReady().then(async () => {
       event: "startup.failed",
       error: "safeStorage encryption is not available on this system.",
     })
-    app.quit()
+    // Quitting silently looked like a crash on launch: tell the operator why and what to do (EN/FR).
+    failStartup("safeStorageUnavailable")
     return
   }
 
   configStore = new ConfigStore(join(app.getPath("userData"), "config.json"), {
     encrypt: (plaintext) => safeStorage.encryptString(plaintext),
     decrypt: (ciphertext) => safeStorage.decryptString(ciphertext),
-  })
+  }, logger)
   mediaLibrary = new MediaLibrary({ mediaDir: join(app.getPath("userData"), "media") })
   try {
     const report = await mediaLibrary.load()
@@ -2144,6 +2355,8 @@ app.whenReady().then(async () => {
       event: "startup.services-failed",
       error: err instanceof Error ? err.message : String(err),
     })
+    // Log-only used to leave the operator on a setup screen with no idea why: say it in the dashboard.
+    mainNotices.push({ level: "error", code: "services-failed", detail: describeError(err).message })
   }
 
   app.on("activate", () => {
@@ -2151,6 +2364,16 @@ app.whenReady().then(async () => {
       createDashboardWindow()
     }
   })
+  startupComplete = true
+}).catch((err: unknown) => {
+  // Anything thrown before the dashboard exists is fatal (nothing else would tell the operator);
+  // afterwards it is a notice, the app keeps running.
+  logger.error({ component: "main", event: "startup.failed", error: describeError(err).message, metadata: { stack: describeError(err).stack } })
+  if (dashboardWindow === null) {
+    failStartup("startupFailed", describeError(err).message)
+  } else {
+    mainNotices.push({ level: "error", code: "startup-failed", detail: describeError(err).message })
+  }
 })
 
 app.on("window-all-closed", async () => {
@@ -2158,6 +2381,22 @@ app.on("window-all-closed", async () => {
   if (process.platform !== "darwin") app.quit()
 })
 
-app.on("before-quit", () => {
-  shutdown().catch(() => {})
+// Quitting waits for shutdown() (overlay style flush, local engine, servers) but never for long:
+// a hung step must not keep the app open. The second before-quit (from app.quit() below) passes through.
+let quitShutdownStarted = false
+let quitShutdownDone = false
+app.on("before-quit", (event) => {
+  if (quitShutdownDone) return
+  event.preventDefault()
+  if (quitShutdownStarted) return
+  quitShutdownStarted = true
+  void (async () => {
+    const outcome = await awaitWithTimeout(shutdown(), 5000)
+    if (outcome !== "done") {
+      logger.error({ component: "main", event: "shutdown.incomplete", error: outcome })
+    }
+    await awaitWithTimeout(logSink?.file.flush() ?? Promise.resolve(), 1000)
+    quitShutdownDone = true
+    app.quit()
+  })()
 })

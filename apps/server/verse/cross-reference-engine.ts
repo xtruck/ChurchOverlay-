@@ -1,3 +1,4 @@
+import { nullProto } from "../../../packages/shared/type-guards"
 import type { VerseReference, VerseSource } from "../../../packages/contracts/verse"
 
 export type CrossReferenceEntry = {
@@ -10,7 +11,7 @@ export type CrossReferenceEntry = {
  * Curated biblical cross-reference network for foundational theological scriptures.
  * Keyed by canonical canonical reference "book:chapter:verse".
  */
-export const THEMATIC_CROSS_REFERENCES: Record<string, CrossReferenceEntry[]> = {
+export const THEMATIC_CROSS_REFERENCES: Record<string, CrossReferenceEntry[]> = nullProto({
   // John 3:16 - God's Love and Salvation
   "john:3:16": [
     { reference: { book: "romans", chapter: 5, verse: 8 }, theme: "God's Love for Sinners", relevanceScore: 10 },
@@ -56,7 +57,7 @@ export const THEMATIC_CROSS_REFERENCES: Record<string, CrossReferenceEntry[]> = 
     { reference: { book: "2 corinthians", chapter: 5, verse: 7 }, theme: "Walk by Faith", relevanceScore: 9 },
     { reference: { book: "james", chapter: 2, verse: 17 }, theme: "Faith and Works", relevanceScore: 8 },
   ],
-}
+})
 
 /**
  * Standardizes a VerseReference into a canonical lookup key.

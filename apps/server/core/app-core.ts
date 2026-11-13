@@ -48,7 +48,7 @@ import { CircuitBreaker } from "../verse/circuit-breaker"
 import { SilenceGate } from "../audio/silence-gate"
 import { ChurchOverlayWsServer, type ServerTokens, type WsClientLatencySnapshot } from "../ws/server"
 import { resolveTranscriptVerses } from "./resolve-transcript-verses"
-import { resolveVerse, translationIdFor } from "../verse/resolve-verse"
+import { resolveVerse, resolveVerseDetailed, translationIdFor, type VerseLookupFailure } from "../verse/resolve-verse"
 import { passesTranscriptGate } from "./transcript-gate"
 import { LatencyTracker, type LatencySnapshot } from "./latency-tracker"
 import { correctTranscription } from "../asr/transcription-corrector"
@@ -68,7 +68,7 @@ import type { MediaLibrary } from "../media/media-library"
 import { MediaCueDetector } from "../media/media-cue-detector"
 import { MediaPlaybackController } from "../media/media-playback-controller"
 import { NavigationCommandDetector, containsCatalogBookName } from "../detector/navigation-command-detector"
-import { isCatalogBookWord } from "../detector/regex-detector"
+import { compactOnlyReferenceKeys, isCatalogBookWord } from "../detector/regex-detector"
 import { resolveNavigationCommand } from "../verse/resolve-navigation-command"
 import { suggestNearestReferences } from "../verse/nearest-references"
 import { createBibleBrowser } from "../verse/bible-browser-service"
@@ -85,6 +85,7 @@ import type { SessionHistoryStore, SessionHistoryEntry } from "./session-history
 import { AudioFrameSequenceTracker } from "../audio/audio-frame-sequence"
 import { AdaptiveGain } from "../audio/adaptive-gain"
 import { MicHealthMonitor } from "../audio/mic-health"
+import { ASR_LIFECYCLE_TIMEOUT_MS, MIC_WATCHDOG_INTERVAL_MS, MicAudioWatchdog, withTimeout, type AppCoreTimers } from "../audio/mic-audio-watchdog"
 import type { QuoteMatcher } from "../detector/quote-matcher"
 import type { OverlayStyle, OverlayStyleSettings } from "../../../packages/contracts/overlay-style"
 import { normalizeOverlayStyleSettings, resolveOverlayStyle, seedOverlayStyle } from "../overlay/overlay-style"
@@ -318,6 +319,10 @@ export type StartAppCoreOptions = {
    * delay instead of waiting out the real default.
    */
   readonly verseAutoClearMs?: number
+  /** Injectable wall clock and timers for the mic watchdog and the asr start/stop bound (SF-08, SF-06); tests pass fakes. */
+  readonly timers?: AppCoreTimers
+  /** Bound on a provider start()/stop() during mic:start / mic:stop (TS-11); default 20 s. */
+  readonly asrLifecycleTimeoutMs?: number
 }
 
 export type AppCoreHandle = {
@@ -440,6 +445,12 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   const micDiagnostics = new MicDiagnostics()
   let activeMicWarnings = ""
   const micHealth = new MicHealthMonitor()
+  // SF-08: wall-clock watch for "no frames at all", which the frame-clocked health above cannot see.
+  const timers = options.timers ?? {}
+  const clockNow = timers.now ?? Date.now
+  const micAudioWatchdog = new MicAudioWatchdog()
+  let micWatchdogTimer: unknown = null
+  const asrLifecycleTimeoutMs = options.asrLifecycleTimeoutMs ?? ASR_LIFECYCLE_TIMEOUT_MS
   const pipelineLatency = new LatencyTracker()
   let rundownPrefetchGeneration = 0
   let stopped = false
@@ -1157,14 +1168,17 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
 
   function runDetection(job: DetectionJob): void {
     const ticket = beginDisplayIntent()
-    resolveTranscriptVerses(job.detect, detector, index, source, cache, circuitBreaker, logger)
+    // TS-08: the bare "Name N M" form is never auto-shown, whatever the confirmation mode.
+    const compactOnly = compactOnlyReferenceKeys(job.detect.text)
+    resolveTranscriptVerses(job.detect, detector, index, source, cache, circuitBreaker, logger, (reference, failure) => reportLookup(reference, failure, "detected"))
       .then(async (verses) => {
         if (verses.length > 0 && isSupersededIntent(ticket)) {
           dropStaleLookup(job.kind, job.deliver.correlationId)
           return
         }
-        if (verses.length > 0) markIntentApplied(ticket)
-        deliverDetectedVerses(verses, job.deliver)
+        // TS-05: a detection only claims the display slot when something was really shown. An echo-suppressed
+        // or pending (review / compact-form) detection leaves a slower, earlier operator override free to show.
+        if (deliverDetectedVerses(verses, job.deliver, compactOnly)) markIntentApplied(ticket)
         if (verses.length === 0) await inferVolumeVerses(job.detect.text, job.deliver)
       })
       .catch((err) => {
@@ -1177,7 +1191,9 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       })
   }
 
-  function deliverDetectedVerses(verses: readonly Verse[], transcript: TranscriptResult): void {
+  /** Returns true when at least one verse was put on the screen (not merely offered as pending or suppressed). */
+  function deliverDetectedVerses(verses: readonly Verse[], transcript: TranscriptResult, compactOnly: ReadonlySet<string> = new Set()): boolean {
+    let shown = false
     for (const verse of verses) {
       const echo = interpreterEchoGuard.check(verse.reference, transcript.text)
       if (echo.suppress) {
@@ -1191,7 +1207,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
           pendingVerse.reference.chapter === verse.reference.chapter &&
           pendingVerse.reference.verse === verse.reference.verse
         ) {
-          wsServer.broadcast({
+          wsServer.broadcastToOperators({
             id: generateUlid(),
             type: "verse:pending",
             timestamp: Date.now(),
@@ -1207,11 +1223,14 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         })
         continue
       }
-      const delivery = verseConfirmationMode === "review" ? "pending" : "screen"
+      const delivery = verseConfirmationMode === "review" || compactOnly.has(suggestionKey(verse.reference)) ? "pending" : "screen"
       if (delivery === "pending") {
         suggestionArbiter.noteDetectedWaiting()
         broadcastPendingVerse({ ...verse, heard: heardSnippet(transcript.text) } as Verse, transcript.correlationId)
-      } else broadcastVerse(verse, "detected", transcript.correlationId)
+      } else {
+        broadcastVerse(verse, "detected", transcript.correlationId)
+        shown = true
+      }
       const durationMs = Date.now() - transcript.timestamp
       pipelineLatency.record(durationMs)
       logger.info({
@@ -1222,13 +1241,46 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         metadata: { delivery },
       })
     }
+    return shown
+  }
+
+  // AUDIT SF-03: a verse the detector, the operator or navigation asked for that cannot be looked up used to be
+  // only logged. The operator is now told (operator-only event), throttled so a repeated failure cannot spam.
+  const LOOKUP_NOTICE_THROTTLE_MS = 10_000
+  const LOOKUP_NOTICE_MAX_PER_WINDOW = 5
+  const lookupNoticeAt = new Map<string, number>()
+  let lookupNoticeWindowStart = 0
+  let lookupNoticeWindowCount = 0
+
+  function reportLookup(reference: VerseReference, failure: VerseLookupFailure | "invalid" | "superseded" | null, origin: "detected" | "override" | "navigate"): void {
+    if (failure === null) return
+    const now = Date.now()
+    const key = `${failure}|${origin}|${suggestionKey(reference)}`
+    const last = lookupNoticeAt.get(key)
+    if (last !== undefined && now - last < LOOKUP_NOTICE_THROTTLE_MS) return
+    if (now - lookupNoticeWindowStart >= LOOKUP_NOTICE_THROTTLE_MS) {
+      lookupNoticeWindowStart = now
+      lookupNoticeWindowCount = 0
+    }
+    if (lookupNoticeWindowCount >= LOOKUP_NOTICE_MAX_PER_WINDOW) return
+    lookupNoticeWindowCount += 1
+    if (lookupNoticeAt.size >= 50) lookupNoticeAt.clear()
+    lookupNoticeAt.set(key, now)
+    logger.warn({ component: "app-core", event: "verse.lookup-failed", metadata: { reference, reason: failure, origin } })
+    wsServer.broadcastToOperators({
+      id: generateUlid(),
+      type: "verse:lookup-failed",
+      timestamp: now,
+      payload: { reference: { book: reference.book.slice(0, 64), chapter: reference.chapter, verse: reference.verse }, reason: failure, origin },
+    })
   }
 
   function broadcastPendingVerse(verse: Verse, correlationId?: string): void {
     // A suggestion (quote, repair, inferred volume, AI) that takes the slot means no detection is waiting any more.
     if ((verse as Verse & { origin?: string }).origin !== undefined) suggestionArbiter.clearDetectedWaiting()
     pendingVerse = verse
-    wsServer.broadcast({ id: generateUlid(), type: "verse:pending", timestamp: Date.now(), correlationId, payload: verse })
+    // S-01: pending verses carry the heard text; operator pages only.
+    wsServer.broadcastToOperators({ id: generateUlid(), type: "verse:pending", timestamp: Date.now(), correlationId, payload: verse })
   }
 
   /**
@@ -1345,7 +1397,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     if (recentNearMisses.length > RECENT_NEAR_MISS_LIMIT) {
       recentNearMisses = recentNearMisses.slice(-RECENT_NEAR_MISS_LIMIT)
     }
-    wsServer.broadcast({
+    wsServer.broadcastToOperators({
       id: generateUlid(),
       type: "detector:near-miss",
       timestamp: Date.now(),
@@ -1659,14 +1711,15 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   async function syncSceneContent(scene: RundownScene, send: (message: WsMessage) => void): Promise<void> {
     switch (scene.kind) {
       case "verse": {
-        const verse = await resolveVerse(scene.reference, source, cache, circuitBreaker, translationIdFor(source), logger)
-        if (verse) {
-          const payload: VerseShowPayload = { ...verse, trigger: "rundown" }
-          send({ id: generateUlid(), type: "verse:show", timestamp: Date.now(), payload })
+        // AUDIT TS-04: resync what is ACTUALLY on screen. The rundown scene is only the plan: after a manual
+        // verse:clear or the auto-clear, lastShownVerse is null and a reconnecting OBS source must stay blank
+        // instead of putting the cleared verse back on air.
+        if (lastShownVerse) {
+          send({ id: generateUlid(), type: "verse:show", timestamp: Date.now(), payload: lastShownVerse })
         } else {
           logger.info({
             component: "app-core",
-            event: "rundown.viewer-sync-verse-unresolved",
+            event: "rundown.viewer-sync-verse-cleared",
             metadata: { reference: scene.reference },
           })
         }
@@ -1693,9 +1746,11 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     }
   }
 
-  function broadcastMicHealth(): void {
+  /** @param stateOverride "no-audio" (SF-08): the frames stopped, so the stale frame-derived state must not be shown. */
+  function broadcastMicHealth(stateOverride?: "no-audio"): void {
     micHealth.setGain(adaptiveGain.currentGain())
-    const snapshot = micHealth.snapshot(silenceGate.isCalibrating())
+    const frameSnapshot = micHealth.snapshot(silenceGate.isCalibrating())
+    const snapshot = stateOverride ? { ...frameSnapshot, state: stateOverride } : frameSnapshot
     const dropped = transcriptionPolicy.ledger.perMinute()
     const openValves = transcriptionPolicy.ledger.openValves()
     const warnings = micRunning ? micDiagnostics.evaluate({ loudClosedMs: silenceGate.getLoudClosedMs(), openValves }) : []
@@ -1726,12 +1781,60 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     if (!micRunning) return
     // Section 132: this reading is also what the echo watch and the service
     // health log observe. Speech "at level" means speech heard and not too quiet.
-    const now = Date.now()
+    const now = clockNow()
     serviceHealth.observeMicState(now, snapshot.state)
     const mediaPlaying = isMediaAudible(mediaPlayback.currentPayloadForSync())
     const speechAtLevel = snapshot.speechDbfs !== null && snapshot.state !== "too-quiet" && snapshot.state !== "warming-up"
     echoWatch.observeMic(now, speechAtLevel, mediaPlaying)
     syncEchoWarning(now)
+  }
+
+  function reportMicStartFailure(error: unknown): void {
+    const reason = scrubSecrets(error instanceof Error ? error.message : String(error)).slice(0, 300) || "ASR start failed"
+    logger.error({ component: "app-core", event: "mic.start-failed", error: reason })
+    asrHasError = true
+    broadcastAsrStatus({ asrHealth: "error", error: reason, micCalibrating: false })
+    // Operator-only (not in the viewer allow-list): the dashboard reverts from "running" and shows why.
+    wsServer.broadcastToOperators({ id: generateUlid(), type: "mic:start-failed", timestamp: Date.now(), payload: { reason } })
+  }
+
+  // SF-08: the wall-clock side of mic health. Frames reset the watchdog; the timer notices their absence.
+  function startMicWatchdogTimer(): void {
+    stopMicWatchdogTimer()
+    micAudioWatchdog.start(clockNow())
+    const tick = (): void => {
+      if (micAudioWatchdog.tick(clockNow()) === "no-audio") onMicNoAudio()
+    }
+    micWatchdogTimer = timers.setInterval
+      ? timers.setInterval(tick, MIC_WATCHDOG_INTERVAL_MS)
+      : (() => {
+          const handle = setInterval(tick, MIC_WATCHDOG_INTERVAL_MS)
+          handle.unref?.()
+          return handle
+        })()
+  }
+
+  function stopMicWatchdogTimer(): void {
+    micAudioWatchdog.stop()
+    if (micWatchdogTimer === null) return
+    if (timers.clearInterval) timers.clearInterval(micWatchdogTimer)
+    else clearInterval(micWatchdogTimer as ReturnType<typeof setInterval>)
+    micWatchdogTimer = null
+  }
+
+  function onMicNoAudio(): void {
+    logger.warn({ component: "app-core", event: "mic.no-audio", metadata: { silentMs: micAudioWatchdog.silentForMs(clockNow()) } })
+    // Opens one dropout in the service-health report (observeMicState) and shows "no audio" instead of the stale last state.
+    broadcastMicHealth("no-audio")
+  }
+
+  function onMicAudioRecovered(): void {
+    logger.info({ component: "app-core", event: "mic.audio-resumed" })
+    // The old window describes the audio from before the gap: start measuring afresh. The fresh
+    // reading ("warming-up") also closes the open dropout.
+    micHealth.reset()
+    micHealthAudioMs = 0
+    broadcastMicHealth()
   }
 
   // Bound on audio frames awaiting the ASR provider. A stalled provider
@@ -1745,6 +1848,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     // Frames that arrive while no mic session is active (after mic:stop, or
     // before mic:start) never reach the ASR.
     if (!micSequenceSessionActive) return
+    if (micAudioWatchdog.frame(clockNow()) === "recovered") onMicAudioRecovered()
     if (audioFramesInFlight >= MAX_AUDIO_FRAMES_IN_FLIGHT) {
       audioFramesDropped += 1
       if (audioFramesDropped === 1 || audioFramesDropped % 500 === 0) {
@@ -1957,6 +2061,19 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   async function handleCommandUnserialized(message: WsMessage, role: WsRole): Promise<void> {
     switch (message.type) {
       case "mic:start":
+        // SF-09: the dashboard re-sends mic:start on every WebSocket reconnect. Starting again
+        // while the mic is live recalibrated the silence gate on live speech (~1.5 s of speech
+        // lost) and restarted the ASR. Already running: change nothing, just resync the dashboard.
+        if (micRunning) {
+          logger.info({ component: "app-core", event: "mic.start-ignored", metadata: { reason: "already-running" } })
+          const calibrating = silenceGate.isCalibrating()
+          broadcastAsrStatus({
+            asrHealth: currentAsrHealth(),
+            micCalibrating: calibrating,
+            ...(calibrating ? {} : { micThreshold: silenceGate.getThreshold() }),
+          })
+          return
+        }
         // ARCHITECTURE.md section 76: a fresh threshold for THIS room,
         // right before THIS session, rather than one fixed global
         // constant guessed from a single past measurement (section
@@ -1978,18 +2095,28 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         micSequenceSessionActive = true
         broadcastAsrStatus({ asrHealth: currentAsrHealth(), micCalibrating: true })
         try {
-          await asr.start()
+          // TS-11: bounded, so a hung provider cannot park mic:stop behind this start on the serial chain.
+          await withTimeout(asr.start(), asrLifecycleTimeoutMs, "ASR start", timers)
         } catch (error) {
+          // SF-06: the dashboard already shows "listening". Put the server back to "not running"
+          // and tell the operator why; the rethrow still logs command.failed.
           micSequenceSessionActive = false
+          micRunning = false
+          stopMicWatchdogTimer()
+          // A start that merely timed out may still complete later: release whatever it opened.
+          withTimeout(asr.stop(), asrLifecycleTimeoutMs, "ASR stop", timers).catch(() => {})
+          reportMicStartFailure(error)
           throw error
         }
         micRunning = true
+        startMicWatchdogTimer()
         logger.info({ component: "app-core", event: "mic.started" })
         return
 
       case "mic:stop":
         // Section 132: nothing is being heard any more; a warning must not outlive the mic.
         micRunning = false
+        stopMicWatchdogTimer()
         const endedMicSessionId = micSequenceSessionActive ? micSessionId : null
         micSequenceSessionActive = false
         serviceHealth.closeMic(Date.now())
@@ -2007,7 +2134,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
           })
           micSessionId = null
         }
-        await asr.stop()
+        await withTimeout(asr.stop(), asrLifecycleTimeoutMs, "ASR stop", timers)
         logger.info({
           component: "app-core",
           event: "mic.stopped",
@@ -2054,12 +2181,16 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
             correlationId: message.correlationId,
             metadata: { reference: payload, reason: "unknown-reference" },
           })
+          reportLookup(reference, "invalid", "override")
           return
         }
         const ticket = beginDisplayIntent()
-        const verse = await resolveVerse(reference, source, cache, circuitBreaker, translationIdFor(source), logger)
+        const lookup = await resolveVerseDetailed(reference, source, cache, circuitBreaker, translationIdFor(source), logger)
+        reportLookup(reference, lookup.failure, "override")
+        const verse = lookup.verse
         if (verse && isSupersededIntent(ticket)) {
           dropStaleLookup("override", message.correlationId)
+          reportLookup(reference, "superseded", "override") // TS-05: the operator is told, not left waiting
           return
         }
         if (verse) {
@@ -2127,9 +2258,12 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
           return
         }
         const ticket = beginDisplayIntent()
-        const verse = await resolveVerse(resolution.reference, source, cache, circuitBreaker, translationIdFor(source), logger)
+        const lookup = await resolveVerseDetailed(resolution.reference, source, cache, circuitBreaker, translationIdFor(source), logger)
+        reportLookup(resolution.reference, lookup.failure, "navigate")
+        const verse = lookup.verse
         if (verse && isSupersededIntent(ticket)) {
           dropStaleLookup("navigation", message.correlationId)
+          reportLookup(resolution.reference, "superseded", "navigate")
           return
         }
         if (verse) {
@@ -2462,7 +2596,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     const to = from === "fr" ? "en" : "fr"
     const text = await liveTranslator.translate(transcript.text, from, to)
     if (!text) return
-    wsServer.broadcast({
+    wsServer.broadcastToOperators({
       id: generateUlid(),
       type: "translation:final",
       timestamp: Date.now(),
@@ -2584,7 +2718,9 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       // already did — existence isn't the same as having real verse text
       // to display (invariant 17).
       const ticket = beginDisplayIntent()
-      const verse = await resolveVerse(resolution.reference, source, cache, circuitBreaker, translationIdFor(source), logger)
+      const lookup = await resolveVerseDetailed(resolution.reference, source, cache, circuitBreaker, translationIdFor(source), logger)
+      reportLookup(resolution.reference, lookup.failure, "navigate")
+      const verse = lookup.verse
       if (verse && command.kind === "goto-chapter") {
         // "In John 11 we read ..." names a chapter, not a verse: verse 1 was never spoken, so it is only
         // ever OFFERED (the operator approves it), never put on the overlay by itself. The chapter
@@ -2609,7 +2745,21 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   const OFF_LANGUAGE_WARN_AFTER = 5
   let consecutiveOffLanguageDrops = 0
 
-  asr.onTranscript((transcript) => {
+  // AUDIT TS-06: one malformed transcript must never throw out of the provider callback.
+  asr.onTranscript((incoming) => {
+    try {
+      handleAsrTranscript(incoming)
+    } catch (err) {
+      logger.error({
+        component: "app-core",
+        event: "transcript.handler-failed",
+        correlationId: incoming.correlationId,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
+  })
+
+  function handleAsrTranscript(transcript: TranscriptResult): void {
     micDiagnostics.observeTranscript() // the provider is alive, whatever the guards below decide
     // French and English only (ARCHITECTURE.md section 129): an engine that
     // hallucinates Hindi/Urdu/etc. over noise or silence must never reach a
@@ -2773,7 +2923,8 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     // what was actually transcribed. Broadcast first, before any of the
     // async work below, so this is the fastest possible signal back to
     // the operator, not something waiting behind verse resolution.
-    wsServer.broadcast({
+    // S-01: the raw microphone transcript goes to operator pages only, never to viewer-token clients.
+    wsServer.broadcastToOperators({
       id: generateUlid(),
       type: transcript.state === "partial" ? "transcript:partial" : "transcript:final",
       timestamp: Date.now(),
@@ -2956,7 +3107,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     if (sermonNotesGenerator && sermonNotesEnabled && passesTranscriptGate(transcript)) {
       sermonNotesBuffer += (sermonNotesBuffer ? " " : "") + transcript.text
     }
-  })
+  }
 
   asr.onError?.((err) => {
     logger.error({ component: "asr", event: "transcript.failed", error: err.message })
@@ -3097,6 +3248,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       stopped = true
       if (definitionClearTimer) clearTimeout(definitionClearTimer)
       if (sermonNotesTimer) clearInterval(sermonNotesTimer)
+      stopMicWatchdogTimer()
       aiSuggestions?.stop()
       // ARCHITECTURE.md section 82.1: verseAutoClearMs went from a
       // narrow, poster-gated condition (rarely armed in tests) to firing

@@ -69,7 +69,14 @@ async function harness(mode?: "review") {
     if (m.type === "verse:show") shown.push(`${v.reference.book} ${v.reference.chapter}:${v.reference.verse}`)
     if (m.type === "verse:pending") pending.push(`${v.reference.book} ${v.reference.chapter}:${v.reference.verse}`)
   })
-  return { asr, app, viewer, shown, pending }
+  // S-01: pending verses are operator-only now; the overlay (viewer) only ever sees verse:show.
+  const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+  operatorSocket.on("message", (data: { toString(): string }) => {
+    const m = JSON.parse(data.toString()) as WsMessage
+    const v = m.payload as Verse
+    if (m.type === "verse:pending") pending.push(`${v.reference.book} ${v.reference.chapter}:${v.reference.verse}`)
+  })
+  return { asr, app, viewer, operatorSocket, shown, pending }
 }
 
 async function run(fn: (h: Awaited<ReturnType<typeof harness>>) => Promise<void>, mode?: "review"): Promise<void> {
@@ -78,6 +85,7 @@ async function run(fn: (h: Awaited<ReturnType<typeof harness>>) => Promise<void>
     await fn(h)
   } finally {
     h.viewer.close()
+    h.operatorSocket.close()
     await h.app.stop()
   }
 }

@@ -6,6 +6,8 @@ type ContextAwareProvider = AsrProvider & {
   setLanguage?(language: string | undefined): void
   onError?(callback: (error: Error) => void): void
   onRateLimitedSustained?(callback: () => void): void
+  /** A refused API key (401/403) will not heal by retrying: fail over at once (SF-05). */
+  onKeyRefused?(callback: () => void): void
   discardBufferedAudio?(): void
   onUtteranceEnd?(): Promise<void>
   onFailoverActivated?(callback: (label: string) => void): void
@@ -42,6 +44,21 @@ export type AutoReturnOptions = {
 export const DEFAULT_AUTO_RETURN_INITIAL_MS = 30_000
 export const DEFAULT_AUTO_RETURN_MAX_MS = 300_000
 
+/**
+ * Backoff between failed attempts to open the secondary (TS-02). Without it
+ * every audio frame retried the whole activation (secondary.start, primary.stop,
+ * an error broadcast) 50 times a second.
+ */
+export const DEFAULT_ACTIVATION_RETRY_INITIAL_MS = 2_000
+export const DEFAULT_ACTIVATION_RETRY_MAX_MS = 60_000
+
+export type SecondaryUnavailableState = {
+  readonly attempts: number
+  readonly nextAttemptAt: number
+  readonly lastError: string
+  readonly framesDropped: number
+}
+
 export type FailoverAsrProviderOptions = {
   readonly primary: ContextAwareProvider
   readonly secondary: ContextAwareProvider
@@ -50,6 +67,8 @@ export type FailoverAsrProviderOptions = {
   readonly secondaryLabel?: string
   /** Only honored with trigger "primary-error". Absent = manual return only. */
   readonly autoReturn?: AutoReturnOptions
+  /** Backoff for re-opening a secondary that failed to start. Clock injectable for tests. */
+  readonly activationRetry?: { readonly initialDelayMs?: number; readonly maxDelayMs?: number; readonly now?: () => number }
 }
 
 /**
@@ -77,8 +96,18 @@ export class FailoverAsrProvider implements AsrProvider {
   private returnDelayMs = 0
   private nextReturnAt = 0
   private lastReturnAt: number | null = null
+  private primaryLive = false
+  private secondaryLive = false
+  private secondaryDown: { attempts: number; nextAttemptAt: number; lastError: string; framesDropped: number; reported: boolean; primaryRestarted?: boolean } | null = null
+  private unavailableCallback: ((state: SecondaryUnavailableState) => void) | null = null
+  private readonly retryInitialMs: number
+  private readonly retryMaxMs: number
+  private readonly clock: () => number
 
   constructor(options: FailoverAsrProviderOptions) {
+    this.retryInitialMs = options.activationRetry?.initialDelayMs ?? DEFAULT_ACTIVATION_RETRY_INITIAL_MS
+    this.retryMaxMs = options.activationRetry?.maxDelayMs ?? DEFAULT_ACTIVATION_RETRY_MAX_MS
+    this.clock = options.activationRetry?.now ?? Date.now
     this.primary = options.primary
     this.secondary = options.secondary
     this.trigger = options.trigger ?? "sustained-rate-limit"
@@ -112,7 +141,12 @@ export class FailoverAsrProvider implements AsrProvider {
       if (this.activeProvider === this.secondary) this.errorCallback?.(error)
     })
     this.primary.onRateLimitedSustained?.(() => {
-      if (this.trigger === "sustained-rate-limit") void this.activateFailover()
+      // SF-07/SF-11: activateFailover rethrows when the secondary cannot start;
+      // a floating rejection here would be an unhandled rejection in main.
+      if (this.trigger === "sustained-rate-limit") this.failOverQuietly()
+    })
+    this.primary.onKeyRefused?.(() => {
+      if (this.trigger === "sustained-rate-limit") this.failOverQuietly()
     })
     // Chains nest (Deepgram → [Groq → local]): a switch deeper in the chain
     // must still reach the operator's status line.
@@ -142,6 +176,20 @@ export class FailoverAsrProvider implements AsrProvider {
     this.failoverCallback = callback
   }
 
+  /**
+   * Fired ONCE per outage when the secondary could not be opened after the
+   * primary failed: nothing is transcribing until a retry succeeds.
+   */
+  onSecondaryUnavailable(callback: (state: SecondaryUnavailableState) => void): void {
+    this.unavailableCallback = callback
+  }
+
+  /** Non-null while a failover could not open the secondary and retries are backing off. */
+  secondaryUnavailable(): SecondaryUnavailableState | null {
+    const d = this.secondaryDown
+    return d ? { attempts: d.attempts, nextAttemptAt: d.nextAttemptAt, lastError: d.lastError, framesDropped: d.framesDropped } : null
+  }
+
   /** Fired after an AUTOMATIC return to the primary succeeds, so the dashboard can drop its failover state. */
   onAutoReturned(callback: () => void): void {
     this.autoReturnedCallback = callback
@@ -165,10 +213,21 @@ export class FailoverAsrProvider implements AsrProvider {
   }
 
   async start(): Promise<void> {
+    // SF-21: a start() while the secondary is on air (the dashboard re-sends
+    // mic:start on a WS reconnect) used to flip activeProvider back to the
+    // primary without stopping the secondary, leaking its socket.
+    if (this.activationPromise) await this.activationPromise.catch(() => {})
+    if (this.returning) await this.returning.catch(() => {})
+    if (this.secondaryLive) {
+      this.secondaryLive = false
+      await this.secondary.stop().catch(() => {})
+    }
     this.activeProvider = this.primary
     this.switching = false
     this.running = true
     this.lastReturnAt = null
+    this.secondaryDown = null
+    this.primaryLive = true
     try {
       await this.primary.start()
     } catch (error) {
@@ -182,18 +241,65 @@ export class FailoverAsrProvider implements AsrProvider {
   }
 
   async sendAudio(audio: AudioFrame): Promise<void> {
-    if (this.activationPromise) await this.activationPromise
+    // A failed activation is already reported (once) by openSecondary; the
+    // frames waiting behind it must not each rethrow it.
+    if (this.activationPromise) await this.activationPromise.catch(() => {})
     // A return is mid-flight: the secondary is stopped and the primary not
     // yet live. Wait (bounded by the primary's connect timeout) rather than
     // throw into a stopped provider.
     if (this.returning) await this.returning.catch(() => {})
+    if (this.trigger === "primary-error" && this.secondaryDown && !this.secondaryDown.primaryRestarted && this.running) {
+      // Nothing is live. Frames are dropped (counted) while the retry backs
+      // off; at most one activation attempt is in flight (TS-02).
+      if (this.clock() < this.secondaryDown.nextAttemptAt) {
+        this.secondaryDown.framesDropped += 1
+        return
+      }
+      await this.retryAfterOutage()
+      if (this.secondaryDown && !this.secondaryDown.primaryRestarted) {
+        this.secondaryDown.framesDropped += 1
+        return
+      }
+    }
     const provider = this.activeProvider
     try {
       await provider.sendAudio(audio)
+      if (this.secondaryDown?.primaryRestarted && provider === this.primary) this.secondaryDown = null
     } catch (error) {
       if (this.trigger !== "primary-error" || provider !== this.primary || !this.running) throw error
-      await this.activateFailover()
+      try {
+        await this.activateFailover()
+      } catch {
+        // Reported once by openSecondary; the backoff state now governs retries.
+        if (this.secondaryDown) this.secondaryDown.framesDropped += 1
+        return
+      }
       await this.activeProvider.sendAudio(audio)
+    }
+  }
+
+  /**
+   * Backoff elapsed with nothing live: try the secondary again and, failing
+   * that, give the primary (which may have recovered) one restart.
+   */
+  private async retryAfterOutage(): Promise<void> {
+    try {
+      await this.activateFailover()
+      return
+    } catch {
+      // still down; fall through to the primary
+    }
+    if (!this.running || !this.secondaryDown) return
+    try {
+      this.primaryLive = true
+      await this.primary.start()
+      this.primary.setCurrentVerseRef?.(this.currentVerseRef)
+      this.activeProvider = this.primary
+      // Not cleared yet: a primary that "starts" but cannot carry audio must
+      // keep its backoff and its single report. A successful send clears it.
+      this.secondaryDown.primaryRestarted = true
+    } catch {
+      this.primaryLive = false
     }
   }
 
@@ -219,6 +325,9 @@ export class FailoverAsrProvider implements AsrProvider {
     // Let an in-flight return settle first so it cannot leave the primary started after stop().
     if (this.returning) await this.returning.catch(() => {})
     this.switching = false
+    this.secondaryDown = null
+    this.secondaryLive = false
+    this.primaryLive = false
     try {
       await this.secondary.stop()
     } finally {
@@ -279,7 +388,9 @@ export class FailoverAsrProvider implements AsrProvider {
     // A throwing stop() must not leave `switching` stuck (auto-return runs
     // unattended): the secondary is restarted below if the primary fails.
     await this.secondary.stop().catch(() => {})
+    this.secondaryLive = false
     try {
+      this.primaryLive = true
       await this.primary.start()
     } catch (error) {
       // The primary is still unreachable. Without this rollback the secondary
@@ -287,19 +398,45 @@ export class FailoverAsrProvider implements AsrProvider {
       // sendAudio() throws "called before start()" and transcription is dead
       // until the operator cycles the mic. Put the secondary back on air and
       // surface the primary's failure to the caller.
+      this.primaryLive = false
       try {
         await this.secondary.start()
+        this.secondaryLive = true
         this.secondary.setCurrentVerseRef?.(this.currentVerseRef)
+        this.activeProvider = this.secondary
       } catch (restartError) {
-        this.errorCallback?.(restartError instanceof Error ? restartError : new Error(String(restartError)))
+        // SF-21: both sides are down. Pointing activeProvider at the stopped
+        // secondary made every frame throw; use the outage state instead
+        // (reported once, bounded retries, frames counted as dropped).
+        this.activeProvider = this.primary
+        this.markSecondaryDown(restartError instanceof Error ? restartError : new Error(String(restartError)))
       }
-      this.activeProvider = this.secondary
       this.switching = false
       throw error
     }
     this.primary.setCurrentVerseRef?.(this.currentVerseRef)
     this.activeProvider = this.primary
     this.switching = false
+  }
+
+  /** Records a failed secondary start: exponential backoff, reported to the operator once per outage. */
+  private markSecondaryDown(error: Error): void {
+    const prev = this.secondaryDown
+    const attempts = (prev?.attempts ?? 0) + 1
+    const delay = Math.min(this.retryInitialMs * 2 ** Math.min(attempts - 1, 30), this.retryMaxMs)
+    const reported = prev?.reported ?? false
+    this.secondaryDown = {
+      attempts,
+      nextAttemptAt: this.clock() + delay,
+      lastError: error.message,
+      framesDropped: prev?.framesDropped ?? 0,
+      reported: true,
+    }
+    if (!reported) {
+      this.errorCallback?.(error)
+      const state = this.secondaryUnavailable()
+      if (state) this.unavailableCallback?.(state)
+    }
   }
 
   isFailedOver(): boolean {
@@ -320,6 +457,10 @@ export class FailoverAsrProvider implements AsrProvider {
   private async activateFailover(): Promise<void> {
     if (this.activeProvider === this.secondary) return
     if (this.activationPromise) return this.activationPromise
+    const down = this.secondaryDown
+    if (down && this.clock() < down.nextAttemptAt) {
+      throw new Error(`Backup transcription unavailable (${down.lastError}); next attempt in ${Math.ceil((down.nextAttemptAt - this.clock()) / 1000)}s`)
+    }
     this.activationPromise = this.openSecondary()
     try {
       await this.activationPromise
@@ -332,21 +473,28 @@ export class FailoverAsrProvider implements AsrProvider {
     if (this.activeProvider === this.secondary) return
     this.switching = true
     this.primary.discardBufferedAudio?.()
-    if (this.trigger === "primary-error") {
+    if (this.trigger === "primary-error" && this.primaryLive) {
       // The primary is broken, not merely throttled: release it so a later
-      // manual returnToPrimary() starts it from a clean state.
+      // manual returnToPrimary() starts it from a clean state. Once only per
+      // outage: a retry must not stop it again.
+      this.primaryLive = false
       await this.primary.stop().catch(() => {})
     }
     try {
+      this.secondaryLive = true
       await this.secondary.start()
       this.secondary.setCurrentVerseRef?.(this.currentVerseRef)
       this.activeProvider = this.secondary
+      this.secondaryDown = null
       this.scheduleAutoReturn()
       this.failoverCallback?.(this.secondaryLabel)
     } catch (error) {
       this.activeProvider = this.primary
       this.switching = false
-      this.errorCallback?.(error instanceof Error ? error : new Error(String(error)))
+      // A half-opened secondary (Deepgram socket) must not leak.
+      await this.secondary.stop().catch(() => {})
+      this.secondaryLive = false
+      this.markSecondaryDown(error instanceof Error ? error : new Error(String(error)))
       throw error
     }
     this.switching = false

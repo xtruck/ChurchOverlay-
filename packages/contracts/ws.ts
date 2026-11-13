@@ -64,11 +64,13 @@ export type WsEventType =
   | "poster:clear"
   | "layout:update"
   | "detector:near-miss"
+  | "verse:lookup-failed"
   | "translation:final"
   | "copilot:suggestions"
   | "branding:update"
   | "overlay:style"
   | "mic:health"
+  | "mic:start-failed"
   | "timer:state"
   | "stage:alert"
   | "outline:show"
@@ -142,6 +144,20 @@ export type DetectorNearMissPayload = {
 }
 
 /**
+ * AUDIT SF-03: operator-only notice that a verse the operator or the detector asked for could not
+ * be shown. "unavailable": the Bible source failed or its circuit is open; "not-found": the source
+ * answered that the verse does not exist (or a recent miss is cached); "invalid": the reference was
+ * rejected by the known-valid index (a typed override that cannot exist). Never sent to viewers.
+ */
+export type VerseLookupFailureReason = "unavailable" | "not-found" | "invalid" | "superseded"
+export type VerseLookupOrigin = "detected" | "override" | "navigate"
+export type VerseLookupFailedPayload = {
+  readonly reference: VerseReference
+  readonly reason: VerseLookupFailureReason
+  readonly origin: VerseLookupOrigin
+}
+
+/**
  * ARCHITECTURE.md section 94: the overlay-facing counterpart to section
  * 92's dashboard-only branding — sent once on every viewer connect (the
  * same "late-join sync" pattern layout:update already uses), never a
@@ -170,7 +186,8 @@ export type BrandingUpdatePayload = {
  * (0 = full scale); null until there is something to measure.
  */
 export type MicHealthPayload = {
-  readonly state: "warming-up" | "ok" | "listening" | "too-quiet" | "clipping" | "noisy" | "no-signal"
+  /** "no-audio" (SF-08): the server received NO audio frames at all for several seconds while the mic is meant to be on (device lost, capture crashed); "no-signal" is frames of digital silence. */
+  readonly state: "warming-up" | "ok" | "listening" | "too-quiet" | "clipping" | "noisy" | "no-signal" | "no-audio"
   readonly speechDbfs: number | null
   readonly noiseDbfs: number | null
   readonly snrDb: number | null
@@ -193,6 +210,14 @@ export type MicHealthPayload = {
   }
   /** Active warnings that tell a deaf app from a quiet room. */
   readonly warnings?: readonly ("no-transcripts" | "gate-closed-loud" | "language-guard-bypassed")[]
+}
+
+/**
+ * mic:start-failed (SF-06) — operator-only: the server could not start transcription for a mic:start (ASR unreachable, start timed out).
+ * The server has reverted to "mic not running"; the dashboard must stop showing "listening". eason is scrubbed of credentials.
+ */
+export type MicStartFailedPayload = {
+  readonly reason: string
 }
 
 /** asr:noise-mode — operator picks how strictly noisy or speaking-in-tongues audio is filtered. */

@@ -6,6 +6,38 @@ import { decodeAudioFrame } from "../../../packages/shared/audio-frame-codec"
 import { validateWsMessage } from "./action-registry"
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto"
 
+/**
+ * Per-role OUTBOUND allow-list (AUDIT S-01). A viewer-token client (overlay, stage, live page, an
+ * OBS browser source) may only ever receive the events those pages render. Everything else
+ * (raw microphone transcripts, pending verses, near-misses, translations, mic health, rundown,
+ * sermon notes, lookup-failure notices, ...) is operator-only. Enforced here, at the single send
+ * point, so a future caller that mistakenly uses broadcast() still cannot leak it to a viewer.
+ * Derived from what apps/overlay, apps/stage and apps/live actually handle.
+ */
+export const VIEWER_OUTBOUND_EVENTS: ReadonlySet<string> = new Set([
+  "verse:show",
+  "verse:clear",
+  "media:show",
+  "media:clear",
+  "announcement:show",
+  "announcement:clear",
+  "definition:show",
+  "definition:clear",
+  "canvas:show",
+  "canvas:clear",
+  "poster:show",
+  "poster:clear",
+  "layout:update",
+  "branding:update",
+  "overlay:style",
+  "outline:show",
+  "outline:clear",
+  "timer:state",
+  "stage:alert",
+  "stage:clear-alert",
+  "status:update",
+])
+
 /** Constant-time token comparison (hashing first makes the lengths equal), as the HTTP API already does. */
 function tokenEquals(offered: string, expected: string): boolean {
   const a = createHash("sha256").update(offered).digest()
@@ -295,9 +327,13 @@ export class ChurchOverlayWsServer {
 
   private broadcastWhere(message: WsMessage, wants: (role: WsRole | undefined) => boolean): void {
     const payload = JSON.stringify(message)
+    const viewerMayReceive = VIEWER_OUTBOUND_EVENTS.has(message.type)
     for (const client of this.wss.clients) {
       if (client.readyState !== client.OPEN) continue
-      if (!wants(this.clientRoles.get(client))) continue
+      const clientRole = this.clientRoles.get(client)
+      if (!wants(clientRole)) continue
+      // S-01: a viewer never receives an event outside the allow-list, whoever asked for the broadcast.
+      if (clientRole !== "operator" && !viewerMayReceive) continue
 
       // A client that stopped reading (stalled network, suspended tab) makes
       // ws queue every further send in memory. Past the bound, drop the
@@ -509,6 +545,7 @@ export class ChurchOverlayWsServer {
     if (role === "viewer") {
       this.guarded("onViewerConnected", role, () =>
         this.onViewerConnected?.((message) => {
+          if (!VIEWER_OUTBOUND_EVENTS.has(message.type)) return // S-01: same allow-list as broadcast()
           if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message))
         })
       )

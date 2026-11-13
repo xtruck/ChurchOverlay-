@@ -61,24 +61,6 @@ const SUBSTRING_RULES: readonly SubstringRule[] = [
   { phrase: "clear the screen", command: { kind: "cancel" } },
   { phrase: "effacer l'ecran", command: { kind: "cancel" } },
   { phrase: "efface l'ecran", command: { kind: "cancel" } },
-  // ARCHITECTURE.md section 65.4 — a spoken display-mode switch. Longer,
-  // specific phrases match as a substring, same reasoning as every other
-  // substring rule above. French phrases deliberately avoid a conjugated
-  // verb ("passer"/"passons"/"passez"/"passe" would each need their own
-  // entry to catch real spoken commands) — "en français"/"en anglais" is
-  // conjugation-independent and matches all of them ("passons en
-  // français", "mets en français", "passe en français", ...).
-  { phrase: "switch to english", command: { kind: "goto-display-mode", mode: "english" } },
-  { phrase: "english only", command: { kind: "goto-display-mode", mode: "english" } },
-  { phrase: "en anglais", command: { kind: "goto-display-mode", mode: "english" } },
-  { phrase: "anglais seulement", command: { kind: "goto-display-mode", mode: "english" } },
-  { phrase: "switch to french", command: { kind: "goto-display-mode", mode: "french" } },
-  { phrase: "french only", command: { kind: "goto-display-mode", mode: "french" } },
-  { phrase: "en francais", command: { kind: "goto-display-mode", mode: "french" } },
-  { phrase: "francais seulement", command: { kind: "goto-display-mode", mode: "french" } },
-  { phrase: "switch to bilingual", command: { kind: "goto-display-mode", mode: "bilingual" } },
-  { phrase: "en bilingue", command: { kind: "goto-display-mode", mode: "bilingual" } },
-  { phrase: "mode bilingue", command: { kind: "goto-display-mode", mode: "bilingual" } },
 ]
 
 const WHOLE_UTTERANCE_RULES: readonly WholeUtteranceRule[] = [
@@ -91,6 +73,54 @@ const WHOLE_UTTERANCE_RULES: readonly WholeUtteranceRule[] = [
   { phrase: "clear", command: { kind: "cancel" } },
   { phrase: "effacer", command: { kind: "cancel" } },
 ]
+
+// ARCHITECTURE.md section 65.4 — a spoken display-mode switch. AUDIT TS-01:
+// this used to match "en français"/"en anglais" as a SUBSTRING, so ordinary
+// preaching ("il parle en français", "ce mot se traduit en français", "en
+// anglais on dit grace") flipped the live display mode and persisted it. A
+// display-mode switch changes what the whole congregation sees, so it must
+// only fire when the utterance IS the command: a short imperative form,
+// anchored at the start, bounded in length, with no trailing prose. The
+// accepted forms are an explicit small list (accent-stripped, lower-case):
+//   FR: "passe en francais", "passons en anglais", "mets en bilingue",
+//       "affichage en francais", "mode bilingue", "francais seulement"
+//   EN: "switch to french", "display in english", "english only",
+//       "bilingual mode"
+// each optionally preceded by "ok"/"please"/"s'il vous plait"/"svp" or
+// followed by "please"/"s'il vous plait"/"svp".
+const MODE_COMMAND_MAX_LENGTH = 48
+const MODE_WORDS_FR = { french: "francais", english: "anglais", bilingual: "bilingue" } as const
+const MODE_WORDS_EN = { french: "french", english: "english", bilingual: "bilingual" } as const
+const MODE_POLITE = "(?:ok |please |svp |s'il vous plait |maintenant |now )?"
+const MODE_POLITE_TAIL = "(?: please| svp| s'il vous plait| maintenant| now)?"
+
+function buildModeRule(mode: "french" | "english" | "bilingual"): RegExp {
+  const fr = MODE_WORDS_FR[mode]
+  const en = MODE_WORDS_EN[mode]
+  const forms = [
+    // French: verb or noun + "en"/"mode" + language word
+    `(?:affichage|affiche|affichez|passe|passons|passez|passer|mets|mettez|mettre|bascule|basculons|basculez)(?: l'affichage)? (?:en|mode) ${fr}`,
+    `(?:mode|affichage) (?:en )?${fr}`,
+    mode === "bilingual" ? "" : `${fr} seulement`,
+    // English
+    `(?:switch|change|go|set|display|show)(?: the display)? (?:to|in) ${en}(?: mode)?`,
+    `(?:${en} mode|mode ${en})`,
+    mode === "bilingual" ? "" : `${en} only`,
+  ].filter(Boolean)
+  return new RegExp(`^${MODE_POLITE}(?:${forms.join("|")})${MODE_POLITE_TAIL}$`)
+}
+
+const MODE_COMMAND_RULES: ReadonlyArray<{ readonly regex: RegExp; readonly command: NavigationCommand }> = (
+  ["english", "french", "bilingual"] as const
+).map((mode) => ({ regex: buildModeRule(mode), command: { kind: "goto-display-mode", mode } }))
+
+// Next/previous-verse/chapter phrases are narrative when preceded by a
+// preposition ("in the next verse he says", "dans le verset suivant") and
+// "go back" is narrative when followed by "to"/"in"/... ("let's go back to
+// the beginning"). Those are descriptions, not commands.
+const NARRATIVE_PREFIX = /\b(?:in|of|from|dans|du)\s+(?:the\s+|this\s+|that\s+|le\s+|ce\s+|cet\s+)?$/
+const GO_BACK_NARRATIVE_TAIL = /^\s+(?:to|in|into|and|home|there|then|on|when|before|after|with)\b/
+const NARRATIVE_GUARDED_KINDS: ReadonlySet<string> = new Set(["next-verse", "previous-verse", "next-chapter", "previous-chapter"])
 
 // "<book> chapter <number>" — e.g. "go to Romans chapter 8". Requires the
 // literal word "chapter" and no trailing verse indicator (neither
@@ -232,7 +262,18 @@ export class NavigationCommandDetector implements INavigationCommandDetector {
     const normalizedWhole = stripTrailingPunctuation(normalized)
 
     for (const rule of SUBSTRING_RULES) {
-      if (normalized.includes(rule.phrase)) commands.push(rule.command)
+      const at = normalized.indexOf(rule.phrase)
+      if (at < 0) continue
+      if (NARRATIVE_GUARDED_KINDS.has(rule.command.kind)) {
+        if (NARRATIVE_PREFIX.test(normalized.slice(0, at))) continue
+        if (rule.phrase === "go back" && GO_BACK_NARRATIVE_TAIL.test(normalized.slice(at + rule.phrase.length))) continue
+      }
+      commands.push(rule.command)
+    }
+    if (normalizedWhole.length <= MODE_COMMAND_MAX_LENGTH) {
+      for (const rule of MODE_COMMAND_RULES) {
+        if (rule.regex.test(normalizedWhole)) commands.push(rule.command)
+      }
     }
     for (const rule of WHOLE_UTTERANCE_RULES) {
       if (normalizedWhole === rule.phrase) commands.push(rule.command)
