@@ -85,3 +85,10 @@ test("remote page: pending verses can be confirmed or dismissed and show a non-l
   assert.match(script, /event\.ctrlKey && event\.key === "Enter" && !event\.repeat && !textEntryFocused/)
   assert.match(script, /setInterval\(renderPendingVerseAge, 1000\)/)
 })
+
+test("remote page: Windows forced-colors keeps state and controls distinct", () => {
+  assert.match(html, /@media \(forced-colors: active\)/)
+  assert.match(html, /:focus-visible\s*\{\s*outline-color:\s*Highlight;/)
+  assert.match(html, /#on-screen\.live\s*\{\s*border:\s*2px solid Highlight;/)
+  assert.match(html, /\.tab-btn\.active::before\s*\{\s*background:\s*Highlight;/)
+})

@@ -5,11 +5,12 @@ import { join } from "node:path"
 
 const REPO_ROOT = join(__dirname, "..", "..", "..", "..")
 
-function readPage(name: "stage" | "live"): { html: string; script: string } {
+function readPage(name: "stage" | "live"): { html: string; script: string; css: string } {
   const directory = join(REPO_ROOT, "apps", name, "public")
   return {
     html: readFileSync(join(directory, "index.html"), "utf8"),
     script: readFileSync(join(directory, `${name}.js`), "utf8"),
+    css: readFileSync(join(directory, name === "stage" ? "stage.css" : "live.css"), "utf8"),
   }
 }
 
@@ -35,3 +36,15 @@ for (const name of ["stage", "live"] as const) {
     assert.match(script, /document\.documentElement\.lang = lang/)
   })
 }
+
+test("stage and live pages preserve status and control contrast in Windows forced-colors", () => {
+  const stage = readPage("stage")
+  const live = readPage("live")
+
+  assert.match(stage.html, /class="status-indicator connection-status" role="status" aria-live="polite"/)
+  assert.match(stage.css, /@media \(forced-colors: active\)/)
+  assert.match(stage.css, /background:\s*Highlight;\s*color:\s*HighlightText;/)
+  assert.match(live.css, /@media \(forced-colors: active\)/)
+  assert.match(live.css, /body\[data-conn="offline"\] \.live-status \{ border-color: Mark; \}/)
+  assert.match(live.css, /\.btn-action:focus-visible \{ outline-color: Highlight; \}/)
+})

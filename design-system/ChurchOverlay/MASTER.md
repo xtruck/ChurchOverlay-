@@ -61,6 +61,8 @@ State colours never double as decoration, and are never church-branded.
 - Every icon-only button has `aria-label`; icons are inline SVG (`currentColor`, 1.75 stroke, 20px grid).
 - Loading/disabled/error states are explicit; errors sit next to the field; destructive actions are visually distinct.
 - State is never colour-only: pair with icon or text (on-air = red + "ON AIR" label).
+- Remote, stage, live and dashboard controls map borders, focus and state cues to system colors in Windows forced-colors mode.
+- The broadcast overlay keeps its operator-selected palette; its legibility is provided by the overlay contrast system rather than OS UI colors.
 
 ## Surfaces
 1. **Dashboard** (`apps/desktop/renderer`): operator console. Clear regions: live preview with tally, verse/queue,

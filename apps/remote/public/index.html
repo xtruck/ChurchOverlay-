@@ -557,6 +557,24 @@
     *, *::before, *::after { transition-duration: 0ms !important; animation: none !important; }
     button:active:not(:disabled) { transform: none; }
   }
+  @media (forced-colors: active) {
+    :focus-visible { outline-color: Highlight; }
+    button { border-color: ButtonBorder; }
+    #on-screen, #pending-verse, .card, .scene-chip, .timer-box, #no-token {
+      border-color: CanvasText;
+    }
+    #on-screen.live { border: 2px solid Highlight; }
+    .on-air-badge, .hdr-onair {
+      background: Highlight;
+      color: HighlightText;
+    }
+    .btn-primary { border-color: ButtonText; }
+    .btn-danger, .btn-clear { border-color: Mark; }
+    .tab-btn.active { color: Highlight; }
+    .tab-btn.active::before { background: Highlight; }
+    #status-pill.connected { border-color: Highlight; color: CanvasText; }
+    #status-pill.disconnected { border-color: Mark; color: CanvasText; }
+  }
 </style>
 </head>
 <body>

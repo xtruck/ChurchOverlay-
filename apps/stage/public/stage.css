@@ -294,6 +294,25 @@ body.stage-body {
   min-width: 0;
 }
 
+.connection-status {
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-1);
+  white-space: nowrap;
+}
+
+.connection-status:has(.dot.connected) {
+  border-color: rgba(63, 207, 142, 0.45);
+  color: var(--live-ok);
+}
+
+.connection-status:has(.dot.disconnected) {
+  border-color: rgba(240, 138, 60, 0.55);
+  color: var(--warn);
+}
+
 .mic-icon {
   width: 18px;
   height: 18px;
@@ -332,5 +351,24 @@ body.stage-body {
   *, *::before, *::after {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .connection-status,
+  .timer-badge { border-color: CanvasText; }
+  .connection-status { background: Canvas; color: CanvasText; }
+  .connection-status:has(.dot.connected) { border-color: Highlight; }
+  .connection-status:has(.dot.disconnected) { border-color: Mark; }
+  .stage-verse-card { border-left-color: Highlight; }
+  .stage-alert-banner {
+    border: 1px solid CanvasText;
+    background: Highlight;
+    color: HighlightText;
+  }
+  .stage-overflow-warning {
+    padding: 2px 6px;
+    background: Mark;
+    color: MarkText;
   }
 }

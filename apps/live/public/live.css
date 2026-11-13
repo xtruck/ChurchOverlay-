@@ -115,11 +115,26 @@ body[data-conn="offline"] .live-pulse { background-color: var(--warn); }
 }
 
 .live-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-1);
   font-size: 13px;
   color: var(--text-muted);
   white-space: nowrap;
 }
-body[data-conn="offline"] .live-status { color: var(--warn); }
+body[data-conn="connected"] .live-status {
+  border-color: rgba(63, 207, 142, 0.45);
+  color: var(--live-ok);
+}
+body[data-conn="offline"] .live-status {
+  border-color: rgba(240, 138, 60, 0.55);
+  background: rgba(240, 138, 60, 0.08);
+  color: var(--warn);
+}
 
 .translation-control {
   display: flex;
@@ -434,5 +449,31 @@ body[data-conn="offline"] .live-status { color: var(--warn); }
   *, *::before, *::after {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .live-status,
+  .verse-hero,
+  .saved-card,
+  .translation-control select,
+  .count-pill {
+    border-color: CanvasText;
+  }
+  .live-status {
+    background: Canvas;
+    color: CanvasText;
+  }
+  body[data-conn="connected"] .live-status { border-color: Highlight; }
+  body[data-conn="offline"] .live-status { border-color: Mark; }
+  .btn-action { border-color: ButtonBorder; }
+  .btn-action:focus-visible { outline-color: Highlight; }
+  .badge-live,
+  .saved-card-ref,
+  .btn-text { color: LinkText; }
+  .toast {
+    border-color: CanvasText;
+    background: Canvas;
+    color: CanvasText;
   }
 }

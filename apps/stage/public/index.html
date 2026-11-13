@@ -14,6 +14,7 @@
     http-equiv="Content-Security-Policy"
     content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src 'self' ws: wss:; base-uri 'none'; form-action 'none'; object-src 'none'"
   />
+  <meta name="theme-color" content="#0b0e13" />
   <meta name="color-scheme" content="dark" />
   <title>Stage Display — ChurchOverlay</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
@@ -64,7 +65,7 @@
 
     <!-- Connection + microphone health -->
     <footer class="stage-footer">
-      <div class="status-indicator">
+      <div class="status-indicator connection-status" role="status" aria-live="polite">
         <span id="ws-indicator" class="dot disconnected" aria-hidden="true"></span>
         <span id="ws-status-text" data-t="disconnected">DISCONNECTED</span>
       </div>
