@@ -58,6 +58,10 @@
       toastShown: "On screen: {ref}",
       toastPending: "Waiting for approval: {ref}",
       toastNotShown: "Not shown. Check the reference.",
+      pendingTitle: "Pending verse",
+      pendingAge: "Waiting {time}",
+      pendingConfirm: "Show on screen",
+      pendingDismiss: "Dismiss",
       alertMsg2min: "2 Minutes Remaining",
       alertMsgWrap: "Wrap Up Now",
       alertMsgNursery: "Nursery #104 Needed",
@@ -125,6 +129,10 @@
       toastShown: "À l'écran : {ref}",
       toastPending: "En attente d'approbation : {ref}",
       toastNotShown: "Non affiché. Vérifiez la référence.",
+      pendingTitle: "Verset en attente",
+      pendingAge: "En attente depuis {time}",
+      pendingConfirm: "Afficher à l'écran",
+      pendingDismiss: "Rejeter",
       alertMsg2min: "Il reste 2 minutes",
       alertMsgWrap: "Conclure maintenant",
       alertMsgNursery: "Pouponnière #104 demandée",
@@ -218,6 +226,12 @@
   const onScreenStateEl = document.getElementById("on-screen-state")
   const onScreenRefEl = document.getElementById("on-screen-ref")
   const onScreenAnnounceEl = document.getElementById("on-screen-announce")
+  const pendingVerseEl = document.getElementById("pending-verse")
+  const pendingVerseRefEl = document.getElementById("pending-verse-ref")
+  const pendingVerseTextEl = document.getElementById("pending-verse-text")
+  const pendingVerseAgeEl = document.getElementById("pending-verse-age")
+  const pendingVerseConfirmBtn = document.getElementById("pending-verse-confirm-btn")
+  const pendingVerseDismissBtn = document.getElementById("pending-verse-dismiss-btn")
   const clearVerseBtn = document.getElementById("clear-verse-btn")
   const sceneListEl = document.getElementById("scene-list")
   const prevBtn = document.getElementById("prev-btn")
@@ -292,6 +306,9 @@
 
   let currentRundownState = null
   let activeWs = null
+  let pendingVerse = null
+  let pendingVerseSince = 0
+  let pendingVerseAgeTimer = null
 
   function setStatus(text, state) {
     statusTextEl.textContent = text
@@ -384,6 +401,56 @@
     verseAckTimer = null
     showToast(t(kind, { ref }), "ok")
   }
+
+  function renderPendingVerseAge() {
+    if (!pendingVerse || !pendingVerseAgeEl) return
+    pendingVerseAgeEl.textContent = t("pendingAge", { time: formatTime(Math.floor((Date.now() - pendingVerseSince) / 1000)) })
+  }
+
+  function showPendingVerse(payload, timestamp) {
+    pendingVerse = payload
+    pendingVerseSince = Number.isFinite(timestamp) && timestamp <= Date.now() ? timestamp : Date.now()
+    pendingVerseRefEl.textContent = referenceText(payload.reference, payload.translation)
+    pendingVerseTextEl.textContent = typeof payload.heard === "string" ? payload.heard : (payload.text || "")
+    pendingVerseEl.hidden = false
+    renderPendingVerseAge()
+    if (pendingVerseAgeTimer) clearInterval(pendingVerseAgeTimer)
+    pendingVerseAgeTimer = setInterval(renderPendingVerseAge, 1000)
+  }
+
+  function clearPendingVerse() {
+    pendingVerse = null
+    pendingVerseSince = 0
+    pendingVerseEl.hidden = true
+    pendingVerseRefEl.textContent = ""
+    pendingVerseTextEl.textContent = ""
+    pendingVerseAgeEl.textContent = ""
+    if (pendingVerseAgeTimer) clearInterval(pendingVerseAgeTimer)
+    pendingVerseAgeTimer = null
+  }
+
+  function sendPendingVerseAction(type) {
+    if (!pendingVerse || !sendJson(activeWs, { id: crypto.randomUUID(), type, timestamp: Date.now(), payload: null })) return
+    clearPendingVerse()
+  }
+
+  pendingVerseConfirmBtn.addEventListener("click", () => sendPendingVerseAction("verse:confirm-pending"))
+  pendingVerseDismissBtn.addEventListener("click", () => sendPendingVerseAction("verse:dismiss-pending"))
+
+  document.addEventListener("keydown", (event) => {
+    if (!pendingVerse) return
+    if (event.key === "Escape" && !event.shiftKey) {
+      event.preventDefault()
+      sendPendingVerseAction("verse:dismiss-pending")
+      return
+    }
+    const target = event.target
+    const textEntryFocused = target instanceof Element && (target.isContentEditable || target.matches("input, textarea, select"))
+    if (event.ctrlKey && event.key === "Enter" && !event.repeat && !textEntryFocused) {
+      event.preventDefault()
+      sendPendingVerseAction("verse:confirm-pending")
+    }
+  })
 
   // Sends a spoken-style reference string ("Jean 3:16") the exact same way
   // a quick-fire or preset button already does: through verse:override,
@@ -546,12 +613,15 @@
         currentRundownState = message.payload
         renderSceneList()
       } else if (message.type === "verse:pending" && message.payload?.reference) {
+        showPendingVerse(message.payload, message.timestamp)
         resolveVerseAck("toastPending", referenceText(message.payload.reference, message.payload.translation))
       } else if (message.type === "verse:show" && message.payload?.reference) {
+        clearPendingVerse()
         const shownText = referenceText(message.payload.reference, message.payload.translation)
         renderOnScreen(shownText)
         resolveVerseAck("toastShown", shownText)
       } else if (message.type === "verse:clear") {
+        clearPendingVerse()
         renderOnScreen(null)
       } else if (message.type === "timer:state" && message.payload) {
         if (remoteTimerClockEl) {

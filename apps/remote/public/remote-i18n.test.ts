@@ -69,3 +69,19 @@ test("remote page: sends are acknowledged with a toast and offline sends are ref
   assert.match(script, /resolveVerseAck\("toastShown"/)
   assert.match(script, /showToast\(t\("toastBadRef"\)/)
 })
+
+test("remote page: pending verses can be confirmed or dismissed and show a non-live age", () => {
+  for (const id of ["pending-verse", "pending-verse-age", "pending-verse-confirm-btn", "pending-verse-dismiss-btn"]) {
+    assert.ok(html.includes(`id="${id}"`), `${id} is missing`)
+  }
+  for (const key of ["pendingTitle", "pendingAge", "pendingConfirm", "pendingDismiss"]) {
+    assert.ok(en.has(key) && fr.has(key), `${key} missing in a language`)
+  }
+  assert.match(html, /id="pending-verse-age" aria-live="off"/)
+  assert.match(script, /message\.type === "verse:pending"[\s\S]*?showPendingVerse\(message\.payload, message\.timestamp\)/)
+  assert.match(script, /sendPendingVerseAction\("verse:confirm-pending"\)/)
+  assert.match(script, /sendPendingVerseAction\("verse:dismiss-pending"\)/)
+  assert.match(script, /event\.key === "Escape" && !event\.shiftKey/)
+  assert.match(script, /event\.ctrlKey && event\.key === "Enter" && !event\.repeat && !textEntryFocused/)
+  assert.match(script, /setInterval\(renderPendingVerseAge, 1000\)/)
+})
