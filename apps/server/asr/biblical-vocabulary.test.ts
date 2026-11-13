@@ -1,6 +1,20 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { plannedBookTerms } from "./biblical-vocabulary"
+import { biblicalVocabularyFor, plannedBookTerms } from "./biblical-vocabulary"
+
+test("biblicalVocabularyFor: includes difficult, less-common book names in French and English", () => {
+  const french = biblicalVocabularyFor("fr")
+  const english = biblicalVocabularyFor("en")
+  for (const book of ["Néhémie", "Ézéchiel", "Michée", "Nahum", "Zacharie", "Esdras", "Osée"]) {
+    assert.ok(french.includes(book), `French hints should include ${book}`)
+  }
+  for (const book of ["Nehemiah", "Ezekiel", "Micah", "Nahum", "Zechariah", "Ezra", "Hosea"]) {
+    assert.ok(english.includes(book), `English hints should include ${book}`)
+  }
+  for (const common of ["Jean", "Marc", "John", "Mark"]) {
+    assert.equal(biblicalVocabularyFor(undefined).includes(common), false, common)
+  }
+})
 
 test("plannedBookTerms: gives French display names by default", () => {
   assert.deepEqual(plannedBookTerms(["john", "romans"], "fr"), ["Jean", "Romains"])

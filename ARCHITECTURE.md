@@ -5211,6 +5211,13 @@ clear server state.
 - `DeepgramProvider`: KeepAlive every 4 s of silence (Deepgram closes idle sockets after ~10 s, and SilenceGate stops forwarding during pauses), `Finalize` on SilenceGate utterance end, `endpointing=300`, and a short boosted biblical vocabulary (`keywords` / nova-3 `keyterm`) that deliberately excludes common names.
 - Bilingual display listens in French on Deepgram (`deepgramLanguageFor`) instead of Deepgram's English default.
 
+**Amendment (2026-11-13).** The static Deepgram vocabulary remains a bounded
+list rather than all 66 books, but now also biases toward several difficult,
+less-common Old Testament names (including Nehemiah, Ezekiel, Micah, Nahum and
+Zechariah, with their French forms). Common short names remain deliberately
+excluded to avoid encouraging their insertion into unrelated speech. Regression
+tests cover the French, English and bilingual URL parameters.
+
 **Invariant kept.** Partial transcripts still never trigger detection (§47 invariant 1). The latency gain comes from fast *finals*, not from acting on partials, which would display "Jean 3" before "verset 16" is spoken.
 
 ## 96. Adaptive Gain and Live Microphone Health

@@ -205,6 +205,25 @@ test("DeepgramProvider: boosts Philemon in French, English and bilingual session
   assert.ok(bilingual.searchParams.getAll("keyterm").includes("Philemon"))
 })
 
+test("DeepgramProvider: biases toward difficult Old Testament names in every language mode", () => {
+  const french = new URL(new DeepgramProvider({ apiKey: "k", language: "fr" }).buildUrl())
+  for (const book of ["Néhémie", "Ézéchiel", "Michée", "Nahum", "Zacharie", "Esdras", "Osée"]) {
+    assert.ok(french.searchParams.getAll("keywords").includes(`${book}:2`), book)
+  }
+
+  const english = new URL(new DeepgramProvider({ apiKey: "k", language: "en" }).buildUrl())
+  for (const book of ["Nehemiah", "Ezekiel", "Micah", "Nahum", "Zechariah", "Ezra", "Hosea"]) {
+    assert.ok(english.searchParams.getAll("keywords").includes(`${book}:2`), book)
+  }
+
+  const bilingual = new URL(new DeepgramProvider({ apiKey: "k", language: "multi" }).buildUrl())
+  const keyterms = bilingual.searchParams.getAll("keyterm")
+  assert.ok(keyterms.includes("Ézéchiel"))
+  assert.ok(keyterms.includes("Ezekiel"))
+  assert.ok(keyterms.includes("Néhémie"))
+  assert.ok(keyterms.includes("Nehemiah"))
+})
+
 test("DeepgramProvider: nova-3 uses keyterm prompting instead of weighted keywords", () => {
   const url = new URL(new DeepgramProvider({ apiKey: "k", language: "en", model: "nova-3" }).buildUrl())
   assert.ok(url.searchParams.getAll("keyterm").includes("Deuteronomy"))
