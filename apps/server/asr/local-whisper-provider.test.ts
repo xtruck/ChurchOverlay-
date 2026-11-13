@@ -38,6 +38,29 @@ async function fakeWhisperServer(handler: (body: Buffer) => { status?: number; j
   }
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
+function whisperResponse(): Response {
+  return new Response('{"text":"ok"}', { status: 200, headers: { "content-type": "application/json" } })
+}
+
+async function enqueueBatches(provider: LocalWhisperProvider, count: number): Promise<void> {
+  for (let i = 0; i < count; i++) {
+    await provider.sendAudio(frame(1000))
+    await provider.onUtteranceEnd()
+  }
+}
+
+async function flushEventLoop(): Promise<void> {
+  for (let i = 0; i < 5; i++) await new Promise<void>((resolve) => setImmediate(resolve))
+}
+
 test("encodeWav: a valid 16 kHz mono PCM16 RIFF header", () => {
   const wav = Buffer.from(encodeWav(Int16Array.from([1, -1, 300])))
   assert.equal(wav.toString("ascii", 0, 4), "RIFF")
@@ -99,60 +122,72 @@ test("LocalWhisperProvider: an endless sentence is still cut at 8 s", async () =
   }
 })
 
-test("LocalWhisperProvider: a slow engine never builds an unbounded backlog (oldest dropped)", async () => {
-  const fake = await fakeWhisperServer(() => ({ json: { text: "ok" }, delayMs: 120 }))
-  try {
-    const provider = new LocalWhisperProvider({ server: fake.endpoint })
-    const results: TranscriptResult[] = []
-    provider.onTranscript((r) => results.push(r))
-    await provider.start()
-    for (let i = 0; i < 6; i++) {
-      await provider.sendAudio(frame(1000))
-      await provider.onUtteranceEnd()
-    }
-    await new Promise((r) => setTimeout(r, 600))
-    assert.ok(fake.requests.length <= 3, `sent ${fake.requests.length}`)
-  } finally {
-    await fake.close()
-  }
+test("LocalWhisperProvider: a stalled engine keeps only a bounded backlog and drops the oldest batches", async () => {
+  const firstRequest = deferred<Response>()
+  let fetchCount = 0
+  const fetchImpl = (() => (++fetchCount === 1 ? firstRequest.promise : Promise.resolve(whisperResponse()))) as typeof fetch
+  const provider = new LocalWhisperProvider({ server: endpoint, fetchImpl, requestTimeoutMs: 60_000 })
+  const results: TranscriptResult[] = []
+  const drained = deferred<void>()
+  provider.onTranscript((result) => {
+    results.push(result)
+    if (results.length === 3) drained.resolve()
+  })
+  await provider.start()
+  await enqueueBatches(provider, 6)
+  await flushEventLoop()
+  assert.equal(fetchCount, 1, "the first inference request remains in flight")
+  firstRequest.resolve(whisperResponse())
+  await drained.promise
+  assert.equal(fetchCount, 3, "only the active batch and two queued batches are sent")
 })
 
 test("LocalWhisperProvider: falling behind speech is reported once (so a failover chain can move to the cloud), not just logged", async () => {
-  const fake = await fakeWhisperServer(() => ({ json: { text: "ok" }, delayMs: 120 }))
-  try {
-    const provider = new LocalWhisperProvider({ server: fake.endpoint })
-    const errors: Error[] = []
-    provider.onError((error) => errors.push(error))
-    await provider.start()
-    for (let i = 0; i < 6; i++) {
-      await provider.sendAudio(frame(1000))
-      await provider.onUtteranceEnd()
-    }
-    await new Promise((r) => setTimeout(r, 600))
-    assert.equal(errors.length, 1, "one overload report per burst, not one per dropped batch")
-    assert.match(errors[0]!.message, /cannot keep up/i)
-  } finally {
-    await fake.close()
-  }
+  const firstRequest = deferred<Response>()
+  let fetchCount = 0
+  const fetchImpl = (() => (++fetchCount === 1 ? firstRequest.promise : Promise.resolve(whisperResponse()))) as typeof fetch
+  const provider = new LocalWhisperProvider({ server: endpoint, fetchImpl, requestTimeoutMs: 60_000 })
+  const errors: Error[] = []
+  const drained = deferred<void>()
+  let results = 0
+  provider.onError((error) => errors.push(error))
+  provider.onTranscript(() => {
+    results += 1
+    if (results === 3) drained.resolve()
+  })
+  await provider.start()
+  await enqueueBatches(provider, 6)
+  await flushEventLoop()
+  assert.equal(errors.length, 1, "one overload report per burst, not one per dropped batch")
+  assert.match(errors[0]!.message, /cannot keep up/i)
+  firstRequest.resolve(whisperResponse())
+  await drained.promise
+  assert.equal(fetchCount, 3)
 })
 
 test("LocalWhisperProvider: a fast engine never reports an overload", async () => {
-  const fake = await fakeWhisperServer(() => ({ json: { text: "ok" } }))
-  try {
-    const provider = new LocalWhisperProvider({ server: fake.endpoint })
-    const errors: Error[] = []
-    provider.onError((error) => errors.push(error))
-    await provider.start()
-    for (let i = 0; i < 6; i++) {
-      await provider.sendAudio(frame(1000))
-      await provider.onUtteranceEnd()
-      await new Promise((r) => setTimeout(r, 40))
-    }
-    await new Promise((r) => setTimeout(r, 200))
-    assert.deepEqual(errors, [])
-  } finally {
-    await fake.close()
+  let fetchCount = 0
+  const provider = new LocalWhisperProvider({
+    server: endpoint,
+    fetchImpl: (() => {
+      fetchCount += 1
+      return Promise.resolve(whisperResponse())
+    }) as typeof fetch,
+  })
+  const errors: Error[] = []
+  provider.onError((error) => errors.push(error))
+  await provider.start()
+
+  for (let i = 0; i < 6; i++) {
+    const completed = deferred<void>()
+    provider.onTranscript(() => completed.resolve())
+    await provider.sendAudio(frame(1000))
+    await provider.onUtteranceEnd()
+    await completed.promise
   }
+
+  assert.equal(fetchCount, 6)
+  assert.deepEqual(errors, [])
 })
 
 test("LocalWhisperProvider: a server error is reported, empty text is silently skipped", async () => {

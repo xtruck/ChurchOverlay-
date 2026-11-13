@@ -655,6 +655,11 @@ export const ACTION_REGISTRY: Readonly<Record<WsCommandType | WsEventType, Actio
     allowedSenders: ["operator"],
     validatePayload: isNullPayload,
   },
+  "verse:dismiss-pending": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isNullPayload,
+  },
   "status:update": {
     kind: "event",
     allowedSenders: [],

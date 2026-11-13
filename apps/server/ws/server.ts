@@ -223,6 +223,8 @@ export class ChurchOverlayWsServer {
   private readonly clientRoles = new WeakMap<WebSocket, WsRole>()
   /** Clients that have shown a sign of life (pong or any message) since the last heartbeat sweep. */
   private readonly aliveClients = new WeakSet<WebSocket>()
+  /** Deferred timeout checks let already-queued pong/message events run before a client is dropped. */
+  private readonly pendingHeartbeatChecks = new WeakSet<WebSocket>()
   private readonly maxBufferedBytes: number
   private readonly maxConnections: number
   private readonly maxCommandsPerSecond: number
@@ -406,8 +408,15 @@ export class ChurchOverlayWsServer {
       if (role === undefined) continue
 
       if (!this.aliveClients.has(client)) {
-        this.onRejected?.("connection timed out: no pong since the previous heartbeat", role)
-        client.terminate()
+        if (this.pendingHeartbeatChecks.has(client)) continue
+        this.pendingHeartbeatChecks.add(client)
+        setImmediate(() => {
+          this.pendingHeartbeatChecks.delete(client)
+          if (this.clientRoles.get(client) === undefined || client.readyState !== client.OPEN) return
+          if (this.aliveClients.has(client)) return
+          this.onRejected?.("connection timed out: no pong since the previous heartbeat", role)
+          client.terminate()
+        })
         continue
       }
 

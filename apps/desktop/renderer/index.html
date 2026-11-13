@@ -74,9 +74,9 @@
         <label for="setup-groq-key" data-i18n="setup.groqKeyLabel">Groq API key</label>
         <input id="setup-groq-key" type="password" placeholder="gsk_…" autocomplete="off" />
         <label for="setup-deepgram-key" data-i18n="setup.deepgramKeyLabel">Deepgram API key (fastest display)</label>
-        <input id="setup-deepgram-key" type="password" placeholder="Deepgram key" autocomplete="off" />
+        <input id="setup-deepgram-key" type="password" data-i18n-placeholder="setup.deepgramKeyPlaceholder" placeholder="Deepgram key" autocomplete="off" />
         <label for="setup-anthropic-key" data-i18n="setup.anthropicKeyLabel">Anthropic API key (AI helpers: reference repair, bilingual notes, translation)</label>
-        <input id="setup-anthropic-key" type="password" placeholder="sk-ant-… (optional)" autocomplete="off" />
+        <input id="setup-anthropic-key" type="password" data-i18n-placeholder="setup.anthropicKeyPlaceholder" placeholder="sk-ant-… (optional)" autocomplete="off" />
         <p class="settings-hint" data-i18n="setup.anthropicKeyHint">Optional. When set, transcript text is sent to Anthropic to power these helpers.</p>
       </div>
 
@@ -338,7 +338,11 @@
                 <div id="verse-pending-heard" class="verse-pending-origin" style="display: none"></div>
                 <div id="verse-pending-ref"></div>
                 <div id="verse-pending-text"></div>
-                <button id="verse-pending-confirm-btn" class="btn-primary btn-lg" aria-keyshortcuts="Control+Enter" data-i18n="livePreview.pendingConfirm">Show on screen</button>
+                <div id="verse-pending-age" class="pending-age" aria-live="off"></div>
+                <div class="pending-actions">
+                  <button id="verse-pending-confirm-btn" class="btn-primary btn-lg" aria-keyshortcuts="Control+Enter" data-i18n="livePreview.pendingConfirm">Show on screen</button>
+                  <button id="verse-pending-dismiss-btn" class="btn-secondary btn-lg" data-i18n="livePreview.pendingDismiss">Dismiss</button>
+                </div>
                 <div id="verse-pending-alternatives" class="verse-pending-alternatives"></div>
               </div>
               <div class="queue-empty empty-state">
@@ -396,7 +400,7 @@
                 <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 2.8 19.5h18.4z"/><path d="M12 10v4M12 17h.01"/></svg>
                 <div class="asr-health-warning-body">
                   <span id="asr-health-warning-text"></span>
-                  <button id="asr-return-primary-btn" type="button" class="btn-secondary btn-small" style="display:none">Return to main provider</button>
+                  <button id="asr-return-primary-btn" type="button" class="btn-secondary btn-small" data-i18n="asrSettings.returnPrimary" style="display:none">Return to main provider</button>
                 </div>
               </div>
               <!-- Echo warning (ARCHITECTURE.md section 132): non-blocking, operator-only, never changes a transcript. -->
@@ -404,7 +408,8 @@
               <div id="asr-provider-line" class="asr-provider-line"></div>
               <div id="audio-diagnostics" class="mic-diagnostics" aria-live="off"></div>
               <div id="mic-capture-status" class="mic-diagnostics" data-state="idle" role="status" aria-live="assertive"></div>
-              <div id="audio-transport-status" class="mic-diagnostics" data-state="idle" role="status" aria-live="polite"></div>
+              <div id="audio-transport-status" class="mic-diagnostics" data-state="idle" aria-live="off"></div>
+              <div id="audio-transport-announcement" class="sr-only" role="status" aria-live="polite"></div>
             </section>
           </aside>
 
@@ -615,7 +620,7 @@
                     </div>
                     <div id="canvas-field-text">
                       <label for="canvas-layer-text" data-i18n="rundown.canvasEditor.textLabel">Text</label>
-                      <input id="canvas-layer-text" type="text" placeholder="Welcome" />
+                      <input id="canvas-layer-text" type="text" data-i18n-placeholder="rundown.canvasEditor.defaultTextPlaceholder" placeholder="Welcome" />
                       <label data-i18n="rundown.canvasEditor.fontLabel">Font</label>
                       <div id="canvas-layer-font" class="option-list" role="group" data-i18n-aria-label="a11y.font">
                         <button type="button" data-font="serif" data-i18n="rundown.canvasEditor.fontSerif">Serif</button>
@@ -962,7 +967,7 @@
                 <button type="button" data-target="logo" data-i18n="overlay.target.logo">Logo</button>
               </div>
               <div class="ov-place">
-                <div id="ov-anchors" class="ov-anchors" role="group" data-i18n-aria-label="overlay.anchors"><button type="button" data-anchor="6,8" aria-label="6,8"></button><button type="button" data-anchor="50,8" aria-label="50,8"></button><button type="button" data-anchor="94,8" aria-label="94,8"></button><button type="button" data-anchor="6,50" aria-label="6,50"></button><button type="button" data-anchor="50,50" aria-label="50,50"></button><button type="button" data-anchor="94,50" aria-label="94,50"></button><button type="button" data-anchor="6,92" aria-label="6,92"></button><button type="button" data-anchor="50,92" aria-label="50,92"></button><button type="button" data-anchor="94,92" aria-label="94,92"></button></div>
+                <div id="ov-anchors" class="ov-anchors" role="group" data-i18n-aria-label="overlay.anchors"><button type="button" data-anchor="6,8" data-i18n-aria-label="overlay.anchor.topLeft" aria-label="Top left"></button><button type="button" data-anchor="50,8" data-i18n-aria-label="overlay.anchor.topCenter" aria-label="Top center"></button><button type="button" data-anchor="94,8" data-i18n-aria-label="overlay.anchor.topRight" aria-label="Top right"></button><button type="button" data-anchor="6,50" data-i18n-aria-label="overlay.anchor.middleLeft" aria-label="Middle left"></button><button type="button" data-anchor="50,50" data-i18n-aria-label="overlay.anchor.center" aria-label="Center"></button><button type="button" data-anchor="94,50" data-i18n-aria-label="overlay.anchor.middleRight" aria-label="Middle right"></button><button type="button" data-anchor="6,92" data-i18n-aria-label="overlay.anchor.bottomLeft" aria-label="Bottom left"></button><button type="button" data-anchor="50,92" data-i18n-aria-label="overlay.anchor.bottomCenter" aria-label="Bottom center"></button><button type="button" data-anchor="94,92" data-i18n-aria-label="overlay.anchor.bottomRight" aria-label="Bottom right"></button></div>
                 <div class="ov-sliders">
                   <label class="ov-slider"><span data-i18n="overlay.place.x">x</span><input id="ov-x" type="range" min="0" max="100" step="0.5" /></label>
                   <label class="ov-slider"><span data-i18n="overlay.place.y">y</span><input id="ov-y" type="range" min="0" max="100" step="0.5" /></label>
@@ -1169,7 +1174,6 @@
               <button id="custom-bible-api-apply-btn" class="btn-secondary btn-small" data-i18n="bibleApi.apply">Apply</button>
             </div>
             <p id="custom-bible-api-status" class="settings-hint settings-note"></p>
-            </div>
           </div>
 
           <div class="card glass">
@@ -1237,6 +1241,7 @@
   <script src="./i18n.js"></script>
   <script src="./audio-stream.js"></script>
   <script src="./mic-capture-guard.js"></script>
+  <script src="./brand-accent.js"></script>
   <script src="./dashboard.js"></script>
   <script src="./overlay-settings.js"></script>
   <script src="./bible-browser.js"></script>

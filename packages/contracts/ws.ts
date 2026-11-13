@@ -23,6 +23,7 @@ export type WsCommandType =
   | "scene:previous"
   | "scene:goto"
   | "verse:confirm-pending"
+  | "verse:dismiss-pending"
   | "poster:set"
   | "poster:clear"
   | "poster:set-duration"

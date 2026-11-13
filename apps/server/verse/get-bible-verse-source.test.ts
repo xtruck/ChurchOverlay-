@@ -138,3 +138,40 @@ test("GetBibleVerseSource: a network failure (fetch rejects) is a real failure â
   )
   await assert.rejects(() => source.getVerse(JOHN_3_16), /network down/)
 })
+
+test("GetBibleVerseSource: a stalled verse or chapter request times out, aborts fetch, and clears its timer", async () => {
+  for (const method of ["getVerse", "getChapter"] as const) {
+    let expire: (() => void) | undefined
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined
+    let cleared = false
+    let signal: AbortSignal | undefined
+    const timers = {
+      setTimeout(callback: () => void) {
+        expire = () => callback()
+        timeoutHandle = setTimeout(() => {}, 60_000)
+        return timeoutHandle
+      },
+      clearTimeout(handle: ReturnType<typeof setTimeout>) {
+        cleared = true
+        clearTimeout(handle)
+      },
+    }
+    const source = new GetBibleVerseSource(
+      (async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+        signal = init?.signal as AbortSignal
+        return await new Promise<Response>(() => {})
+      }) as typeof fetch,
+      "ls1910",
+      "https://example.test",
+      { timeoutMs: 5000, timers }
+    )
+    const lookup = method === "getVerse" ? source.getVerse(JOHN_3_16) : source.getChapter("john", 3)
+    await Promise.resolve()
+    assert.ok(expire, `${method} request should arm its timeout`)
+    expire()
+    await assert.rejects(lookup, /request timed out after 5000 ms/)
+    assert.equal(signal?.aborted, true, `${method} fetch should be aborted`)
+    assert.equal(cleared, true, `${method} timeout should be cleared in finally`)
+    if (timeoutHandle) clearTimeout(timeoutHandle)
+  }
+})

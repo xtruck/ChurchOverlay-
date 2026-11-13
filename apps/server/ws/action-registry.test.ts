@@ -27,6 +27,7 @@ test("ACTION_REGISTRY: contains all registered actions including Phase 2 and inn
       "verse:show",
       "verse:pending",
       "verse:confirm-pending",
+      "verse:dismiss-pending",
       "verse:lookup-failed",
       "media:select",
       "media:play",
@@ -558,6 +559,21 @@ test("validateWsMessage: rejects verse:confirm-pending with a non-null payload, 
     "viewer"
   )
   assert.equal(fromViewer.ok, false)
+})
+
+test("validateWsMessage: verse:dismiss-pending is a null-payload operator command", () => {
+  assert.equal(
+    validateWsMessage({ id: "01ABC", type: "verse:dismiss-pending", timestamp: 1700000000000, payload: null }, "operator").ok,
+    true
+  )
+  assert.equal(
+    validateWsMessage({ id: "01ABC", type: "verse:dismiss-pending", timestamp: 1700000000000, payload: {} }, "operator").ok,
+    false
+  )
+  assert.equal(
+    validateWsMessage({ id: "01ABC", type: "verse:dismiss-pending", timestamp: 1700000000000, payload: null }, "viewer").ok,
+    false
+  )
 })
 
 test("ACTION_REGISTRY['verse:pending'].validatePayload: accepts a valid pending Verse (no trigger required), rejects a malformed one", () => {

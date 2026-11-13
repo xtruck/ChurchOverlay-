@@ -258,6 +258,7 @@
     textEl.style.fontSize = ""
     secondaryTextEl.style.fontSize = ""
     verseCardEl.style.removeProperty("--fit-scale")
+    delete verseCardEl.dataset.fitLimited
   }
 
   function setFontSize(fontSize) {
@@ -318,6 +319,8 @@
     const overflowWidth = contentScrollWidth() / maxWidth
     const overflowHeight = cardContentHeight() / maxHeight
     const scale = Math.min(1, 1 / Math.max(overflowWidth, overflowHeight))
+    if (fontSize <= limits.minFontPx) verseCardEl.dataset.fitLimited = "true"
+    else delete verseCardEl.dataset.fitLimited
     // Sub-pixel rounding noise (a 0.9996 ratio) is not an overflow: it would only blur the type.
     if (scale < 0.995) verseCardEl.style.setProperty("--fit-scale", String(scale))
   }
@@ -936,6 +939,17 @@
     canvasLayerEl.innerHTML = ""
   }
 
+  function clearAllContent() {
+    clearVerse()
+    clearMedia()
+    clearPoster()
+    clearAnnouncement()
+    clearDefinition()
+    clearOutline()
+    clearCanvas()
+  }
+  const disconnectFailsafe = Motion.createDisconnectFailsafe(clearAllContent)
+
   function connect() {
     if (!token) {
       setStatus("no viewer token in URL (add ?token=...)", false, true)
@@ -955,18 +969,7 @@
     const ws = new WebSocket("ws://" + window.location.hostname + ":" + wsPort, [token])
 
     ws.addEventListener("open", () => {
-      // While this socket was down the operator may have cleared the screen,
-      // and a clear sent to nobody is lost. The server's connect-time resync
-      // re-sends verse/media/poster only if one is active, and never sends a
-      // clear — so without this, a verse cleared during a Wi-Fi blip stays on
-      // the stream. Reset exactly the channels the server resyncs; the open
-      // event fires before any message of this connection, so a still-active
-      // item is simply shown again a moment later.
-      if (!designPreview) {
-        clearVerse()
-        clearMedia()
-        clearPoster()
-      }
+      disconnectFailsafe.cancel()
       lastStyleRevision = -1
       reconnectAttempts = 0
       // Section 133: a verse re-sent right after this (connect-time resync,
@@ -975,6 +978,7 @@
       setStatus("connected", true)
     })
     ws.addEventListener("close", () => {
+      if (!designPreview) disconnectFailsafe.start()
       const delay = nextReconnectDelay()
       setStatus("disconnected — retrying in " + Math.round(delay / 1000) + "s…")
       setTimeout(connect, delay)

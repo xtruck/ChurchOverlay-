@@ -45,10 +45,45 @@ function connect(port: number, token: string): Promise<WebSocket> {
   })
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+class FakeClock {
+  private time = 0
+  private nextId = 0
+  private readonly scheduled = new Map<number, { readonly at: number; readonly callback: () => void }>()
+  readonly timers = {
+    now: () => this.time,
+    setTimeout: (callback: () => void, ms: number) => {
+      const id = ++this.nextId
+      this.scheduled.set(id, { at: this.time + ms, callback })
+      return id
+    },
+    clearTimeout: (handle: unknown) => {
+      if (typeof handle === "number") this.scheduled.delete(handle)
+    },
+  }
+
+  tick(ms: number): void {
+    const target = this.time + ms
+    while (true) {
+      const next = [...this.scheduled.entries()]
+        .filter(([, timer]) => timer.at <= target)
+        .sort((a, b) => a[1].at - b[1].at)[0]
+      if (!next) break
+      const [id, timer] = next
+      this.scheduled.delete(id)
+      this.time = timer.at
+      timer.callback()
+    }
+    this.time = target
+  }
+}
+
+async function flushEvents(): Promise<void> {
+  for (let i = 0; i < 5; i++) await new Promise<void>((resolve) => setImmediate(resolve))
+}
 
 async function harness(mode?: "review") {
   const asr = new FakeAsr()
+  const clock = new FakeClock()
   const app = await startAppCore({
     asr,
     detector: new RegexDetector(),
@@ -58,6 +93,7 @@ async function harness(mode?: "review") {
     port: 0,
     tokens: TOKENS,
     referenceSettleMs: SETTLE_MS,
+    timers: clock.timers,
     ...(mode ? { verseConfirmationMode: mode } : {}),
   })
   const viewer = await connect(app.wsServer.port, TOKENS.viewerToken)
@@ -76,7 +112,7 @@ async function harness(mode?: "review") {
     const v = m.payload as Verse
     if (m.type === "verse:pending") pending.push(`${v.reference.book} ${v.reference.chapter}:${v.reference.verse}`)
   })
-  return { asr, app, viewer, operatorSocket, shown, pending }
+  return { asr, app, viewer, operatorSocket, shown, pending, clock }
 }
 
 async function run(fn: (h: Awaited<ReturnType<typeof harness>>) => Promise<void>, mode?: "review"): Promise<void> {
@@ -93,93 +129,97 @@ async function run(fn: (h: Awaited<ReturnType<typeof harness>>) => Promise<void>
 test("settle: English 'verse 1' | '2' chunk split shows John 11:12, never John 11:1", () =>
   run(async ({ asr, shown }) => {
     asr.say("Turn with me to John 11 verse 1")
-    await sleep(30)
+    await flushEvents()
     assert.deepEqual(shown, [], "a verse that may still grow must not reach the overlay yet")
     asr.say("2")
-    await sleep(SETTLE_MS * 3)
+    await flushEvents()
     assert.deepEqual(shown, ["john 11:12"])
   }))
 
 test("settle: French 'verset 1' | '2.' chunk split shows Jean 11:12 only", () =>
   run(async ({ asr, shown }) => {
     asr.say("Ouvrez vos Bibles dans Jean chapitre 11 verset 1")
-    await sleep(30)
+    await flushEvents()
     asr.say("2.")
-    await sleep(SETTLE_MS * 3)
+    await flushEvents()
     assert.deepEqual(shown, ["john 11:12"])
   }))
 
 test("settle: compact colon form 'John 11:1' | '2' is completed too", () =>
   run(async ({ asr, shown }) => {
     asr.say("John 11:1")
-    await sleep(30)
+    await flushEvents()
     asr.say("2")
-    await sleep(SETTLE_MS * 3)
+    await flushEvents()
     assert.deepEqual(shown, ["john 11:12"])
   }))
 
 test("settle: a three-way split 'verse' | '1' | '2' (assembler path) still ends on John 11:12", () =>
   run(async ({ asr, shown }) => {
     asr.say("John 11 verse")
-    await sleep(20)
+    await flushEvents()
     asr.say("1")
-    await sleep(20)
+    await flushEvents()
     asr.say("2")
-    await sleep(SETTLE_MS * 3)
+    await flushEvents()
     assert.deepEqual(shown, ["john 11:12"])
   }))
 
 test("settle: when nothing completes the number the held verse is shown after the settle window", () =>
-  run(async ({ asr, shown }) => {
+  run(async ({ asr, shown, clock }) => {
     asr.say("Turn to John 11 verse 1")
-    await sleep(SETTLE_MS * 3)
+    await flushEvents()
+    clock.tick(SETTLE_MS)
+    await flushEvents()
     assert.deepEqual(shown, ["john 11:1"])
   }))
 
 test("settle: an unrelated next sentence flushes the held verse once, and is not merged into it", () =>
   run(async ({ asr, shown }) => {
     asr.say("Turn to John 11 verse 1")
-    await sleep(20)
+    await flushEvents()
     asr.say("Let us read it together")
-    await sleep(SETTLE_MS * 3)
+    await flushEvents()
     assert.deepEqual(shown, ["john 11:1"])
   }))
 
 test("settle: a verse that cannot grow (John 3:16, John 11:12) is shown immediately, no added latency", () =>
   run(async ({ asr, shown }) => {
     asr.say("Jean 3 verset 16")
-    await sleep(40)
+    await flushEvents()
     assert.deepEqual(shown, ["john 3:16"])
     asr.say("John 11 verse 12")
-    await sleep(40)
+    await flushEvents()
     assert.deepEqual(shown, ["john 3:16", "john 11:12"])
   }))
 
 test("settle: a later fragment never replaces an already-correct display", () =>
   run(async ({ asr, shown }) => {
     asr.say("John 11 verse 12")
-    await sleep(40)
+    await flushEvents()
     asr.say("2")
     asr.say("1")
-    await sleep(SETTLE_MS * 3)
+    await flushEvents()
     assert.deepEqual(shown, ["john 11:12"])
   }))
 
 test("settle: a completion that makes the verse invalid is not merged; the original is kept", () =>
-  run(async ({ asr, shown }) => {
+  run(async ({ asr, shown, clock }) => {
     asr.say("John 11 verse 1")
-    await sleep(20)
+    await flushEvents()
     asr.say("99")
-    await sleep(SETTLE_MS * 3)
+    await flushEvents()
+    clock.tick(SETTLE_MS)
+    await flushEvents()
     assert.deepEqual(shown, ["john 11:1"])
   }))
 
 test("settle: a numbered book right after the held verse is not swallowed as its completion", () =>
   run(async ({ asr, shown }) => {
     asr.say("John 11 verse 1")
-    await sleep(20)
+    await flushEvents()
     asr.say("2 Corinthians 5 verse 17")
-    await sleep(SETTLE_MS * 3)
+    await flushEvents()
     assert.deepEqual(shown.sort(), ["2 corinthians 5:17", "john 11:1"].sort())
   }))
 
@@ -187,28 +227,30 @@ test("settle: partial transcripts never trigger or complete a held reference", (
   run(async ({ asr, shown }) => {
     asr.say("John 11 verse 1", "partial")
     asr.say("John 11 verse 12", "partial")
-    await sleep(SETTLE_MS * 3)
+    await flushEvents()
     assert.deepEqual(shown, [])
   }))
 
 test("settle: in review mode the completed reference becomes the pending suggestion, never the truncated one", () =>
   run(async ({ asr, shown, pending }) => {
     asr.say("John 11 verse 1")
-    await sleep(20)
+    await flushEvents()
     asr.say("2")
-    await sleep(SETTLE_MS * 3)
+    await flushEvents()
     assert.deepEqual(shown, [])
     assert.deepEqual(pending, ["john 11:12"])
   }, "review"))
 
 test("settle: an operator Clear during the settle window cancels the held verse", () =>
-  run(async ({ asr, app, shown }) => {
+  run(async ({ asr, app, shown, clock }) => {
     // Connect first: opening the socket under load can outlast the settle window.
     const op = await connect(app.wsServer.port, TOKENS.operatorToken)
     asr.say("John 11 verse 1")
-    await sleep(20)
+    await flushEvents()
     op.send(JSON.stringify({ id: "x", type: "verse:clear", timestamp: Date.now(), payload: null }))
-    await sleep(SETTLE_MS * 3)
+    await flushEvents()
+    clock.tick(SETTLE_MS)
+    await flushEvents()
     op.close()
     assert.deepEqual(shown, [])
   }))
@@ -218,16 +260,18 @@ test("settle: an operator Clear during the settle window cancels the held verse"
 test("nav: 'John 11' | 'verse 12' chunk split shows John 11:12 and NEVER John 11:1 on the overlay", () =>
   run(async ({ asr, shown }) => {
     asr.say("Turn with me to John 11")
-    await sleep(30)
+    await flushEvents()
     asr.say("verse 12")
-    await sleep(SETTLE_MS * 3)
+    await flushEvents()
     assert.deepEqual(shown, ["john 11:12"])
   }))
 
 test("nav: a chapter-only mention ('In John 11 we read about Lazarus') is only offered, never shown", () =>
-  run(async ({ asr, shown, pending }) => {
+  run(async ({ asr, shown, pending, clock }) => {
     asr.say("In John 11 we read about Lazarus")
-    await sleep(SETTLE_MS * 3)
+    await flushEvents()
+    clock.tick(SETTLE_MS)
+    await flushEvents()
     assert.deepEqual(shown, [])
     assert.deepEqual(pending, ["john 11:1"])
   }))
@@ -235,20 +279,22 @@ test("nav: a chapter-only mention ('In John 11 we read about Lazarus') is only o
 test("nav: French 'Jean chapitre 11' | 'verset 1' | '2' ends on Jean 11:12, nothing truncated is shown", () =>
   run(async ({ asr, shown }) => {
     asr.say("Jean chapitre 11")
-    await sleep(20)
+    await flushEvents()
     asr.say("verset 1")
-    await sleep(20)
+    await flushEvents()
     asr.say("2")
-    await sleep(SETTLE_MS * 3)
+    await flushEvents()
     assert.deepEqual(shown, ["john 11:12"])
   }))
 
 test("nav: a split chapter number 'Jean 1' | '1' offers John 11:1, never John 1:1", () =>
-  run(async ({ asr, shown, pending }) => {
+  run(async ({ asr, shown, pending, clock }) => {
     asr.say("Ouvrons dans Jean 1")
-    await sleep(20)
+    await flushEvents()
     asr.say("1")
-    await sleep(SETTLE_MS * 3)
+    await flushEvents()
+    clock.tick(SETTLE_MS)
+    await flushEvents()
     assert.deepEqual(shown, [])
     assert.deepEqual(pending, ["john 11:1"])
   }))
@@ -256,9 +302,9 @@ test("nav: a split chapter number 'Jean 1' | '1' offers John 11:1, never John 1:
 test("nav: a bare 'verse 5' after a chapter was announced still shows immediately when it cannot grow", () =>
   run(async ({ asr, shown }) => {
     asr.say("Dans Jean chapitre 3")
-    await sleep(20)
+    await flushEvents()
     asr.say("verset 16")
-    await sleep(60)
+    await flushEvents()
     assert.deepEqual(shown, ["john 3:16"])
   }))
 
@@ -267,46 +313,47 @@ test("nav: a bare 'verse 5' after a chapter was announced still shows immediatel
 test("settle: 'In Genesis 1 verse 1' + '3 things I want to say' keeps Genesis 1:1 (never 1:13)", () =>
   run(async ({ asr, shown }) => {
     asr.say("In Genesis 1 verse 1")
-    await sleep(20)
+    await flushEvents()
     asr.say("3 things I want to say")
-    await sleep(SETTLE_MS * 3)
+    await flushEvents()
     assert.deepEqual(shown, ["genesis 1:1"])
   }))
 
 test("settle: 'Jean 3 verset 1.' + '2 choses à retenir' keeps Jean 3:1 (never 3:12)", () =>
   run(async ({ asr, shown }) => {
     asr.say("Jean 3 verset 1.")
-    await sleep(20)
+    await flushEvents()
     asr.say("2 choses à retenir")
-    await sleep(SETTLE_MS * 3)
+    await flushEvents()
     assert.deepEqual(shown, ["john 3:1"])
   }))
 
 test("settle: 'Romans 8 verse 1' + '1 minute' keeps Romans 8:1", () =>
   run(async ({ asr, shown }) => {
     asr.say("Romans 8 verse 1")
-    await sleep(20)
+    await flushEvents()
     asr.say("1 minute")
-    await sleep(SETTLE_MS * 3)
+    await flushEvents()
     assert.deepEqual(shown, ["romans 8:1"])
   }))
 
 test("settle: bare '2.' completes 'Jean 11 verset 1.' and bare '3' completes 'John 12 verse 1' (legitimate splits)", () =>
   run(async ({ asr, shown }) => {
     asr.say("Jean 11 verset 1.")
-    await sleep(20)
+    await flushEvents()
     asr.say("2.")
-    await sleep(SETTLE_MS * 3)
+    await flushEvents()
     asr.say("John 12 verse 1")
-    await sleep(20)
+    await flushEvents()
     asr.say("3")
-    await sleep(SETTLE_MS * 3)
+    await flushEvents()
     assert.deepEqual(shown, ["john 11:12", "john 12:13"])
   }))
 
 test("settle: an operator Clear during the window is logged as verse.settle-dropped", async () => {
   const lines: string[] = []
   const asr = new FakeAsr()
+  const clock = new FakeClock()
   const app = await startAppCore({
     asr,
     detector: new RegexDetector(),
@@ -316,13 +363,16 @@ test("settle: an operator Clear during the window is logged as verse.settle-drop
     port: 0,
     tokens: TOKENS,
     referenceSettleMs: SETTLE_MS,
+    timers: clock.timers,
   })
   try {
     asr.say("John 11 verse 1")
-    await sleep(20)
+    await flushEvents()
     const op = await connect(app.wsServer.port, TOKENS.operatorToken)
     op.send(JSON.stringify({ id: "x", type: "verse:clear", timestamp: Date.now(), payload: null }))
-    await sleep(SETTLE_MS * 3)
+    await flushEvents()
+    clock.tick(SETTLE_MS)
+    await flushEvents()
     op.close()
     assert.ok(lines.some((l) => l.includes("verse.settle-dropped") && l.includes("operator-clear")))
   } finally {

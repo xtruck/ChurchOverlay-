@@ -8,8 +8,8 @@ import type {
   MediaCue,
   MediaShowPayload,
   NavigationCommand,
+  OutlineShowPayload,
   Rundown,
-  RundownScene,
   RundownStatePayload,
   TranscriptResult,
   Verse,
@@ -27,6 +27,7 @@ import type {
 
 /** Fixed operator-safe ceiling for every visible verse: 2 minutes 30 seconds. */
 export const DEFAULT_VERSE_AUTO_CLEAR_MS = 150_000
+const OUTLINE_AUTO_CLEAR_MS = 14_000
 /** Upper bound on verse scenes prefetched per rundown:load (sequential requests). */
 const MAX_RUNDOWN_PREFETCH = 50
 import { heardSnippet } from "./heard-snippet"
@@ -126,6 +127,12 @@ type ObservableAsrProvider = AsrProvider & {
  */
 type SermonNotesSummarizer = {
   summarize(transcriptText: string): Promise<string>
+}
+
+function unrefTimer(handle: unknown): void {
+  if (typeof handle !== "object" || handle === null || !("unref" in handle)) return
+  const unref = handle.unref
+  if (typeof unref === "function") unref.call(handle)
 }
 
 export type StartAppCoreOptions = {
@@ -448,6 +455,8 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   // SF-08: wall-clock watch for "no frames at all", which the frame-clocked health above cannot see.
   const timers = options.timers ?? {}
   const clockNow = timers.now ?? Date.now
+  const setAppTimeout = timers.setTimeout ?? ((callback: () => void, ms: number) => setTimeout(callback, ms))
+  const clearAppTimeout = timers.clearTimeout ?? ((handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>))
   const micAudioWatchdog = new MicAudioWatchdog()
   let micWatchdogTimer: unknown = null
   const asrLifecycleTimeoutMs = options.asrLifecycleTimeoutMs ?? ASR_LIFECYCLE_TIMEOUT_MS
@@ -481,6 +490,12 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   const glossaryDetector = new GlossaryDetector()
   const definitionClearMs = options.definitionClearMs ?? 12000
   let definitionClearTimer: ReturnType<typeof setTimeout> | null = null
+  let activeDefinition: DefinitionShowPayload | null = null
+  let definitionExpiresAt = 0
+  let activeAnnouncement: { readonly title: string; readonly body: string } | null = null
+  let activeCanvas: CanvasSceneData | null = null
+  let activeOutline: OutlineShowPayload | null = null
+  let outlineClearTimer: ReturnType<typeof setTimeout> | null = null
   // ARCHITECTURE.md section 67: a principal poster is a persistent
   // background layer, not a scene the rundown state machine needs to know
   // about — held here purely so showVerse() knows whether to arm the
@@ -755,57 +770,40 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       // media/rundown blocks below, the same "late-join sync" reasoning
       // section 60.4 already established for every other persistent
       // content type.
-      if (principalPosterCueId !== null) {
-        const posterCue = mediaLibrary?.resolve(principalPosterCueId) ?? null
-        if (posterCue) {
-          send({ id: generateUlid(), type: "poster:show", timestamp: Date.now(), payload: { cue: posterCue } })
-        }
-      }
+      const posterCue = principalPosterCueId === null ? null : mediaLibrary?.resolve(principalPosterCueId) ?? null
+      if (posterCue) send({ id: generateUlid(), type: "poster:show", timestamp: Date.now(), payload: { cue: posterCue } })
+      else send({ id: generateUlid(), type: "poster:clear", timestamp: Date.now(), payload: null })
       const payload = mediaPlayback.currentPayloadForSync()
-      if (payload) {
-        send({ id: generateUlid(), type: "media:show", timestamp: Date.now(), payload })
-      }
-      // ARCHITECTURE.md section 64.4 (reusing section 60.4's reconnect/
-      // late-join sync pattern): a viewer that connects while a rundown is
-      // showing a verse/announcement/blank scene must see it immediately.
-      // Media scenes are deliberately excluded here — the block above
-      // already resyncs mediaPlayback's actual current state without the
-      // side effect activate() has (resetting playback to position 0),
-      // which re-running scene content for a "media" scene would cause.
+      if (payload) send({ id: generateUlid(), type: "media:show", timestamp: Date.now(), payload })
+      else send({ id: generateUlid(), type: "media:clear", timestamp: Date.now(), payload: null })
       const rundownState = rundownController.currentState()
-      if (rundownState) {
-        send({ id: generateUlid(), type: "rundown:state", timestamp: Date.now(), payload: rundownState })
-        if (rundownState.interrupted) {
-          // The scene rundownController reports here is the PAUSED one —
-          // what's actually visible right now is the interrupting verse
-          // (section 64.2), so that's what a reconnecting viewer needs,
-          // not the paused scene's own content underneath it.
-          if (lastShownVerse) {
-            send({ id: generateUlid(), type: "verse:show", timestamp: Date.now(), payload: lastShownVerse })
-          }
-        } else if (rundownState.scene.kind !== "media") {
-          syncSceneContent(rundownState.scene, send).catch((err) => {
-            logger.error({
-              component: "app-core",
-              event: "rundown.viewer-sync-failed",
-              error: err instanceof Error ? err.message : String(err),
-            })
-          })
-        }
-      } else if (lastShownVerse) {
-        // ARCHITECTURE.md production audit (section 74): a real,
-        // structural gap, not just a narrow timing race — this branch
-        // did not exist at all before. A verse shown OUTSIDE any rundown
-        // (the common case: live detection/override/navigation with no
-        // rundown loaded) was never resynced to a reconnecting viewer,
-        // full stop — only the rundown-interrupt case above was covered.
-        // A dropped OBS/overlay WS connection (section 48's bounded
-        // reconnect backoff, commit 362e51d) reconnecting while a verse
-        // was showing would silently never see it again until the next
-        // detection — a plausible, previously-unfixed explanation for an
-        // intermittently "missing" verse that WAS genuinely detected.
-        send({ id: generateUlid(), type: "verse:show", timestamp: Date.now(), payload: lastShownVerse })
+      if (rundownState) send({ id: generateUlid(), type: "rundown:state", timestamp: Date.now(), payload: rundownState })
+      // Resync the authoritative displayed state rather than replaying the
+      // rundown scene. This preserves current content across a quick reconnect
+      // and clears content that changed while the viewer was disconnected.
+      if (lastShownVerse) send({ id: generateUlid(), type: "verse:show", timestamp: Date.now(), payload: lastShownVerse })
+      else send({ id: generateUlid(), type: "verse:clear", timestamp: Date.now(), payload: null })
+      if (activeAnnouncement) {
+        send({ id: generateUlid(), type: "announcement:show", timestamp: Date.now(), payload: activeAnnouncement })
+      } else {
+        send({ id: generateUlid(), type: "announcement:clear", timestamp: Date.now(), payload: null })
       }
+      if (activeCanvas) send({ id: generateUlid(), type: "canvas:show", timestamp: Date.now(), payload: activeCanvas })
+      else send({ id: generateUlid(), type: "canvas:clear", timestamp: Date.now(), payload: null })
+      if (activeDefinition && definitionExpiresAt > Date.now()) {
+        send({ id: generateUlid(), type: "definition:show", timestamp: Date.now(), payload: activeDefinition })
+      } else if (activeDefinition) {
+        activeDefinition = null
+        definitionExpiresAt = 0
+        if (definitionClearTimer) clearTimeout(definitionClearTimer)
+        definitionClearTimer = null
+        send({ id: generateUlid(), type: "definition:clear", timestamp: Date.now(), payload: null })
+      } else {
+        send({ id: generateUlid(), type: "definition:clear", timestamp: Date.now(), payload: null })
+      }
+      if (activeOutline) {
+        send({ id: generateUlid(), type: "outline:show", timestamp: Date.now(), payload: activeOutline })
+      } else send({ id: generateUlid(), type: "outline:clear", timestamp: Date.now(), payload: null })
     },
   })
 
@@ -1035,8 +1033,8 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   type DetectionJob = { readonly detect: TranscriptResult; readonly deliver: TranscriptResult; readonly kind: "detection" | "assembled-detection" }
   type NavigationHold = { readonly command: NavigationCommand; readonly transcript: TranscriptResult }
   type SettleHold =
-    | { readonly kind: "detection"; readonly job: DetectionJob; readonly timer: ReturnType<typeof setTimeout> }
-    | { readonly kind: "navigation"; readonly nav: NavigationHold; readonly timer: ReturnType<typeof setTimeout> }
+    | { readonly kind: "detection"; readonly job: DetectionJob; readonly timer: unknown }
+    | { readonly kind: "navigation"; readonly nav: NavigationHold; readonly timer: unknown }
   let settleHold: SettleHold | null = null
 
   /** Discards a held reference. A `reason` means it is an outside cancel (not a flush or a merge) and is logged. */
@@ -1050,7 +1048,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         metadata: { reason, kind: held.kind, text: (held.kind === "detection" ? held.job.detect.text : held.nav.transcript.text).slice(0, 120) },
       })
     }
-    if (settleHold) clearTimeout(settleHold.timer)
+    if (settleHold) clearAppTimeout(settleHold.timer)
     settleHold = null
   }
 
@@ -1121,8 +1119,8 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       const references = detectValidatedReferences(detector, index, job.detect.text)
       if (references.length > 0 && trailingVerseCouldGrow(job.detect.text, references, index)) {
         flushSettleHold()
-        const timer = setTimeout(flushSettleHoldFromTimer, referenceSettleMs)
-        timer.unref?.()
+        const timer = setAppTimeout(flushSettleHoldFromTimer, referenceSettleMs)
+        unrefTimer(timer)
         settleHold = { kind: "detection", job, timer }
         logger.info({
           component: "app-core",
@@ -1154,8 +1152,8 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     // ("Jean chapitre 11" + "verset 1"): that hold covers it, and flushing it here would show the stub.
     if (settleHold?.kind === "detection" && settleHold.job.deliver.correlationId === transcript.correlationId) return true
     flushSettleHold()
-    const timer = setTimeout(flushSettleHoldFromTimer, referenceSettleMs)
-    timer.unref?.()
+    const timer = setAppTimeout(flushSettleHoldFromTimer, referenceSettleMs)
+    unrefTimer(timer)
     settleHold = { kind: "navigation", nav: { command, transcript }, timer }
     logger.info({
       component: "app-core",
@@ -1341,6 +1339,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   }
 
   function broadcastAnnouncement(payload: { title: string; body: string }, correlationId?: string): void {
+    activeAnnouncement = payload
     wsServer.broadcast({
       id: generateUlid(),
       type: "announcement:show",
@@ -1433,6 +1432,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   }
 
   function broadcastAnnouncementClear(correlationId?: string): void {
+    activeAnnouncement = null
     wsServer.broadcast({
       id: generateUlid(),
       type: "announcement:clear",
@@ -1449,6 +1449,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
    * phase (invariant 23).
    */
   function broadcastCanvas(canvas: CanvasSceneData, correlationId?: string): void {
+    activeCanvas = canvas
     wsServer.broadcast({
       id: generateUlid(),
       type: "canvas:show",
@@ -1459,6 +1460,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   }
 
   function broadcastCanvasClear(correlationId?: string): void {
+    activeCanvas = null
     wsServer.broadcast({
       id: generateUlid(),
       type: "canvas:clear",
@@ -1536,6 +1538,8 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
    */
   function broadcastDefinition(definition: DefinitionShowPayload, correlationId?: string): void {
     if (definitionClearTimer) clearTimeout(definitionClearTimer)
+    activeDefinition = definition
+    definitionExpiresAt = Date.now() + definitionClearMs
     wsServer.broadcast({
       id: generateUlid(),
       type: "definition:show",
@@ -1545,8 +1549,36 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     })
     definitionClearTimer = setTimeout(() => {
       definitionClearTimer = null
+      activeDefinition = null
+      definitionExpiresAt = 0
       wsServer.broadcast({ id: generateUlid(), type: "definition:clear", timestamp: Date.now(), payload: null })
     }, definitionClearMs)
+  }
+
+  function broadcastOutline(outline: OutlineShowPayload, correlationId?: string): void {
+    if (outlineClearTimer) clearTimeout(outlineClearTimer)
+    activeOutline = outline
+    wsServer.broadcast({
+      id: generateUlid(),
+      type: "outline:show",
+      timestamp: Date.now(),
+      correlationId,
+      payload: outline,
+    })
+    outlineClearTimer = setTimeout(() => clearOutline(correlationId), OUTLINE_AUTO_CLEAR_MS)
+  }
+
+  function clearOutline(correlationId?: string): void {
+    if (outlineClearTimer) clearTimeout(outlineClearTimer)
+    outlineClearTimer = null
+    activeOutline = null
+    wsServer.broadcast({
+      id: generateUlid(),
+      type: "outline:clear",
+      timestamp: Date.now(),
+      correlationId,
+      payload: null,
+    })
   }
 
   function broadcastRundownState(state: RundownStatePayload, correlationId?: string): void {
@@ -1698,51 +1730,6 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         broadcastAnnouncementClear(correlationId)
         broadcastCanvasClear(correlationId)
         return
-    }
-  }
-
-  /**
-   * A newly-connected viewer's resync for a non-media scene (media is
-   * handled independently, see onViewerConnected above). Sends directly to
-   * the one connecting viewer via `send`, never broadcasts — an existing
-   * audience mid-verse must not be interrupted just because someone else
-   * joined.
-   */
-  async function syncSceneContent(scene: RundownScene, send: (message: WsMessage) => void): Promise<void> {
-    switch (scene.kind) {
-      case "verse": {
-        // AUDIT TS-04: resync what is ACTUALLY on screen. The rundown scene is only the plan: after a manual
-        // verse:clear or the auto-clear, lastShownVerse is null and a reconnecting OBS source must stay blank
-        // instead of putting the cleared verse back on air.
-        if (lastShownVerse) {
-          send({ id: generateUlid(), type: "verse:show", timestamp: Date.now(), payload: lastShownVerse })
-        } else {
-          logger.info({
-            component: "app-core",
-            event: "rundown.viewer-sync-verse-cleared",
-            metadata: { reference: scene.reference },
-          })
-        }
-        return
-      }
-      case "announcement":
-        send({
-          id: generateUlid(),
-          type: "announcement:show",
-          timestamp: Date.now(),
-          payload: { title: scene.title, body: scene.body },
-        })
-        return
-      case "canvas":
-        send({ id: generateUlid(), type: "canvas:show", timestamp: Date.now(), payload: scene.canvas })
-        return
-      case "blank":
-        send({ id: generateUlid(), type: "verse:clear", timestamp: Date.now(), payload: null })
-        send({ id: generateUlid(), type: "announcement:clear", timestamp: Date.now(), payload: null })
-        send({ id: generateUlid(), type: "canvas:clear", timestamp: Date.now(), payload: null })
-        return
-      case "media":
-        return // handled independently above
     }
   }
 
@@ -2290,6 +2277,27 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         }
         return
       }
+
+      case "verse:dismiss-pending": {
+        if (pendingVerse) {
+          logger.info({
+            component: "app-core",
+            event: "verse.pending-dismissed",
+            correlationId: message.correlationId,
+            metadata: { reference: pendingVerse.reference },
+          })
+          pendingVerse = null
+        }
+        return
+      }
+
+      case "outline:show":
+        broadcastOutline(message.payload as OutlineShowPayload, message.correlationId)
+        return
+
+      case "outline:clear":
+        clearOutline(message.correlationId)
+        return
 
       case "poster:set": {
         if (!mediaLibrary) {
@@ -3247,6 +3255,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     async stop() {
       stopped = true
       if (definitionClearTimer) clearTimeout(definitionClearTimer)
+      if (outlineClearTimer) clearTimeout(outlineClearTimer)
       if (sermonNotesTimer) clearInterval(sermonNotesTimer)
       stopMicWatchdogTimer()
       aiSuggestions?.stop()

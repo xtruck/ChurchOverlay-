@@ -76,24 +76,32 @@ export class CircuitBreaker {
   }
 
   recordSuccess(): void {
-    this.state = "closed"
-    this.consecutiveFailures = 0
-    this.probeInFlight = false
+    try {
+      this.state = "closed"
+      this.consecutiveFailures = 0
+    } finally {
+      this.probeInFlight = false
+    }
   }
 
   recordFailure(): void {
-    if (this.state === "half-open") {
-      // The probe failed — reopen and restart the cooldown.
-      this.state = "open"
-      this.openedAt = this.now()
-      this.probeInFlight = false
-      return
-    }
+    try {
+      if (this.state === "half-open") {
+        // The probe failed — reopen and restart the cooldown.
+        const failedAt = this.now()
+        this.openedAt = failedAt
+        this.state = "open"
+        return
+      }
 
-    this.consecutiveFailures += 1
-    if (this.consecutiveFailures >= this.failureThreshold) {
-      this.state = "open"
-      this.openedAt = this.now()
+      this.consecutiveFailures += 1
+      if (this.consecutiveFailures >= this.failureThreshold) {
+        const failedAt = this.now()
+        this.openedAt = failedAt
+        this.state = "open"
+      }
+    } finally {
+      this.probeInFlight = false
     }
   }
 }

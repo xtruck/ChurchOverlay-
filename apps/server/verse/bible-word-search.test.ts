@@ -118,13 +118,37 @@ test("searchLoadedChapters: bilingual chapters are searched in their English sec
   assert.equal(result.hits[0]?.translation, "kjv")
 })
 
+test("createLazyBibleWordSearch: defers the index build until the first search asks for it", async () => {
+  const { createLazyBibleWordSearch } = await import("./bible-word-search")
+  let ready: (() => void) | undefined
+  let reads = 0
+  const data = new Proxy(SMALL, {
+    get(target, property, receiver) {
+      if (typeof property === "string" && Object.hasOwn(target, property)) reads++
+      return Reflect.get(target, property, receiver)
+    },
+  })
+  const built = new Promise<void>((resolve) => { ready = resolve })
+  const lazy = createLazyBibleWordSearch(data, () => ready?.())
+
+  assert.equal(reads, 0, "constructing the handle must not read or index Bible data")
+  assert.equal(lazy.current(), null, "the first query starts an async build and reports indexing")
+  await built
+  assert.equal(lazy.current()?.search("dieu a tant aime").hits[0]?.reference.verse, 16)
+  assert.ok(reads > 0, "the first search should build from Bible data")
+})
+
 test("createLazyBibleWordSearch: a failed build is reported (onError, failed()), never left as 'indexing' forever", async () => {
   const { createLazyBibleWordSearch } = await import("./bible-word-search")
   const broken = new Proxy({}, { get: () => { throw new Error("corrupt data") } }) as OfflineBibleData
   let reported: unknown = null
-  const lazy = createLazyBibleWordSearch(broken, undefined, (error) => { reported = error })
+  let markFailed: (() => void) | undefined
+  const failedBuild = new Promise<void>((resolve) => { markFailed = resolve })
+  const lazy = createLazyBibleWordSearch(broken, undefined, (error) => { reported = error; markFailed?.() })
   assert.equal(lazy.failed(), false)
-  for (let i = 0; i < 50 && !lazy.failed(); i++) await new Promise((resolve) => setTimeout(resolve, 10))
+  assert.equal(lazy.current(), null)
+  await failedBuild
+  await new Promise<void>((resolve) => setImmediate(resolve))
   assert.equal(lazy.failed(), true)
   assert.match(String(reported), /corrupt data/)
   assert.equal(lazy.current(), null)
