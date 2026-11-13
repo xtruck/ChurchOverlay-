@@ -31,6 +31,7 @@ interface FitLimits {
 interface VerseMotionApi {
   TRANSITIONS: string[]
   LATE_JOIN_WINDOW_MS: number
+  DISCONNECT_CLEAR_MS: number
   DENSE_WORDS: number
   splitRevealUnits(text: unknown): string[]
   splitDropCap(word: unknown): { cap: string; rest: string } | null
@@ -40,6 +41,10 @@ interface VerseMotionApi {
   pickVerseTransition(input: { wasVisible?: boolean; msSinceConnect?: number; reducedMotion?: boolean; motion?: string }): string
   fitLimits(isFullscreen: boolean, card: string, viewport?: { height: number }): FitLimits
   largestFit(min: number, max: number, fits: (px: number) => boolean): number
+  createDisconnectFailsafe(
+    clearContent: () => void,
+    timers?: { setTimeout(callback: () => void, delay: number): unknown; clearTimeout(handle: unknown): void }
+  ): { start(): void; cancel(): void }
 }
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -215,4 +220,35 @@ test("largestFit: the largest size that fits, by binary search, in about log2(ra
   assert.equal(M.largestFit(18, 324, fitsUpTo(323)), 323)
   assert.equal(M.largestFit(50, 50, () => false), 50, "an empty range returns the floor")
   assert.equal(M.largestFit(18.4, 100.9, fitsUpTo(60)), 60, "fractional bounds are floored")
+})
+
+test("disconnect failsafe: clears after 20 seconds, but a shorter reconnect cancels the clear", () => {
+  const pending = new Map<number, () => void>()
+  let nextId = 0
+  const timers = {
+    setTimeout(callback: () => void, delay: number) {
+      assert.equal(delay, 20_000)
+      const id = ++nextId
+      pending.set(id, callback)
+      return id
+    },
+    clearTimeout(handle: unknown) {
+      pending.delete(handle as number)
+    },
+  }
+  let clears = 0
+  const failsafe = M.createDisconnectFailsafe(() => { clears++ }, timers)
+  assert.equal(M.DISCONNECT_CLEAR_MS, 20_000)
+
+  failsafe.start()
+  failsafe.cancel()
+  assert.equal(pending.size, 0)
+  assert.equal(clears, 0, "a reconnect before the deadline must preserve the screen")
+
+  failsafe.start()
+  const [id, expire] = [...pending.entries()][0] ?? []
+  assert.ok(expire)
+  pending.delete(id as number)
+  expire()
+  assert.equal(clears, 1, "a full disconnected interval clears all content")
 })

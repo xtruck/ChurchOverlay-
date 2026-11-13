@@ -21,6 +21,7 @@
    * a reconnect), not a new verse: it is shown with a short fade, never the full intro.
    */
   const LATE_JOIN_WINDOW_MS = 1500
+  const DISCONNECT_CLEAR_MS = 20_000
 
   /** Above this many words the reveal drops per-word blur and the in-line ripple (OBS CEF cost). */
   const DENSE_WORDS = 60
@@ -267,9 +268,29 @@
     return lo
   }
 
+  function createDisconnectFailsafe(clearContent, timers) {
+    const clock = timers || { setTimeout, clearTimeout }
+    let timer = null
+    return {
+      start() {
+        if (timer !== null) return
+        timer = clock.setTimeout(() => {
+          timer = null
+          clearContent()
+        }, DISCONNECT_CLEAR_MS)
+      },
+      cancel() {
+        if (timer === null) return
+        clock.clearTimeout(timer)
+        timer = null
+      },
+    }
+  }
+
   return {
     TRANSITIONS,
     LATE_JOIN_WINDOW_MS,
+    DISCONNECT_CLEAR_MS,
     DENSE_WORDS,
     splitRevealUnits,
     splitDropCap,
@@ -280,5 +301,6 @@
     pickVerseTransition,
     fitLimits,
     largestFit,
+    createDisconnectFailsafe,
   }
 })

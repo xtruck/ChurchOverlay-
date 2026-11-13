@@ -46,20 +46,34 @@ import { isPlainObject } from "../../../packages/shared/type-guards"
  */
 const DEFAULT_BASE_URL = "https://api.getbible.net/v2"
 const DEFAULT_TRANSLATION = "ls1910"
+const FETCH_TIMEOUT_MS = 5000
+
+type RequestTimers = {
+  setTimeout(callback: () => void, delayMs: number): ReturnType<typeof setTimeout>
+  clearTimeout(handle: ReturnType<typeof setTimeout>): void
+}
 
 export class GetBibleVerseSource implements VerseSource, ChapterCapableSource {
   private readonly fetchImpl: typeof fetch
   private readonly translation: string
   private readonly baseUrl: string
+  private readonly timeoutMs: number
+  private readonly timers: RequestTimers
 
   constructor(
     fetchImpl: typeof fetch = fetch,
     translation: string = DEFAULT_TRANSLATION,
-    baseUrl: string = DEFAULT_BASE_URL
+    baseUrl: string = DEFAULT_BASE_URL,
+    options: { timeoutMs?: number; timers?: RequestTimers } = {}
   ) {
     this.fetchImpl = fetchImpl
     this.translation = translation
     this.baseUrl = baseUrl
+    this.timeoutMs = options.timeoutMs ?? FETCH_TIMEOUT_MS
+    this.timers = options.timers ?? { setTimeout, clearTimeout }
+    if (!Number.isFinite(this.timeoutMs) || this.timeoutMs <= 0) {
+      throw new RangeError("timeoutMs must be a positive number")
+    }
   }
 
   async getVerse(reference: VerseReference): Promise<Verse | null> {
@@ -87,26 +101,49 @@ export class GetBibleVerseSource implements VerseSource, ChapterCapableSource {
 
     const url = `${this.baseUrl}/${this.translation}/${bookNr}/${chapter}.json`
 
-    let response: Response
+    const controller = new AbortController()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let timedOut = false
+    const timeout = new Promise<never>((_resolve, reject) => {
+      timer = this.timers.setTimeout(() => {
+        timedOut = true
+        controller.abort()
+        reject(new Error(`GetBibleVerseSource: request timed out after ${this.timeoutMs} ms`))
+      }, this.timeoutMs)
+    })
+    const request = (async (): Promise<unknown> => {
+      let response: Response
+      try {
+        response = await this.fetchImpl(url, { signal: controller.signal })
+      } catch (err) {
+        throw new Error(
+          `GetBibleVerseSource: network request failed: ${err instanceof Error ? err.message : String(err)}`
+        )
+      }
+
+      if (response.status === 404) {
+        return null
+      }
+      if (!response.ok) {
+        throw new Error(`GetBibleVerseSource: unexpected HTTP status ${response.status}`)
+      }
+
+      try {
+        return await response.json()
+      } catch {
+        throw new Error("GetBibleVerseSource: response body was not valid JSON")
+      }
+    })()
+
     try {
-      response = await this.fetchImpl(url)
+      return await Promise.race([request, timeout])
     } catch (err) {
-      throw new Error(
-        `GetBibleVerseSource: network request failed: ${err instanceof Error ? err.message : String(err)}`
-      )
-    }
-
-    if (response.status === 404) {
-      return null
-    }
-    if (!response.ok) {
-      throw new Error(`GetBibleVerseSource: unexpected HTTP status ${response.status}`)
-    }
-
-    try {
-      return await response.json()
-    } catch {
-      throw new Error("GetBibleVerseSource: response body was not valid JSON")
+      if (timedOut) {
+        throw new Error(`GetBibleVerseSource: request timed out after ${this.timeoutMs} ms`)
+      }
+      throw err
+    } finally {
+      if (timer !== undefined) this.timers.clearTimeout(timer)
     }
   }
 }

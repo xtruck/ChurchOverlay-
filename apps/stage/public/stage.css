@@ -127,12 +127,12 @@ body.stage-body {
 .timer-badge.warning { border-color: var(--warn); background: rgba(240, 138, 60, 0.1); }
 .timer-badge.warning .timer-time { color: var(--warn); }
 .timer-badge.warning .timer-label { font-size: 0; }
-.timer-badge.warning .timer-label::before { content: "Wrap up"; font-size: clamp(12px, 1vw, 16px); color: var(--warn); }
+.timer-badge.warning .timer-label::before { content: attr(data-warning-label); font-size: clamp(12px, 1vw, 16px); color: var(--warn); }
 
 .timer-badge.overtime { border-color: var(--on-air); background: rgba(239, 74, 74, 0.14); }
 .timer-badge.overtime .timer-time { color: #ff8a8a; }
 .timer-badge.overtime .timer-label { font-size: 0; }
-.timer-badge.overtime .timer-label::before { content: "Overtime"; font-size: clamp(12px, 1vw, 16px); color: #ff8a8a; }
+.timer-badge.overtime .timer-label::before { content: attr(data-overtime-label); font-size: clamp(12px, 1vw, 16px); color: #ff8a8a; }
 
 /* ---------- Alert from the desk ---------- */
 .stage-alert-banner {

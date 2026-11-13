@@ -330,14 +330,15 @@ export function createLazyBibleWordSearch(
   }
   const handle: LazyBibleWordSearch = {
     current: () => {
-      // A failed build is retried by a later search (at most once per cooldown), never forever in a loop.
-      if (failed && !building && Date.now() - failedAt >= RETRY_AFTER_FAILURE_MS) build()
+      if (!ready && !building && (!failed || Date.now() - failedAt >= RETRY_AFTER_FAILURE_MS)) {
+        // A failed build is retried by a later search (at most once per cooldown), never forever in a loop.
+        build()
+      }
       return ready
     },
     failed: () => failed && !building,
   }
   lazyIndexes.set(data, handle)
-  setTimeout(build, 0)
   return handle
 }
 

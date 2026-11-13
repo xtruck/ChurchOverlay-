@@ -164,6 +164,18 @@ function waitForMessage(socket: WebSocket): Promise<WsMessage> {
   })
 }
 
+function waitForMessageType(socket: WebSocket, type: WsMessage["type"]): Promise<WsMessage> {
+  return new Promise((resolve) => {
+    const handler = (data: { toString(): string }) => {
+      const message = JSON.parse(data.toString()) as WsMessage
+      if (message.type !== type) return
+      socket.off("message", handler)
+      resolve(message)
+    }
+    socket.on("message", handler)
+  })
+}
+
 /**
  * For a single trigger that broadcasts multiple messages in quick
  * succession (e.g. a rundown scene activation's rundown:state plus its
@@ -1340,7 +1352,7 @@ test("AppCore: a viewer connecting while a media cue is already active immediate
       await firstShow
 
       const lateViewer = new WebSocket(`ws://127.0.0.1:${app.wsServer.port}`, [TOKENS.viewerToken])
-      const syncMessage = await waitForMessage(lateViewer)
+      const syncMessage = await waitForMessageType(lateViewer, "media:show")
 
       assert.equal(syncMessage.type, "media:show")
       assert.deepEqual(syncMessage.payload, { cue })
@@ -2052,9 +2064,8 @@ test("AppCore: a 'blank' scene after a 'canvas' scene also broadcasts canvas:cle
   }
 })
 
-// The late-join/reconnect resync path (syncSceneContent) for a canvas
-// scene — a newly-connecting viewer must see it immediately, direct-sent
-// rather than broadcast (same pattern as every other non-media scene kind).
+// The late-join/reconnect resync path for a canvas scene — a newly-connecting
+// viewer must see the current authoritative content immediately.
 test("AppCore: a viewer connecting while a 'canvas' scene is active immediately receives a sync canvas:show", async () => {
   const app = await startAppCore({
     asr: new FakeAsrProvider(),
@@ -2087,8 +2098,7 @@ test("AppCore: a viewer connecting while a 'canvas' scene is active immediately 
     // listener via a raw WebSocket first (matching the existing
     // media-sync test's own pattern) avoids racing and missing them.
     const secondViewer = new WebSocket(`ws://127.0.0.1:${app.wsServer.port}`, [TOKENS.viewerToken])
-    const syncMessages = waitForMessages(secondViewer, 1)
-    const [syncShow] = await syncMessages
+    const syncShow = await waitForMessageType(secondViewer, "canvas:show")
     assert.equal(syncShow?.type, "canvas:show")
     assert.deepEqual(syncShow?.payload, { layers: SAMPLE_CANVAS_LAYERS })
 
@@ -2180,14 +2190,11 @@ test("AppCore: a viewer connecting during a verse-interrupt is resynced with the
 
       // A late viewer connects WHILE the verse is interrupting the media scene.
       const lateViewer = new WebSocket(`ws://127.0.0.1:${app.wsServer.port}`, [TOKENS.viewerToken])
-      // media:show (mediaPlayback's own independent resync, unaffected by the
-      // interrupt) + rundown:state + verse:show (the fix under test).
-      const synced = await waitForMessages(lateViewer, 2)
-      const types = synced.map((m) => m.type).sort()
-      assert.deepEqual(types, ["media:show", "verse:show"])
-
-      const verseMsg = synced.find((m) => m.type === "verse:show")
-      assert.deepEqual((verseMsg?.payload as Verse).reference, { book: "john", chapter: 3, verse: 16 })
+      const mediaSync = waitForMessageType(lateViewer, "media:show")
+      const verseSync = waitForMessageType(lateViewer, "verse:show")
+      const [mediaMessage, verseMessage] = await Promise.all([mediaSync, verseSync])
+      assert.equal(mediaMessage.type, "media:show")
+      assert.deepEqual((verseMessage.payload as Verse).reference, { book: "john", chapter: 3, verse: 16 })
 
       operatorSocket.close()
       viewerSocket.close()
@@ -2234,7 +2241,7 @@ test("AppCore: a viewer connecting while a verse is showing with NO rundown load
     // A late viewer connects while the verse is showing — no rundown was
     // ever loaded, so rundownController.currentState() is null.
     const lateViewer = new WebSocket(`ws://127.0.0.1:${app.wsServer.port}`, [TOKENS.viewerToken])
-    const syncMessage = await waitForMessage(lateViewer)
+    const syncMessage = await waitForMessageType(lateViewer, "verse:show")
 
     assert.equal(syncMessage.type, "verse:show")
     assert.deepEqual((syncMessage.payload as Verse).reference, { book: "john", chapter: 3, verse: 16 })
@@ -2759,6 +2766,137 @@ test("AppCore: a spoken 'define grace' broadcasts definition:show, and it auto-c
   }
 })
 
+test("AppCore: a newly connected viewer resyncs an unexpired glossary definition", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    definitionClearMs: 5000,
+  })
+  try {
+    const firstViewer = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const shown = waitForMessage(firstViewer)
+    asr.emitTranscript({
+      id: "01DEF",
+      correlationId: "01A",
+      sequence: 1,
+      text: "Can you define grace for us?",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    assert.equal((await shown).type, "definition:show")
+
+    const reconnectingViewer = new WebSocket(`ws://127.0.0.1:${app.wsServer.port}`, [TOKENS.viewerToken])
+    const resynced = waitForMessageType(reconnectingViewer, "definition:show")
+    const message = await resynced
+    assert.equal(message.type, "definition:show")
+    assert.deepEqual(message.payload, {
+      term: "Grace",
+      definition: "Unmerited favor from God — a gift given freely, not earned by good works.",
+    })
+    firstViewer.close()
+    reconnectingViewer.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: a newly connected viewer resyncs the active outline", async () => {
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operator = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const firstViewer = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const firstShow = waitForMessage(firstViewer)
+    const payload = { pointNumber: 2, title: "The Promise", text: "A promise of hope." }
+    operator.send(JSON.stringify({
+      id: "01OUTLINE",
+      type: "outline:show",
+      timestamp: Date.now(),
+      payload,
+    }))
+    assert.equal((await firstShow).type, "outline:show")
+
+    const reconnectingViewer = new WebSocket(`ws://127.0.0.1:${app.wsServer.port}`, [TOKENS.viewerToken])
+    const resynced = waitForMessageType(reconnectingViewer, "outline:show")
+    const message = await resynced
+    assert.equal(message.type, "outline:show")
+    assert.deepEqual(message.payload, payload)
+
+    operator.close()
+    firstViewer.close()
+    reconnectingViewer.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: a newly connected viewer resyncs the active announcement", async () => {
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operator = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const firstViewer = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const announcement = { kind: "announcement" as const, title: "Welcome", body: "Service begins soon." }
+    const firstShow = waitForMessageType(firstViewer, "announcement:show")
+    const rundown: Rundown = { id: "01RUNDOWN", title: "Sunday", scenes: [announcement] }
+    operator.send(JSON.stringify({ id: "01LOAD", type: "rundown:load", timestamp: Date.now(), payload: { rundown } }))
+    await firstShow
+
+    const reconnectingViewer = new WebSocket(`ws://127.0.0.1:${app.wsServer.port}`, [TOKENS.viewerToken])
+    const resynced = await waitForMessageType(reconnectingViewer, "announcement:show")
+    assert.deepEqual(resynced.payload, { title: announcement.title, body: announcement.body })
+
+    operator.close()
+    firstViewer.close()
+    reconnectingViewer.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: a new viewer receives clears for every inactive content channel", async () => {
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const viewer = new WebSocket(`ws://127.0.0.1:${app.wsServer.port}`, [TOKENS.viewerToken])
+    const messages = await waitForMessages(viewer, 7)
+    assert.deepEqual(
+      messages.map((message) => message.type).sort(),
+      ["announcement:clear", "canvas:clear", "definition:clear", "media:clear", "outline:clear", "poster:clear", "verse:clear"].sort(),
+    )
+    viewer.close()
+  } finally {
+    await app.stop()
+  }
+})
+
 test("AppCore: a term not in the glossary broadcasts nothing", async () => {
   const asr = new FakeAsrProvider()
   const app = await startAppCore({
@@ -2965,6 +3103,78 @@ test("AppCore: confirming with nothing pending is a no-op, not a crash", async (
     assert.equal(received, false)
     operatorSocket.close()
     viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: dismissing a pending verse clears server state without clearing or showing the on-air verse", async () => {
+  const asr = new FakeAsrProvider()
+  let onConfirmWithoutPending: (() => void) | undefined
+  const confirmedEmpty = new Promise<void>((resolve) => { onConfirmWithoutPending = resolve })
+  const logger = new Logger({
+    write: (line) => {
+      const event = (JSON.parse(line) as { event?: string }).event
+      if (event === "verse.no-pending-to-confirm") onConfirmWithoutPending?.()
+    },
+  })
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger,
+    port: 0,
+    tokens: TOKENS,
+    verseConfirmationMode: "review",
+  })
+  try {
+    const operator = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const viewer = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const shown: WsMessage[] = []
+    viewer.on("message", (data) => {
+      const message = JSON.parse(data.toString()) as WsMessage
+      if (message.type === "verse:show" || message.type === "verse:clear") {
+        shown.push(message)
+      }
+    })
+
+    const onAirVerse = waitForMessageType(viewer, "verse:show")
+    operator.send(JSON.stringify({
+      id: "01DISMISS0",
+      type: "verse:override",
+      timestamp: Date.now(),
+      payload: { book: "john", chapter: 3, verse: 16 },
+    }))
+    await onAirVerse
+
+    const pending = waitForMessage(operator)
+    asr.emitTranscript({
+      id: "01DISMISS",
+      correlationId: "01A",
+      sequence: 1,
+      text: "Turn to John 3:16.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    assert.equal((await pending).type, "verse:pending")
+
+    operator.send(JSON.stringify({ id: "01DISMISS1", type: "verse:dismiss-pending", timestamp: Date.now(), payload: null }))
+    operator.send(JSON.stringify({ id: "01DISMISS2", type: "verse:confirm-pending", timestamp: Date.now(), payload: null }))
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    const result = await Promise.race([
+      confirmedEmpty.then(() => "empty" as const),
+      new Promise<"timeout">((resolve) => { timeout = setTimeout(() => resolve("timeout"), 1000) }),
+    ])
+    if (timeout) clearTimeout(timeout)
+    await new Promise<void>((resolve) => setImmediate(resolve))
+
+    assert.equal(result, "empty", "dismissed pending state must make a subsequent confirm a no-op")
+    assert.equal(shown.length, 1, "dismissal must not clear or replace the on-air verse")
+    assert.equal(shown[0]?.type, "verse:show")
+    assert.deepEqual((shown[0]?.payload as Verse).reference, { book: "john", chapter: 3, verse: 16 })
+    operator.close()
+    viewer.close()
   } finally {
     await app.stop()
   }
@@ -3819,7 +4029,7 @@ test("AppCore: a viewer connecting while a principal poster is active immediatel
       // listener is in place before any data could possibly arrive —
       // awaiting "open" first would introduce a race that can drop it.
       const lateViewer = new WebSocket(`ws://127.0.0.1:${app.wsServer.port}`, [TOKENS.viewerToken])
-      const message = await waitForMessage(lateViewer)
+      const message = await waitForMessageType(lateViewer, "poster:show")
 
       assert.equal(message.type, "poster:show")
       assert.deepEqual((message.payload as { cue: unknown }).cue, cue)

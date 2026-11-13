@@ -1,4 +1,78 @@
 (function () {
+  const STRINGS = {
+    en: {
+      title: "Live",
+      connecting: "Connecting…",
+      connected: "Connected",
+      reconnecting: "Reconnecting…",
+      noAccess: "No access link",
+      bible: "Bible",
+      translationLsg: "LSG (French)",
+      translationKjv: "KJV (English)",
+      translationWeb: "WEB (Modern English)",
+      translationDarby: "Darby (French)",
+      nowReading: "Now reading",
+      welcome: "Welcome to Service",
+      waiting: "Verses spoken during the sermon will appear here in real time.",
+      save: "Save to My Notes",
+      copy: "Copy",
+      savedVerses: "My Saved Verses",
+      export: "Export All",
+      emptyNotes: 'Tap "Save to My Notes" on any verse above to bookmark it for later study.',
+      removeVerse: "Remove {reference}",
+      noActive: "No active verse to save",
+      saved: "Saved {reference}",
+      alreadySaved: "Already in your notes",
+      copied: "Copied to clipboard",
+      copyFailed: "Copy failed",
+      noSaved: "No saved notes to export",
+      exported: "Notes exported",
+      notesExportHeader: "SERMON NOTES",
+      scripture: "Scripture",
+    },
+    fr: {
+      title: "En direct",
+      connecting: "Connexion…",
+      connected: "Connecté",
+      reconnecting: "Reconnexion…",
+      noAccess: "Lien d’accès manquant",
+      bible: "Bible",
+      translationLsg: "LSG (français)",
+      translationKjv: "KJV (anglais)",
+      translationWeb: "WEB (anglais moderne)",
+      translationDarby: "Darby (français)",
+      nowReading: "Lecture en cours",
+      welcome: "Bienvenue au culte",
+      waiting: "Les versets prononcés pendant le sermon apparaîtront ici en temps réel.",
+      save: "Enregistrer dans mes notes",
+      copy: "Copier",
+      savedVerses: "Mes versets enregistrés",
+      export: "Tout exporter",
+      emptyNotes: "Touchez « Enregistrer dans mes notes » sur un verset pour le garder.",
+      removeVerse: "Retirer {reference}",
+      noActive: "Aucun verset actif à enregistrer",
+      saved: "{reference} enregistré",
+      alreadySaved: "Déjà dans vos notes",
+      copied: "Copié dans le presse-papiers",
+      copyFailed: "Échec de la copie",
+      noSaved: "Aucune note à exporter",
+      exported: "Notes exportées",
+      notesExportHeader: "NOTES DE PRÉDICATION",
+      scripture: "Écriture",
+    },
+  };
+  const lang = (navigator.language || "en").toLowerCase().startsWith("fr") ? "fr" : "en";
+  const t = (key, vars) => {
+    let value = STRINGS[lang][key] || STRINGS.en[key] || key;
+    for (const [name, replacement] of Object.entries(vars || {})) {
+      value = value.split("{" + name + "}").join(String(replacement));
+    }
+    return value;
+  };
+  document.documentElement.lang = lang;
+  document.querySelectorAll("[data-t]").forEach((el) => { el.textContent = t(el.dataset.t); });
+  document.title = "ChurchOverlay — " + t("title");
+
   const params = new URLSearchParams(window.location.search);
   // The token is in the URL fragment (#token=..., never sent to a server); ?token= is the older form.
   const token = new URLSearchParams(window.location.hash.slice(1)).get("token") || params.get("token") || "";
@@ -49,9 +123,9 @@
   // "[object Object]". Format it; plain strings (and notes saved by older
   // versions of this page) pass through.
   function formatReference(ref) {
-    if (!ref) return "Scripture";
+    if (!ref) return t("scripture");
     if (typeof ref === "string") return ref;
-    if (typeof ref.book !== "string") return "Scripture";
+    if (typeof ref.book !== "string") return t("scripture");
     const book = ref.book.replace(/\b\w/g, (c) => c.toUpperCase());
     return book + " " + ref.chapter + ":" + ref.verse;
   }
@@ -98,7 +172,7 @@
     remove.type = "button";
     remove.className = "btn-remove-saved";
     remove.dataset.index = String(i);
-    remove.setAttribute("aria-label", "Remove " + reference);
+    remove.setAttribute("aria-label", t("removeVerse", { reference }));
     remove.appendChild(closeIcon());
     remove.addEventListener("click", (e) => {
       const idx = Number(e.currentTarget.dataset.index);
@@ -125,7 +199,7 @@
       savedList.classList.add("empty");
       const hint = document.createElement("p");
       hint.className = "empty-hint";
-      hint.textContent = 'Tap "Save to My Notes" on any verse above to bookmark it for later study.';
+      hint.textContent = t("emptyNotes");
       savedList.appendChild(hint);
       return;
     }
@@ -139,7 +213,7 @@
 
   function saveCurrentVerse() {
     if (!currentVerse || !currentVerse.text) {
-      showToast("No active verse to save");
+      showToast(t("noActive"));
       return;
     }
     const exists = savedVerses.some((v) => v.reference === currentVerse.reference);
@@ -151,9 +225,9 @@
       });
       localStorage.setItem("churchoverlay_saved_verses", JSON.stringify(savedVerses));
       renderSavedList();
-      showToast(`Saved ${currentVerse.reference}`);
+      showToast(t("saved", { reference: currentVerse.reference }));
     } else {
-      showToast("Already in your notes");
+      showToast(t("alreadySaved"));
     }
   }
 
@@ -162,19 +236,19 @@
     const textToCopy = `${currentVerse.reference}\n"${currentVerse.text}"`;
     navigator.clipboard
       .writeText(textToCopy)
-      .then(() => showToast("Copied to clipboard"))
-      .catch(() => showToast("Copy failed"));
+      .then(() => showToast(t("copied")))
+      .catch(() => showToast(t("copyFailed")));
   }
 
   function exportAllNotes() {
     if (savedVerses.length === 0) {
-      showToast("No saved notes to export");
+      showToast(t("noSaved"));
       return;
     }
     const formatted = savedVerses
       .map((v) => `${formatReference(v.reference)}\n"${v.text}"\n`)
       .join("\n---\n\n");
-    const blob = new Blob([`SERMON NOTES — ${new Date().toLocaleDateString()}\n\n${formatted}`], {
+    const blob = new Blob([`${t("notesExportHeader")} — ${new Date().toLocaleDateString()}\n\n${formatted}`], {
       type: "text/plain",
     });
     const url = URL.createObjectURL(blob);
@@ -183,7 +257,7 @@
     a.download = `Sermon-Notes-${new Date().toISOString().slice(0, 10)}.txt`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast("Notes exported");
+    showToast(t("exported"));
   }
 
   if (btnSave) btnSave.addEventListener("click", saveCurrentVerse);
@@ -196,23 +270,29 @@
     // looks live. Say what's actually missing instead.
     if (!token) {
       console.warn("[live] no viewer token in the page URL — copy the companion link from the app");
-      setConnection("offline", "No access link");
+      setConnection("offline", t("noAccess"));
       return;
     }
     const ws = new WebSocket(wsUrl, [token]);
-    ws.onopen = () => setConnection("connected", "Connected");
+    ws.onopen = () => setConnection("connected", t("connected"));
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
         if (msg.type === "verse:show" && msg.payload) {
+          const verseLanguage = ["ls1910", "lsg", "segond", "darby"].includes(String(msg.payload.translation || "").toLowerCase()) ? "fr" : "en";
           currentVerse = {
             reference: formatReference(msg.payload.reference),
             text: msg.payload.text || "",
+            language: verseLanguage,
           };
           if (heroCard) heroCard.className = "verse-hero";
-          if (referenceEl) referenceEl.textContent = currentVerse.reference;
+          if (referenceEl) {
+            referenceEl.textContent = currentVerse.reference;
+            referenceEl.lang = verseLanguage;
+          }
           if (textEl) {
             textEl.textContent = currentVerse.text;
+            textEl.lang = verseLanguage;
             // Replay the gentle fade-in for each new verse.
             textEl.style.animation = "none";
             void textEl.offsetWidth;
@@ -221,22 +301,26 @@
         } else if (msg.type === "verse:clear") {
           currentVerse = null;
           if (heroCard) heroCard.className = "verse-hero empty";
-          if (referenceEl) referenceEl.textContent = "Welcome to Service";
-          if (textEl)
-            textEl.textContent =
-              "Verses spoken during the sermon will appear here in real-time.";
+          if (referenceEl) {
+            referenceEl.textContent = t("welcome");
+            referenceEl.lang = lang;
+          }
+          if (textEl) {
+            textEl.textContent = t("waiting");
+            textEl.lang = lang;
+          }
         }
       } catch (err) {
         console.warn("Malformed WS message:", err);
       }
     };
     ws.onclose = () => {
-      setConnection("offline", "Reconnecting…");
+      setConnection("offline", t("reconnecting"));
       setTimeout(connectWs, 2500);
     };
   }
 
-  setConnection("connecting", "Connecting…");
+  setConnection("connecting", t("connecting"));
   renderSavedList();
   connectWs();
 })();

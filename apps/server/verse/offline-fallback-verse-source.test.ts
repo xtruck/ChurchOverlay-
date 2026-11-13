@@ -2,6 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { OfflineFallbackVerseSource } from "./offline-fallback-verse-source"
 import { CircuitBreaker } from "./circuit-breaker"
+import { GetBibleVerseSource } from "./get-bible-verse-source"
 import { Logger } from "../../../packages/shared/logger"
 import type { Verse, VerseReference, VerseSource } from "../../../packages/contracts"
 
@@ -65,6 +66,47 @@ test("OfflineFallbackVerseSource: a thrown primary error falls back to offline, 
   const entry = lines[0] as { level: string; event: string }
   assert.equal(entry.level, "warn")
   assert.equal(entry.event, "primary-failed-using-offline")
+})
+
+test("OfflineFallbackVerseSource: a stalled GetBible request times out, records a breaker failure, and serves offline", async () => {
+  let expire: (() => void) | undefined
+  let signal: AbortSignal | undefined
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined
+  const primary = new GetBibleVerseSource(
+    (async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      signal = init?.signal as AbortSignal
+      return await new Promise<Response>(() => {})
+    }) as typeof fetch,
+    "ls1910",
+    "https://example.test",
+    {
+      timeoutMs: 5000,
+      timers: {
+        setTimeout(callback) {
+          expire = callback
+          timeoutHandle = setTimeout(() => {}, 60_000)
+          return timeoutHandle
+        },
+        clearTimeout(handle) {
+          clearTimeout(handle)
+        },
+      },
+    },
+  )
+  const offline = new FakeVerseSource(async () => makeVerse("offline-bundled"))
+  const circuitBreaker = new CircuitBreaker({ failureThreshold: 1 })
+  const source = new OfflineFallbackVerseSource({ primary, offline, circuitBreaker })
+
+  const lookup = source.getVerse(JOHN_3_16)
+  await Promise.resolve()
+  assert.ok(expire, "the live request arms its timeout")
+  expire()
+
+  assert.deepEqual(await lookup, makeVerse("offline-bundled"))
+  assert.equal(signal?.aborted, true)
+  assert.equal(circuitBreaker.getState(), "open", "the timed-out live request counts as a failure")
+  assert.equal(offline.calls, 1)
+  if (timeoutHandle) clearTimeout(timeoutHandle)
 })
 
 test("OfflineFallbackVerseSource: a primary outage with no offline answer is rethrown, never reported as 'not found'", async () => {

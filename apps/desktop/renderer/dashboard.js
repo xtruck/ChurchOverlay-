@@ -72,6 +72,7 @@
     })
   }
 
+  let lastAudioTransportAnnouncementState = "idle"
   function renderAudioTransportStatus() {
     if (!audioTransportStatusEl) return
     const metrics = audioFrameSender.snapshot()
@@ -110,9 +111,28 @@
     }
     audioTransportStatusEl.dataset.state = state
     audioTransportStatusEl.textContent = lines.join(" · ")
+    if (state !== lastAudioTransportAnnouncementState) {
+      lastAudioTransportAnnouncementState = state
+      const announcementKey = {
+        sending: "mic.audioTransport.announce.sending",
+        degraded: "mic.audioTransport.announce.degraded",
+        disconnected: "mic.audioTransport.announce.disconnected",
+        backpressure: "mic.audioTransport.announce.backpressure",
+        error: "mic.audioTransport.announce.error",
+      }[state]
+      const announcementEl = document.getElementById("audio-transport-announcement")
+      if (announcementEl && announcementKey) announcementEl.textContent = t(announcementKey)
+    }
   }
 
-  window.addEventListener("churchoverlay:languagechange", renderAudioTransportStatus)
+  window.addEventListener("churchoverlay:languagechange", () => {
+    renderAudioTransportStatus()
+    const announcementEl = document.getElementById("audio-transport-announcement")
+    if (announcementEl && lastAudioTransportAnnouncementState !== "idle") {
+      const key = "mic.audioTransport.announce." + lastAudioTransportAnnouncementState
+      announcementEl.textContent = t(key)
+    }
+  })
 
   function encodeAudioFrame(samples, sequence) {
     const buffer = new ArrayBuffer(4 + samples.length * 2)
@@ -195,6 +215,8 @@
   const versePendingTextEl = document.getElementById("verse-pending-text")
   const versePendingRefEl = document.getElementById("verse-pending-ref")
   const versePendingConfirmBtn = document.getElementById("verse-pending-confirm-btn")
+  const versePendingDismissBtn = document.getElementById("verse-pending-dismiss-btn")
+  const versePendingAgeEl = document.getElementById("verse-pending-age")
   const setupDisplayModeEl = document.getElementById("setup-display-mode")
   const setupUiLanguageEl = document.getElementById("setup-ui-language")
   const setupAllowPhoneRemoteEl = document.getElementById("setup-allow-phone-remote")
@@ -589,9 +611,16 @@
     versePendingBannerEl.style.display = "flex"
     livePreviewEl.classList.add("has-pending")
     globalPendingBtn.style.display = ""
+    pendingStartedAt = Date.now()
+    renderPendingAge()
+    if (pendingAgeTimer !== null) clearInterval(pendingAgeTimer)
+    pendingAgeTimer = setInterval(renderPendingAge, 1000)
     // One sentence in an always-present live region (the banner itself is not announced).
     const waiting = t("livePreview.pendingLabel") + ": " + versePendingRefEl.textContent
-    pendingAnnounceEl.textContent = waiting + ". " + t("livePreview.pendingConfirm") + " (Ctrl+Enter)"
+    pendingAnnounceEl.textContent = ""
+    requestAnimationFrame(() => {
+      pendingAnnounceEl.textContent = waiting + ". " + t("livePreview.pendingConfirm") + " (Ctrl+Enter)"
+    })
     globalPendingBtn.setAttribute("aria-label", waiting)
   }
 
@@ -624,18 +653,38 @@
     }
   }
 
+  let pendingStartedAt = null
+  let pendingAgeTimer = null
+  function renderPendingAge() {
+    if (!versePendingAgeEl || pendingStartedAt === null) return
+    const elapsed = Math.floor((Date.now() - pendingStartedAt) / 1000)
+    const age = Math.floor(elapsed / 60) + ":" + String(elapsed % 60).padStart(2, "0")
+    versePendingAgeEl.textContent = t("livePreview.pendingAge", { time: age })
+  }
+
   function clearPendingVerse() {
+    if (pendingAgeTimer !== null) clearInterval(pendingAgeTimer)
+    pendingAgeTimer = null
+    pendingStartedAt = null
     versePendingBannerEl.style.display = "none"
     livePreviewEl.classList.remove("has-pending")
     globalPendingBtn.style.display = "none"
     pendingAnnounceEl.textContent = ""
+    if (versePendingAgeEl) versePendingAgeEl.textContent = ""
     globalPendingBtn.removeAttribute("aria-label")
+  }
+
+  function dismissPendingVerse() {
+    if (!sendJson({ id: crypto.randomUUID(), type: "verse:dismiss-pending", timestamp: Date.now(), payload: null })) return
+    log(t("livePreview.pendingDismissed"), "sent")
+    clearPendingVerse()
   }
 
   versePendingConfirmBtn.addEventListener("click", () => {
     sendJson({ id: crypto.randomUUID(), type: "verse:confirm-pending", timestamp: Date.now(), payload: null })
     log(t("log.sentVerseConfirmPending"), "sent")
   })
+  versePendingDismissBtn.addEventListener("click", dismissPendingVerse)
 
   // ASR/transcription health (status:update) — see ARCHITECTURE.md's
   // action-registry comment: a real producer now exists (AppCore
@@ -784,22 +833,12 @@
       brandMarkEl.textContent = initials || "CO"
     }
     if (accentColor) {
-      document.documentElement.style.setProperty("--accent", accentColor)
-      // Any church colour must stay readable as a button background:
-      // pick dark or light ink from the colour's own relative luminance.
-      document.documentElement.style.setProperty("--accent-ink", relativeLuminance(accentColor) > 0.35 ? "#1c1405" : "#ffffff")
+      const accent = window.BrandAccent.clampBrandAccent(accentColor)
+      if (accent) {
+        document.documentElement.style.setProperty("--accent", accent.color)
+        document.documentElement.style.setProperty("--accent-ink", accent.ink)
+      }
     }
-  }
-
-  function relativeLuminance(hex) {
-    const match = /^#?([0-9a-f]{6})$/i.exec(hex || "")
-    if (!match) return 1
-    const value = parseInt(match[1], 16)
-    const channel = (shift) => {
-      const c = ((value >> shift) & 255) / 255
-      return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
-    }
-    return 0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0)
   }
 
   // ---- Congregation-screen tally ----------------------------------------
@@ -1351,6 +1390,8 @@
   }
   function saveAiKey(value, successKey) {
     if (!aiKeySaveBtnEl) return
+    const confirmationKey = value ? "ai.key.confirmSave" : "ai.key.confirmRemove"
+    if (!window.confirm(t(confirmationKey))) return
     aiKeySaveBtnEl.disabled = true
     if (aiKeyRemoveBtnEl) aiKeyRemoveBtnEl.disabled = true
     window.churchOverlay
@@ -1376,6 +1417,7 @@
   const aiGroqKeySaveBtnEl = document.getElementById("ai-groq-key-save-btn")
   if (aiGroqKeyInputEl && aiGroqKeySaveBtnEl) {
     aiGroqKeySaveBtnEl.addEventListener("click", () => {
+      if (!window.confirm(t("ai.groqKey.confirmSave"))) return
       aiGroqKeySaveBtnEl.disabled = true
       window.churchOverlay
         .setGroqKey(aiGroqKeyInputEl.value)
@@ -1430,6 +1472,7 @@
     button.addEventListener("click", () => {
       const strategy = button.dataset.asrStrategy
       if (!asrStatus || strategy === asrStatus.strategy) return
+      if (micRunning && !window.confirm(t("asrSettings.confirmChange"))) return
       asrStrategyToggleEl.querySelectorAll("button").forEach((b) => (b.disabled = true))
       asrStrategyNoteEl.textContent = t("asrSettings.restarting")
       window.churchOverlay
@@ -2665,6 +2708,7 @@
       log(t("rundown.builder.emptyRundownError"), "error")
       return
     }
+    if (!window.confirm(t("rundown.builder.confirmLoad"))) return
     const rundown = { id: crypto.randomUUID(), title: t("rundown.defaultTitle"), scenes: draftScenes.slice() }
     loadedRundownId = rundown.id
     loadedRundownScenes = draftScenes.slice()
@@ -4024,10 +4068,13 @@
     } else if (!typing && !ctrl && key === "/") {
       event.preventDefault()
       focusReferenceInput()
-    } else if (ctrl && key === "Enter" && !event.repeat && versePendingBannerEl.style.display !== "none") {
+    } else if (ctrl && key === "Enter" && !typing && !event.repeat && versePendingBannerEl.style.display !== "none") {
       // A held key must not confirm twice.
       event.preventDefault()
       versePendingConfirmBtn.click()
+    } else if (key === "Escape" && !event.shiftKey && versePendingBannerEl.style.display !== "none") {
+      event.preventDefault()
+      dismissPendingVerse()
     } else if (event.shiftKey && key === "Escape") {
       event.preventDefault()
       clearBtn.click()

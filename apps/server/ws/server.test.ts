@@ -413,6 +413,31 @@ test("ChurchOverlayWsServer: heartbeat leaves a healthy client connected across 
   }
 })
 
+test("ChurchOverlayWsServer: a pong queued after a sweep is processed before the deferred timeout check", async () => {
+  const rejections: string[] = []
+  const server = await startServer({ heartbeatIntervalMs: 0, onRejected: (reason) => rejections.push(reason) })
+  try {
+    const socket = await connect(server.port, TOKENS.operatorToken)
+    const internals = server as unknown as {
+      aliveClients: WeakSet<WebSocket>
+      sweepDeadConnections(): void
+    }
+    internals.aliveClients.delete(socket)
+    internals.sweepDeadConnections()
+
+    // Model a pong event already queued by the socket and handled before the
+    // deferred setImmediate timeout check runs.
+    internals.aliveClients.add(socket)
+    await new Promise<void>((resolve) => setImmediate(resolve))
+
+    assert.equal(socket.readyState, WebSocket.OPEN)
+    assert.deepEqual(rejections, [])
+    socket.close()
+  } finally {
+    await server.close()
+  }
+})
+
 test("ChurchOverlayWsServer: inbound messages count as liveness, so a busy client is never dropped for a late pong", async () => {
   const rejections: string[] = []
   const server = await startServer({ heartbeatIntervalMs: 40, onRejected: (reason) => rejections.push(reason) })
