@@ -236,6 +236,40 @@
     content: "—";
     color: var(--text-faint);
   }
+  #pending-verse {
+    margin: 12px 0;
+    padding: 12px;
+    border: 1px solid var(--field-border);
+    border-radius: var(--r-control);
+    background: var(--surface-2);
+  }
+  #pending-verse[hidden] { display: none; }
+  .pending-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  #pending-verse-age { white-space: nowrap; font-size: 12px; font-weight: 400; }
+  #pending-verse-ref {
+    margin-top: 4px;
+    font-family: var(--font-display);
+    font-size: 22px;
+    overflow-wrap: anywhere;
+  }
+  #pending-verse-text {
+    max-height: 4.5em;
+    margin-top: 4px;
+    overflow: auto;
+    color: var(--text-muted);
+    font-size: 14px;
+    overflow-wrap: anywhere;
+  }
+  .pending-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .pending-actions > button { flex: 1; min-width: 0; }
 
   /* ---------- Panels / cards ---------- */
   .tab-panel { display: none; }
@@ -575,6 +609,18 @@
         <span class="on-air-badge" aria-hidden="true"><span class="on-air-dot"></span><span data-t="onAirTag">On air</span></span>
       </div>
       <div id="on-screen-ref"></div>
+      <div id="pending-verse" hidden role="group" aria-labelledby="pending-verse-title">
+        <div class="pending-heading">
+          <strong id="pending-verse-title" data-t="pendingTitle">Pending verse</strong>
+          <span id="pending-verse-age" aria-live="off"></span>
+        </div>
+        <div id="pending-verse-ref"></div>
+        <div id="pending-verse-text"></div>
+        <div class="pending-actions">
+          <button type="button" id="pending-verse-confirm-btn" class="btn-primary" data-t="pendingConfirm">Show on screen</button>
+          <button type="button" id="pending-verse-dismiss-btn" class="btn-secondary" data-t="pendingDismiss">Dismiss</button>
+        </div>
+      </div>
       <button type="button" id="clear-verse-btn" class="btn-clear">
         <svg class="icon" aria-hidden="true"><use href="#i-x"/></svg>
         <span data-t="clearScreen">Clear the screen</span>
