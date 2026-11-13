@@ -463,6 +463,7 @@
 
   function verseRow(entry) {
     const row = node("div", "bb-verse")
+    row.id = "bb-verse-option-" + entry.verse
     row.setAttribute("role", "option")
     row.dataset.verse = String(entry.verse)
     row.appendChild(node("span", "bb-vnum", String(entry.verse)))
@@ -501,6 +502,8 @@
     }
     if (el.showBtn) el.showBtn.disabled = state.status !== "ready" || state.cursor === null
     const selectedRow = el.verses.querySelector(".bb-verse.selected")
+    if (selectedRow) el.verses.setAttribute("aria-activedescendant", selectedRow.id)
+    else el.verses.removeAttribute("aria-activedescendant")
     if (selectedRow && selectedRow.scrollIntoView) selectedRow.scrollIntoView({ block: "nearest" })
   }
 
@@ -794,10 +797,15 @@
     return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || Boolean(target.isContentEditable)
   }
 
+  function interactiveTarget(target) {
+    return Boolean(target && target.closest && target.closest('button, a[href], [role="button"], [role="tab"]'))
+  }
+
   doc.addEventListener("keydown", (event) => {
     if (!view.classList.contains("active") || event.defaultPrevented) return
     if (event.ctrlKey || event.metaKey || event.altKey) return
     if (typingTarget(event.target)) return
+    if (interactiveTarget(event.target)) return
     if (Array.from(doc.querySelectorAll(".modal-overlay")).some((modal) => modal.style.display !== "none")) return
     if (!el.results.hidden) return // the results list has the stage: plain buttons, no stepping
     let direction = null

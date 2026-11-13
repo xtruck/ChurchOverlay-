@@ -7,10 +7,12 @@
       reconnecting: "Reconnecting…",
       noAccess: "No access link",
       bible: "Bible",
-      translationLsg: "LSG (French)",
-      translationKjv: "KJV (English)",
-      translationWeb: "WEB (Modern English)",
-      translationDarby: "Darby (French)",
+      translationInfo: "Bible translation currently on screen",
+      translationUnknown: "Version not announced",
+      translationLsgShort: "LSG",
+      translationKjvShort: "KJV",
+      translationWebShort: "WEB",
+      translationDarbyShort: "Darby",
       nowReading: "Now reading",
       welcome: "Welcome to Service",
       waiting: "Verses spoken during the sermon will appear here in real time.",
@@ -37,10 +39,12 @@
       reconnecting: "Reconnexion…",
       noAccess: "Lien d’accès manquant",
       bible: "Bible",
-      translationLsg: "LSG (français)",
-      translationKjv: "KJV (anglais)",
-      translationWeb: "WEB (anglais moderne)",
-      translationDarby: "Darby (français)",
+      translationInfo: "Traduction biblique actuellement à l’écran",
+      translationUnknown: "Version non indiquée",
+      translationLsgShort: "LSG",
+      translationKjvShort: "KJV",
+      translationWebShort: "WEB",
+      translationDarbyShort: "Darby",
       nowReading: "Lecture en cours",
       welcome: "Bienvenue au culte",
       waiting: "Les versets prononcés pendant le sermon apparaîtront ici en temps réel.",
@@ -94,11 +98,31 @@
   const savedList = document.getElementById("saved-verses-list");
   const savedCount = document.getElementById("saved-count");
   const toastEl = document.getElementById("live-toast");
-  const translationSelect = document.getElementById("translation-select");
+  const translationLabel = document.getElementById("translation-label");
 
   let currentVerse = null;
   const liveStatusEl = document.getElementById("live-status");
   const savedVerses = JSON.parse(localStorage.getItem("churchoverlay_saved_verses") || "[]");
+  const TRANSLATION_LABEL_KEYS = {
+    ls1910: "translationLsgShort",
+    lsg: "translationLsgShort",
+    segond: "translationLsgShort",
+    kjv: "translationKjvShort",
+    web: "translationWebShort",
+    darby: "translationDarbyShort",
+  };
+
+  function updateTranslationLabel(translation) {
+    if (!translationLabel) return;
+    const key = TRANSLATION_LABEL_KEYS[String(translation || "").toLowerCase()] || "translationUnknown";
+    translationLabel.textContent = t(key);
+  }
+
+  function updateVerseActions() {
+    const enabled = Boolean(currentVerse && currentVerse.text);
+    if (btnSave) btnSave.disabled = !enabled;
+    if (btnCopy) btnCopy.disabled = !enabled;
+  }
 
   // Connection state for the header dot + text (data-conn drives the colour
   // in live.css; the text says the same thing in words).
@@ -285,6 +309,8 @@
             text: msg.payload.text || "",
             language: verseLanguage,
           };
+          updateVerseActions();
+          updateTranslationLabel(msg.payload.translation);
           if (heroCard) heroCard.className = "verse-hero";
           if (referenceEl) {
             referenceEl.textContent = currentVerse.reference;
@@ -300,6 +326,8 @@
           }
         } else if (msg.type === "verse:clear") {
           currentVerse = null;
+          updateVerseActions();
+          updateTranslationLabel("");
           if (heroCard) heroCard.className = "verse-hero empty";
           if (referenceEl) {
             referenceEl.textContent = t("welcome");

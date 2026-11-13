@@ -12,3 +12,10 @@ test("dashboard connection state is announced and visually distinct", () => {
   assert.match(css, /\.status-pill\.connected\s*\{[^}]*border-color:[^;]+;/)
   assert.match(css, /\.status-pill\.disconnected\s*\{[^}]*border-color:[^;]+;/)
 })
+
+test("dashboard keeps navigation captions visible and offers a keyboard skip link", () => {
+  assert.match(html, /class="skip-link" href="#shell-content" data-i18n="a11y\.skipToMain"/)
+  assert.match(html, /id="shell-content" class="shell-content" tabindex="-1"/)
+  assert.match(css, /\.sidebar-nav-item > span, \.sidebar-voice-commands-btn > span\s*\{[^}]*overflow-wrap:\s*anywhere;[^}]*hyphens:\s*auto;/)
+  assert.doesNotMatch(css, /\.header-group-label\s*\{\s*display:\s*none;/)
+})

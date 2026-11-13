@@ -120,6 +120,14 @@ test("index.html and dashboard.js are wired to the Bible view", () => {
   assert.ok(html.indexOf("dashboard.js") < html.indexOf("bible-browser.js"), "the bridge must exist before the view loads")
 })
 
+test("Bible Browser exposes the selected verse and leaves focused controls' keys alone", () => {
+  assert.match(script, /row\.id = "bb-verse-option-" \+ entry\.verse/)
+  assert.match(script, /setAttribute\("aria-activedescendant", selectedRow\.id\)/)
+  assert.match(script, /else el\.verses\.removeAttribute\("aria-activedescendant"\)/)
+  assert.match(script, /function interactiveTarget\(target\)[\s\S]*?target\.closest\('button, a\[href\], \[role="button"\], \[role="tab"\]'\)/)
+  assert.match(script, /if \(interactiveTarget\(event\.target\)\) return/)
+})
+
 test("security: server text is only ever rendered with textContent (never innerHTML or eval)", () => {
   assert.doesNotMatch(script, /\binnerHTML\b|\binsertAdjacentHTML\b|\bouterHTML\b|\beval\(|new Function\(|document\.write/)
 })

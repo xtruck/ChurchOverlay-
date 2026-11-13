@@ -47,6 +47,26 @@
       timerLabel: "Sermon countdown",
       timerStop: "Pause / Stop",
       timerReset: "Reset",
+      timerPreset15: "15 min",
+      timerPreset30: "30 min",
+      timerPreset45: "45 min",
+      timerPreset60: "60 min",
+      versePresetJohn316: "John 3:16",
+      versePresetLove: "God so loved the world",
+      versePresetPsalm231: "Psalm 23:1",
+      versePresetShepherd: "The Lord is my shepherd",
+      versePresetRomans828: "Romans 8:28",
+      versePresetTogether: "All things work together",
+      versePresetPhilippians413: "Philippians 4:13",
+      versePresetStrength: "I can do all things",
+      outlinePoint1Title: "Foundational Faith",
+      outlinePoint1Text: "Point 1: Walking by Faith",
+      outlinePoint2Title: "Unconditional Love",
+      outlinePoint2Text: "Point 2: Unconditional Grace",
+      outlinePoint3Title: "Walking in Victory",
+      outlinePoint3Text: "Point 3: Overcoming in Christ",
+      outlinePoint4Title: "Call to Prayer",
+      outlinePoint4Text: "Final Exhortation & Prayer",
       alertTitle: "Message to the stage",
       alert2min: "2 minutes",
       alertWrap: "Wrap up",
@@ -118,6 +138,26 @@
       timerLabel: "Compte à rebours",
       timerStop: "Pause / Arrêt",
       timerReset: "Réinitialiser",
+      timerPreset15: "15 min",
+      timerPreset30: "30 min",
+      timerPreset45: "45 min",
+      timerPreset60: "60 min",
+      versePresetJohn316: "Jean 3:16",
+      versePresetLove: "Dieu a tant aimé le monde",
+      versePresetPsalm231: "Psaume 23:1",
+      versePresetShepherd: "L'Éternel est mon berger",
+      versePresetRomans828: "Romains 8:28",
+      versePresetTogether: "Toutes choses concourent au bien",
+      versePresetPhilippians413: "Philippiens 4:13",
+      versePresetStrength: "Je puis tout par Christ",
+      outlinePoint1Title: "Une foi fondamentale",
+      outlinePoint1Text: "Point 1 : Marcher par la foi",
+      outlinePoint2Title: "Un amour inconditionnel",
+      outlinePoint2Text: "Point 2 : Grâce inconditionnelle",
+      outlinePoint3Title: "Marcher dans la victoire",
+      outlinePoint3Text: "Point 3 : Vaincre en Christ",
+      outlinePoint4Title: "Appel à la prière",
+      outlinePoint4Text: "Exhortation finale et prière",
       alertTitle: "Message à la scène",
       alert2min: "2 minutes",
       alertWrap: "Conclure",
@@ -692,8 +732,8 @@
     document.querySelectorAll(".outline-preset-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         const pointNumber = parseInt(btn.getAttribute("data-num"), 10) || 1
-        const title = btn.getAttribute("data-title") || ""
-        const text = btn.getAttribute("data-text") || undefined
+        const title = t(btn.getAttribute("data-title-key"))
+        const text = t(btn.getAttribute("data-text-key"))
         sendJson(ws, { id: crypto.randomUUID(), type: "outline:show", timestamp: Date.now(), payload: { pointNumber, title, text } })
       })
     })

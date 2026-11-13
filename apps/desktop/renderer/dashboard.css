@@ -479,6 +479,20 @@ kbd + kbd { margin-left: 3px; }
    ========================================================================== */
 #app-shell { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 
+.skip-link {
+  position: fixed;
+  z-index: 10000;
+  top: var(--space-2);
+  left: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-control);
+  background: var(--surface-2);
+  color: var(--text);
+  transform: translateY(calc(-100% - var(--space-3)));
+}
+.skip-link:focus-visible { transform: translateY(0); }
+
 header.topbar {
   display: flex;
   align-items: center;
@@ -606,7 +620,7 @@ header.topbar {
 /* Shell and rail */
 .shell { display: flex; flex: 1; min-height: 0; }
 .sidebar {
-  width: 80px;
+  width: 96px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -633,6 +647,12 @@ header.topbar {
   font-weight: 500;
   line-height: 1.2;
   text-align: center;
+}
+.sidebar-nav-item > span, .sidebar-voice-commands-btn > span {
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  hyphens: auto;
 }
 .sidebar-nav-item .icon, .sidebar-voice-commands-btn .icon { width: 20px; height: 20px; }
 .sidebar-nav-item:hover:not(.active), .sidebar-voice-commands-btn:hover { background: var(--surface-1); color: var(--text); }
@@ -1738,7 +1758,9 @@ header.topbar {
    17. Responsive
    ========================================================================== */
 @media (max-width: 1280px) {
-  .header-group-label { display: none; }
+  .header-controls { gap: var(--space-2); }
+  .header-group { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .header-divider { display: none; }
   .view-live-grid { grid-template-columns: minmax(0, 1fr) 300px; }
 }
 @media (max-width: 1100px) {

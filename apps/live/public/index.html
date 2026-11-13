@@ -23,21 +23,16 @@
 </head>
 <body>
   <div class="live-app">
-    <!-- Header with connection state & translation selector -->
+    <!-- Header with connection state and the translation currently on screen -->
     <header class="live-header">
       <div class="church-brand">
         <span class="live-pulse" aria-hidden="true"></span>
         <span class="brand-title" data-t="title">Live</span>
         <span id="live-status" class="live-status" role="status" data-t="connecting">Connecting…</span>
       </div>
-      <div class="translation-control">
-        <label for="translation-select" data-t="bible">Bible</label>
-        <select id="translation-select">
-          <option value="lsg" data-t="translationLsg">LSG (Français)</option>
-          <option value="kjv" selected data-t="translationKjv">KJV (English)</option>
-          <option value="web" data-t="translationWeb">WEB (Modern En)</option>
-          <option value="darby" data-t="translationDarby">Darby</option>
-        </select>
+      <div class="translation-control" role="group" data-t-label="translationInfo">
+        <span data-t="bible">Bible</span>
+        <span id="translation-label" class="translation-value" data-t="translationUnknown">Version not announced</span>
       </div>
     </header>
 
@@ -52,11 +47,11 @@
           <p id="live-text" class="verse-words" data-t="waiting">Verses spoken during the sermon will appear here in real-time.</p>
         </div>
         <div class="verse-actions">
-          <button type="button" id="btn-save-verse" class="btn-action">
+          <button type="button" id="btn-save-verse" class="btn-action" disabled>
             <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></svg>
             <span data-t="save">Save to My Notes</span>
           </button>
-          <button type="button" id="btn-copy-verse" class="btn-action secondary">
+          <button type="button" id="btn-copy-verse" class="btn-action secondary" disabled>
             <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" /></svg>
             <span data-t="copy">Copy</span>
           </button>

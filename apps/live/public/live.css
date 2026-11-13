@@ -144,21 +144,16 @@ body[data-conn="offline"] .live-status {
   color: var(--text-muted);
 }
 
-.translation-control select {
-  min-height: 44px;
-  padding: 8px 32px 8px 12px;
+.translation-value {
+  min-height: 32px;
+  padding: 4px 10px;
   border-radius: var(--r-control);
   border: 1px solid var(--field-border);
   background-color: var(--surface-1);
   color: var(--text);
-  font: inherit;
-  font-size: 16px; /* >= 16px: iOS does not zoom on focus */
-  appearance: none;
-  -webkit-appearance: none;
-  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%), linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
-  background-position: calc(100% - 17px) 50%, calc(100% - 12px) 50%;
-  background-size: 5px 5px, 5px 5px;
-  background-repeat: no-repeat;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 /* ---------- Live verse ---------- */
@@ -270,13 +265,15 @@ body[data-conn="offline"] .live-status {
 }
 
 /* Nothing to save or copy yet: the buttons say so instead of failing. */
-.verse-hero.empty .btn-action {
+.btn-action:disabled {
   opacity: 0.5;
+  cursor: not-allowed;
 }
+.btn-action:disabled:active { transform: none; }
 
 @media (hover: hover) {
-  .btn-action:hover { background: #ecbb5c; }
-  .btn-action.secondary:hover { background: var(--surface-3); }
+  .btn-action:not(:disabled):hover { background: #ecbb5c; }
+  .btn-action.secondary:not(:disabled):hover { background: var(--surface-3); }
 }
 
 /* ---------- Saved verses ---------- */

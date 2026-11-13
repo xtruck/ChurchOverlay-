@@ -59,6 +59,30 @@ test("remote page: quick stage alerts and the timer title are sent from the tran
   assert.ok(!script.includes('title: "Sermon"'), "timer title must come from t()")
 })
 
+test("remote presets are localized and outline labels match their submitted titles", () => {
+  for (const key of [
+    "timerPreset15", "timerPreset30", "timerPreset45", "timerPreset60",
+    "versePresetJohn316", "versePresetLove", "versePresetPsalm231", "versePresetShepherd",
+    "versePresetRomans828", "versePresetTogether", "versePresetPhilippians413", "versePresetStrength",
+    "outlinePoint1Title", "outlinePoint1Text", "outlinePoint2Title", "outlinePoint2Text",
+    "outlinePoint3Title", "outlinePoint3Text", "outlinePoint4Title", "outlinePoint4Text",
+  ]) {
+    assert.ok(en.has(key) && fr.has(key), `${key} missing in a language`)
+  }
+  for (const key of ["timerPreset15", "timerPreset30", "timerPreset45", "timerPreset60"]) {
+    assert.match(html, new RegExp(`class="pill-btn timer-preset-btn"[^>]*data-t="${key}"`))
+  }
+  const outlinePresets = [...html.matchAll(/class="preset-btn outline-preset-btn"[^>]*data-title-key="([^"]+)"[^>]*data-text-key="([^"]+)"[^>]*>[\s\S]*?<small data-t="([^"]+)"/g)]
+  assert.equal(outlinePresets.length, 4)
+  for (const [, titleKey, textKey, visibleTitleKey] of outlinePresets) {
+    assert.equal(titleKey, visibleTitleKey, "the submitted title must match the visible outline label")
+    assert.ok(en.has(textKey as string) && fr.has(textKey as string), "outline text is localized")
+  }
+  assert.match(script, /const title = t\(btn\.getAttribute\("data-title-key"\)\)/)
+  assert.match(script, /const text = t\(btn\.getAttribute\("data-text-key"\)\)/)
+  assert.doesNotMatch(html, /data-title="|data-text="/)
+})
+
 test("remote page: sends are acknowledged with a toast and offline sends are refused visibly", () => {
   assert.ok(html.includes('id="toast"') && /id="toast"[^>]*aria-live="polite"/.test(html), "toast must be a polite live region")
   for (const key of ["toastSent", "toastOffline", "toastBadRef", "toastShown", "toastPending", "toastNotShown"]) {

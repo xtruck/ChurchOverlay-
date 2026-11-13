@@ -687,10 +687,10 @@
           <small id="remote-timer-label" data-t="timerLabel">Sermon countdown</small>
         </div>
         <div class="pill-group">
-          <button type="button" class="pill-btn timer-preset-btn" data-min="15">15 min</button>
-          <button type="button" class="pill-btn timer-preset-btn" data-min="30">30 min</button>
-          <button type="button" class="pill-btn timer-preset-btn" data-min="45">45 min</button>
-          <button type="button" class="pill-btn timer-preset-btn" data-min="60">60 min</button>
+          <button type="button" class="pill-btn timer-preset-btn" data-min="15" data-t="timerPreset15">15 min</button>
+          <button type="button" class="pill-btn timer-preset-btn" data-min="30" data-t="timerPreset30">30 min</button>
+          <button type="button" class="pill-btn timer-preset-btn" data-min="45" data-t="timerPreset45">45 min</button>
+          <button type="button" class="pill-btn timer-preset-btn" data-min="60" data-t="timerPreset60">60 min</button>
         </div>
         <div class="btn-row">
           <button type="button" id="timer-stop-btn" class="btn-secondary">
@@ -737,20 +737,20 @@
         </div>
         <div class="grid-presets">
           <button type="button" class="preset-btn verse-preset-btn" data-ref="John 3:16">
-            <strong>John 3:16</strong>
-            <small>God so loved the world</small>
+            <strong data-t="versePresetJohn316">John 3:16</strong>
+            <small data-t="versePresetLove">God so loved the world</small>
           </button>
           <button type="button" class="preset-btn verse-preset-btn" data-ref="Psalm 23:1">
-            <strong>Psalm 23:1</strong>
-            <small>The Lord is my shepherd</small>
+            <strong data-t="versePresetPsalm231">Psalm 23:1</strong>
+            <small data-t="versePresetShepherd">The Lord is my shepherd</small>
           </button>
           <button type="button" class="preset-btn verse-preset-btn" data-ref="Romans 8:28">
-            <strong>Romans 8:28</strong>
-            <small>All things work together</small>
+            <strong data-t="versePresetRomans828">Romans 8:28</strong>
+            <small data-t="versePresetTogether">All things work together</small>
           </button>
           <button type="button" class="preset-btn verse-preset-btn" data-ref="Philippians 4:13">
-            <strong>Philippians 4:13</strong>
-            <small>I can do all things</small>
+            <strong data-t="versePresetPhilippians413">Philippians 4:13</strong>
+            <small data-t="versePresetStrength">I can do all things</small>
           </button>
         </div>
       </div>
@@ -769,21 +769,21 @@
       <div class="card">
         <h2 class="card-title"><svg class="icon" aria-hidden="true"><use href="#i-list"/></svg><span data-t="outlineTitle">Spoken Outline Point Triggers</span></h2>
         <div class="grid-presets" style="margin-bottom: 8px">
-          <button type="button" class="preset-btn outline-preset-btn" data-num="1" data-title="Foundational Faith" data-text="Point 1: Walking by Faith">
+          <button type="button" class="preset-btn outline-preset-btn" data-num="1" data-title-key="outlinePoint1Title" data-text-key="outlinePoint1Text">
             <strong>Point 1</strong>
-            <small>Foundational Faith</small>
+            <small data-t="outlinePoint1Title">Foundational Faith</small>
           </button>
-          <button type="button" class="preset-btn outline-preset-btn" data-num="2" data-title="God's Unfailing Love" data-text="Point 2: Unconditional Grace">
+          <button type="button" class="preset-btn outline-preset-btn" data-num="2" data-title-key="outlinePoint2Title" data-text-key="outlinePoint2Text">
             <strong>Point 2</strong>
-            <small>Unconditional Love</small>
+            <small data-t="outlinePoint2Title">Unconditional Love</small>
           </button>
-          <button type="button" class="preset-btn outline-preset-btn" data-num="3" data-title="Walking in Victory" data-text="Point 3: Overcoming in Christ">
+          <button type="button" class="preset-btn outline-preset-btn" data-num="3" data-title-key="outlinePoint3Title" data-text-key="outlinePoint3Text">
             <strong>Point 3</strong>
-            <small>Walking in Victory</small>
+            <small data-t="outlinePoint3Title">Walking in Victory</small>
           </button>
-          <button type="button" class="preset-btn outline-preset-btn" data-num="4" data-title="Conclusion &amp; Ministry" data-text="Final Exhortation &amp; Prayer">
+          <button type="button" class="preset-btn outline-preset-btn" data-num="4" data-title-key="outlinePoint4Title" data-text-key="outlinePoint4Text">
             <strong>Conclusion</strong>
-            <small>Call to Prayer</small>
+            <small data-t="outlinePoint4Title">Call to Prayer</small>
           </button>
         </div>
         <button type="button" id="clear-outline-btn" class="btn-danger btn-block">
