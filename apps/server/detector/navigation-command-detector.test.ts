@@ -486,3 +486,24 @@ test("NavigationCommandDetector: 'chapter N and M' without a verse keyword stays
     { kind: "goto-chapter", book: "john", chapter: 3 },
   ])
 })
+
+// Innovation pass (ARCHITECTURE.md section 145.2.1): a range-tailed utterance
+// belongs to the range detector — the navigation patterns must yield, or the
+// command's display intent supersedes the in-flight range lookup and the
+// congregation sees the wrong verse (or a chapter jump, or nothing).
+test("NavigationCommandDetector: a range-tailed utterance produces NO navigation command (one utterance, one command)", () => {
+  const detector = new NavigationCommandDetector()
+  assert.deepEqual(detector.detect("Proverbes chapitre 1, verset 5 à 7"), [])
+  assert.deepEqual(detector.detect("John chapter 1 verses 5 to 7"), [])
+  assert.deepEqual(detector.detect("Jean chapitre 3 versets 16 à 18"), [])
+  assert.deepEqual(detector.detect("chapitre 9, verset 3 à 5"), [])
+  assert.deepEqual(detector.detect("Jean 3 16-18"), [])
+  // The live-observed comma pause enumeration is deliberately untouched.
+  assert.deepEqual(detector.detect("Abacuc, 1, 2, 3,"), [{ kind: "goto-chapter", book: "habakkuk", chapter: 1 }])
+  // Real commands still fire exactly as before the range work.
+  assert.deepEqual(detector.detect("go to Romans chapter 8"), [{ kind: "goto-chapter", book: "romans", chapter: 8 }])
+  assert.deepEqual(detector.detect("Romans chapter 9, verse 3"), [
+    { kind: "goto-book-chapter-verse", book: "romans", chapter: 9, verse: 3 },
+  ])
+  assert.deepEqual(detector.detect("verse 16"), [{ kind: "goto-bare-verse", verse: 16 }])
+})

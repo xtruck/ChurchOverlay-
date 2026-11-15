@@ -2,6 +2,12 @@ import { nullProto } from "../../../packages/shared/type-guards"
 import type { VerseDetector, VerseReference } from "../../../packages/contracts"
 import { normalizeSpokenReferences } from "./spoken-reference-normalizer"
 import { BOOK_CATALOG } from "../verse/book-catalog"
+import { RANGE_TAIL } from "./range-tail"
+import { VerseRangeDetector, type DetectedVerseRange } from "./verse-range-detector"
+
+// Backward-compatible re-export: RANGE_TAIL moved to its own cycle-free
+// module (range-tail.ts) when the range detector landed (section 145).
+export { RANGE_TAIL }
 
 /**
  * v1 VerseDetector implementation (ARCHITECTURE.md section 12, section 50).
@@ -73,8 +79,10 @@ import { BOOK_CATALOG } from "../verse/book-catalog"
  * still produces a candidate; existence is, as always, KnownValidVerseIndex's
  * job downstream, not this detector's.
  */
-const REFERENCE_PATTERN =
-  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)\s+(\d{1,3}):(\d{1,3})(?![\p{L}\d])/gu
+const REFERENCE_PATTERN = new RegExp(
+  String.raw`(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)\s+(\d{1,3}):(\d{1,3})(?!${RANGE_TAIL}\d)(?![\p{L}\d])`,
+  "gu"
+)
 // CORRECTIF (observed live, 2026-09-23): a real service reading references
 // aloud produced ASR output with a comma after every spoken pause — not
 // just between the chapter number and "verset" (already tolerated below),
@@ -93,8 +101,10 @@ const REFERENCE_PATTERN =
 // conjunction is only accepted BETWEEN the number and a reference keyword,
 // so ordinary enumeration ("3 et 16 personnes") can never half-match; the
 // keyword is still what anchors the reference reading.
-const SPOKEN_REFERENCE_PATTERN =
-  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(\d{1,3})(?:[\s,]+(?:et|and)[\s,]+|[\s,]+)(?:chapitre|chapter|versets?|verses?|le\s+versets?|the\s+verses?)[\s,]+(\d{1,3})(?![\p{L}\d])/giu
+const SPOKEN_REFERENCE_PATTERN = new RegExp(
+  String.raw`(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(\d{1,3})(?:[\s,]+(?:et|and)[\s,]+|[\s,]+)(?:chapitre|chapter|versets?|verses?|le\s+versets?|the\s+verses?)[\s,]+(\d{1,3})(?!${RANGE_TAIL}\d)(?![\p{L}\d])`,
+  "giu"
+)
 
 // CORRECTIF (found investigating a verse-range navigation question,
 // 2026-09-23): the pattern above only covers "BOOK NUMBER KEYWORD NUMBER"
@@ -126,8 +136,10 @@ const SPOKEN_REFERENCE_PATTERN =
 // chapter number directly. The same optional conjunction slot fixes it; the
 // "au/à/a/dans le/in/at" link in front of "chapter" is untouched (it sits
 // BEFORE the keyword, not between the two numbers).
-const SPOKEN_REFERENCE_DOUBLE_KEYWORD_PATTERN =
-  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)(?:[\s,]+(?:au|à|a|dans\s+le|in|at))?[\s,]+(?:chapitre|chapter)[\s,]+(\d{1,3})(?:[\s,]+(?:et|and)[\s,]+|[\s,]+)(?:le\s+|the\s+)?(?:versets?|verses?)[\s,]+(\d{1,3})(?![\p{L}\d])/giu
+const SPOKEN_REFERENCE_DOUBLE_KEYWORD_PATTERN = new RegExp(
+  String.raw`(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)(?:[\s,]+(?:au|à|a|dans\s+le|in|at))?[\s,]+(?:chapitre|chapter)[\s,]+(\d{1,3})(?:[\s,]+(?:et|and)[\s,]+|[\s,]+)(?:le\s+|the\s+)?(?:versets?|verses?)[\s,]+(\d{1,3})(?!${RANGE_TAIL}\d)(?![\p{L}\d])`,
+  "giu"
+)
 
 // The written/dictated compact forms ASR actually produces for a pause
 // between chapter and verse: "Jean 3.16", "Romains 8, 28", and the bare
@@ -135,8 +147,10 @@ const SPOKEN_REFERENCE_DOUBLE_KEYWORD_PATTERN =
 // The trailing guard refuses a third number glued on ("3.16.2", "8, 28:3")
 // so a decimal or a time never half-matches. Book existence is, as always,
 // KnownValidVerseIndex's job.
-const COMPACT_REFERENCE_PATTERN =
-  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(\d{1,3})(?:\s*[.,]\s*|\s+)(\d{1,3})(?![\p{L}\d]|\s*[.,:]\s*\d)/gu
+const COMPACT_REFERENCE_PATTERN = new RegExp(
+  String.raw`(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(\d{1,3})(?:\s*[.,]\s*|\s+)(\d{1,3})(?!${RANGE_TAIL}\d)(?![\p{L}\d]|\s*[.,:]\s*\d)`,
+  "gu"
+)
 
 // The two pattern sets collect() iterates, hoisted to module level so a
 // detect() call no longer re-allocates its array (the detector instance is
@@ -160,7 +174,7 @@ const DETECT_PATTERNS: readonly RegExp[] = [...EXPLICIT_PATTERNS, COMPACT_REFERE
 // name (it directly precedes a number too) — a spurious extra candidate,
 // harmless once filtered here (no real book is named "chapitre"/"verset"),
 // alongside the correct one the new pattern above produces.
-const STOPWORDS = new Set([
+export const STOPWORDS = new Set([
   "at", "is", "in", "on", "to", "the", "a", "an", "and", "or", "but", "of",
   "it", "was", "were", "be", "by", "with", "for", "as", "that", "this",
   "le", "la", "les", "un", "une", "des", "de", "du", "et", "ou", "mais",
@@ -177,7 +191,7 @@ const STOPWORDS = new Set([
  * with a normal, no-break or narrow no-break space) is closed up. Pure text
  * folding; it adds no book knowledge and no reference the speaker did not say.
  */
-function normalizeAsrTypography(text: string): string {
+export function normalizeAsrTypography(text: string): string {
   return text
     .replace(/[​-‍⁠﻿]/g, "")
     .replace(/：/g, ":")
@@ -201,7 +215,7 @@ const COMPACT_FORM_TRAILING_NON_REFERENCE_WORDS = new Set([
   "dit", "disait", "dis", "disent", "says", "said", "say", "nous", "vous", "ils", "elles", "they",
 ])
 
-function compactFormFollowedByNonReferenceWord(text: string, matchEnd: number): boolean {
+export function compactFormFollowedByNonReferenceWord(text: string, matchEnd: number): boolean {
   const next = /^[\s,.]*(%|\p{L}+)/u.exec(text.slice(matchEnd))
   if (!next) return false
   const word = next[1] as string
@@ -210,7 +224,7 @@ function compactFormFollowedByNonReferenceWord(text: string, matchEnd: number): 
 
 // Book aliases that are also everyday words with numbers after them ("un grand
 // nombre 12 14 personnes"): accepted only with "verset"/"chapitre" or a colon.
-const COMPACT_FORM_EXCLUDED_WORDS = new Set(["nombre"])
+export const COMPACT_FORM_EXCLUDED_WORDS = new Set(["nombre"])
 
 /** Words an operator approved as mis-hearings of a book name (see learned-aliases.ts). Read at detect time, so approvals apply live. */
 export interface LearnedAliasLookup {
@@ -221,9 +235,14 @@ export type RegexDetectorOptions = { readonly learnedAliases?: LearnedAliasLooku
 
 export class RegexDetector implements VerseDetector {
   private readonly learnedAliases: LearnedAliasLookup | undefined
+  // Innovation pass (section 145): the range capability rides on the SAME
+  // instance (asVerseRangeDetector looks it up structurally), sharing this
+  // detector's learned aliases and normalization.
+  private readonly rangeDetector: VerseRangeDetector
 
   constructor(options: RegexDetectorOptions = {}) {
     this.learnedAliases = options.learnedAliases
+    this.rangeDetector = new VerseRangeDetector(options)
   }
 
   detect(rawText: string): VerseReference[] {
@@ -233,6 +252,18 @@ export class RegexDetector implements VerseDetector {
   /** Only the explicit forms (colon, "verset"/"chapitre" keyword): never the bare compact "Name N M" form. */
   detectExplicit(rawText: string): VerseReference[] {
     return this.collect(rawText, false)
+  }
+
+  /**
+   * Innovation pass (ARCHITECTURE.md section 145): spoken/written verse RANGES
+   * ("verset 5 à 7", "verses 16 to 18", "3:16-18"). A range tail suppresses the
+   * single-reference match (see RANGE_TAIL), so a range utterance resolves
+   * exactly once — here, not as a truncated single. Results are candidates:
+   * detectValidatedRanges applies the hallucination guard downstream.
+   */
+  detectRanges(rawText: string): readonly DetectedVerseRange[] {
+    if (!/\d/.test(normalizeAsrTypography(rawText))) return []
+    return this.rangeDetector.detectRanges(rawText)
   }
 
   private collect(rawText: string, includeCompact: boolean): VerseReference[] {

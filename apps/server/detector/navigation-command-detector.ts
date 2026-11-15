@@ -1,6 +1,7 @@
 import type { NavigationCommand, NavigationCommandDetector as INavigationCommandDetector } from "../../../packages/contracts"
 import { normalizeSpokenReferences } from "./spoken-reference-normalizer"
 import { CATALOG_IDS, isCatalogBookWord, normalizeBookName, stripAccents } from "./regex-detector"
+import { RANGE_TAIL } from "./range-tail"
 
 /**
  * ARCHITECTURE.md section 61.2-61.3: voice-driven verse navigation, a
@@ -185,9 +186,11 @@ const NARRATIVE_GUARDED_KINDS: ReadonlySet<string> = new Set(["next-verse", "pre
 // just bare "verset"/"verse"), matching SPOKEN_REFERENCE_PATTERN's own
 // keyword alternation — without it, "chapitre 1, le verset 2" could be
 // misread as a chapter-only goto instead of correctly falling through to
-// the full BOOK_CHAPTER_VERSE_PATTERN.
+// the full BOOK_CHAPTER_VERSE_PATTERN. The plural "versets"/"verses" is
+// accepted too — it used to escape the \b and misread a plural range utterance
+// ("chapitre 3 versets 16 à 18") as a chapter-only goto.
 const GOTO_CHAPTER_PATTERN =
-  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(?:[Cc]hapter|[Cc]hapitre)[\s,]+(\d{1,3})(?![\p{L}\d])(?!:\d)(?!\s*,?\s*(?:(?:[Ee]t|[Aa]nd)\s+)?(?:le\s+|the\s+)?(?:[Vv]erse|[Vv]erset)\b)/gu
+  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(?:[Cc]hapter|[Cc]hapitre)[\s,]+(\d{1,3})(?![\p{L}\d])(?!:\d)(?!\s*,?\s*(?:(?:[Ee]t|[Aa]nd)\s+)?(?:le\s+|the\s+)?(?:[Vv]erse|[Vv]erset)s?\b)/gu
 
 // TASK 1 + TASK 2: "<book> chapter|chapitre N[,] verse|verset M" — full
 // prose-form reference with all three components. Unlike goto-chapter (no
@@ -209,8 +212,15 @@ const GOTO_CHAPTER_PATTERN =
 // now knows the conjunction too) still fired goto-chapter, so the exact
 // verse was lost to a chapter jump. The conjunction slot is only accepted
 // BETWEEN the two numbers; the keyword still anchors the reference.
-const BOOK_CHAPTER_VERSE_PATTERN =
-  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(?:[Cc]hapter|[Cc]hapitre)[\s,]+(\d{1,3})(?:[\s,]+(?:[Ee]t|[Aa]nd)[\s,]+|[\s,]+)(?:le\s+|the\s+)?(?:[Vv]erse|[Vv]erset)[\s,]+(\d{1,3})(?![\p{L}\d])/gu
+// CORRECTIF (2026-11-15, innovation pass section 145): a verse number
+// followed by a RANGE tail ("verset 5 à 7") is the range detector's
+// utterance — the same RANGE_TAIL string the single patterns suppress with
+// — so a prose range produces NO navigation command and cannot race the
+// range show (one utterance, one command).
+const BOOK_CHAPTER_VERSE_PATTERN = new RegExp(
+  String.raw`(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(?:[Cc]hapter|[Cc]hapitre)[\s,]+(\d{1,3})(?:[\s,]+(?:[Ee]t|[Aa]nd)[\s,]+|[\s,]+)(?:le\s+|the\s+)?(?:[Vv]erse|[Vv]erset)[\s,]+(\d{1,3})(?!${RANGE_TAIL}\d)(?![\p{L}\d])`,
+  "gu"
+)
 
 // ARCHITECTURE.md section 65.1: elliptical/continuation references —
 // "verse 16" or "chapter 9, verse 3" said after a book/chapter was already
@@ -226,9 +236,12 @@ const BOOK_CHAPTER_VERSE_PATTERN =
 // "Turn to chapter 9" is lowercase and passes through.
 // CORRECTIF (2026-09-23, live-observed): comma-tolerant separators plus
 // "le verset"/"the verse" tolerance, same reasoning as the two patterns
-// above.
-const BARE_CHAPTER_VERSE_PATTERN =
-  /(?<!(?:[123]\s+)?\p{Lu}[\p{L}]+\s)\b(?:[Cc]hapter|[Cc]hapitre)[\s,]+(\d{1,3})(?:[\s,]+(?:[Ee]t|[Aa]nd)[\s,]+|[\s,]+)(?:le\s+|the\s+)?(?:[Vv]erse|[Vv]erset)[\s,]+(\d{1,3})\b/gu
+// above. The same RANGE_TAIL exclusion as BOOK_CHAPTER_VERSE_PATTERN: a
+// bare prose range ("chapitre 9, verset 3 à 5") is not a goto-bare pair.
+const BARE_CHAPTER_VERSE_PATTERN = new RegExp(
+  String.raw`(?<!(?:[123]\s+)?\p{Lu}[\p{L}]+\s)\b(?:[Cc]hapter|[Cc]hapitre)[\s,]+(\d{1,3})(?:[\s,]+(?:[Ee]t|[Aa]nd)[\s,]+|[\s,]+)(?:le\s+|the\s+)?(?:[Vv]erse|[Vv]erset)[\s,]+(\d{1,3})(?!${RANGE_TAIL}\d)\b`,
+  "gu"
+)
 
 // The lookbehind here excludes a "verse M"/"verset M" that is really the
 // tail of a "chapter N, verse M" phrase already claimed by the pattern
@@ -259,8 +272,17 @@ const BARE_VERSE_PATTERN =
 // reasoning as every pattern above. The exclusion also knows the spoken
 // conjunction ("Daniel 3 et verset 4" is a full reference for
 // BOOK_CHAPTER_VERSE_PATTERN, never a chapter-only goto).
-const BOOK_BARE_CHAPTER_PATTERN =
-  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(\d{1,3})(?!\s*:)(?![\p{L}\d])(?!\s*,?\s*(?:(?:[Ee]t|[Aa]nd)\s+)?(?:le\s+|the\s+)?(?:[Vv]erse|[Vv]erset)\b)/gu
+// CORRECTIF (2026-11-15, innovation pass section 145): the exclusion now
+// knows the plural keyword ("versets") and the shared RANGE_TAIL, and a
+// SPACE-separated second number after the chapter ("Jean 3 16-18", the
+// compact range; also the compact single "Jean 3 16") means verses, never a
+// chapter-only goto — one utterance, one command, whichever detector owns
+// it. COMMA-separated numbers stay allowed: "Abacuc, 1, 2, 3," is the
+// live-observed spoken pause enumeration (2026-09-23), not a range.
+const BOOK_BARE_CHAPTER_PATTERN = new RegExp(
+  String.raw`(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(\d{1,3})(?!\s*:)(?![\p{L}\d])(?!\s*,?\s*(?:(?:[Ee]t|[Aa]nd)\s+)?(?:le\s+|the\s+)?(?:[Vv]erse|[Vv]erset)s?\b)(?!${RANGE_TAIL}\d)(?!\s+\d{1,3})`,
+  "gu"
+)
 
 // PROD AUDIT 2026-09: near-miss guard helper for AppCore. True if any word
 // in the text normalizes to a catalog book name — lets the near-miss log

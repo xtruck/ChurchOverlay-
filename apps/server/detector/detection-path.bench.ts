@@ -31,6 +31,10 @@ const TEXTS = [
   "lisez avec moi Psaumes chapitre 23 et verset 1",
   // A longer sermon sentence with a reference buried mid-text.
   "et comme il est écrit au livre d'Ésaïe chapitre 53, verset 5, il a été blessé pour nos transgressions",
+  // Innovation pass (section 145): range-bearing finals — the range tail
+  // lookaheads now sit on every single-reference scan too.
+  "Proverbes chapitre 1, verset 5 à 7, dit le Seigneur",
+  "lisez avec moi Jean 3:16-18 ce matin",
 ]
 
 // The digit-free subset: what the detector's early-out targets (every
@@ -58,6 +62,7 @@ console.log(`fixtures: ${TEXTS.length} transcript lines (mixed FR/EN, partials a
 time("RegexDetector.detect", (t) => void detector.detect(t))
 time("RegexDetector.detect — digit-free partials", (t) => void detector.detect(t), 7, DIGIT_FREE_TEXTS)
 time("RegexDetector.detectExplicit", (t) => void detector.detectExplicit(t))
+time("RegexDetector.detectRanges", (t) => void detector.detectRanges(t))
 time("compactOnlyReferenceKeys", (t) => void compactOnlyReferenceKeys(t))
 time("NavigationCommandDetector.detect", (t) => void navDetector.detect(t))
 time("correctTranscription", (t) => void correctTranscription(t).correctedText)

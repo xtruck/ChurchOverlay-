@@ -38,7 +38,10 @@ const CASES: readonly ReplayCase[] = [
   { text: "« Jean 3:16 »", shown: ["john 3:16"], note: "guillemets" },
   { text: "d’Ésaïe 4:6", shown: ["isaiah 4:6"], note: "curly apostrophe before the book" },
   { text: "Jean 3 versets 16", shown: ["john 3:16"], note: "plural 'versets'" },
-  { text: "Jean chapitre 3 versets 16 à 18", shown: ["john 3:16"], note: "plural 'versets' with a range" },
+  // Innovation pass (ARCHITECTURE.md section 145): a trailing range indicator used to
+  // truncate to the first verse here; the range detector now owns the utterance
+  // ("john 3:16-18" joined), so the single detector correctly yields nothing.
+  { text: "Jean chapitre 3 versets 16 à 18", shown: [], note: "plural 'versets' with a range -> VerseRangeDetector, not a truncated single" },
   // Fragments with no reference at all: nothing may be proposed.
   { text: "Verset 8.", shown: [], note: "bare verse is a navigation command, not a reference" },
   { text: "Va au verset 8.", shown: [], note: "navigation command" },

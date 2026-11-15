@@ -158,19 +158,23 @@ test("RegexDetector: detects spoken French wording with a comma after the book n
 // group greedily capture "chapitre" itself as the book name, losing
 // "Proverbes" entirely — only masked in practice because
 // NavigationCommandDetector's own separate pattern happened to handle
-// this exact phrasing correctly. Also covers a trailing range indicator
-// ("... verset 5 à 7"/"verse 5 to 7") being harmlessly ignored — the
-// starting verse of a spoken range is all this detector needs to extract;
-// "next verse" navigation (already existing) steps through the rest.
-test("RegexDetector: detects the full 'book chapitre N, verset M' prose form without losing the book name, including a trailing verse-range indicator", () => {
+// this exact phrasing correctly.
+// Innovation pass (ARCHITECTURE.md section 145, 2026-11-15): the trailing
+// range indicator changed hands. The old behavior truncated a spoken range
+// to its first verse and relied on the operator pressing "next verse" for
+// the rest; the pending display decision has now been made (a detected
+// range shows as ONE joined overlay verse with bracketed verse numbers), so
+// a range tail now SUPPRESSES the single match here and VerseRangeDetector
+// owns the utterance end-to-end. One utterance, one command — never both a
+// truncated single and a range for the same numbers.
+test("RegexDetector: detects the full 'book chapitre N, verset M' prose form without losing the book name; a trailing verse-range indicator now belongs to the range detector", () => {
   const detector = new RegexDetector()
   assert.deepEqual(detector.detect("Proverbes chapitre 1, verset 5"), [
     { book: "proverbs", chapter: 1, verse: 5 },
   ])
-  assert.deepEqual(detector.detect("Proverbes chapitre 1 verset 5 à 7"), [
-    { book: "proverbs", chapter: 1, verse: 5 },
-  ])
-  assert.deepEqual(detector.detect("Proverbs chapter 1 verse 5 to 7"), [
+  assert.deepEqual(detector.detect("Proverbes chapitre 1 verset 5 à 7"), [])
+  assert.deepEqual(detector.detect("Proverbs chapter 1 verse 5 to 7"), [])
+  assert.deepEqual(detector.detect("Proverbs chapter 1 verse 5"), [
     { book: "proverbs", chapter: 1, verse: 5 },
   ])
 })
