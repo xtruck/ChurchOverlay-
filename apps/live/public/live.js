@@ -291,6 +291,14 @@
   if (btnCopy) btnCopy.addEventListener("click", copyCurrentVerse);
   if (btnExport) btnExport.addEventListener("click", exportAllNotes);
 
+  // The same bounded, backoff-aware reconnect every other surface carries
+  // (duplicated, not shared — no build step; ARCHITECTURE.md section 48,
+  // AGENTS.md section 37 — the DELAY is capped and grows, reconnection
+  // itself never stops; a live view must keep trying through an outage).
+  const BASE_RECONNECT_DELAY_MS = 1000;
+  const MAX_RECONNECT_DELAY_MS = 30000;
+  let reconnectAttempts = 0;
+
   function connectWs() {
     // The server terminates a connection that presents no subprotocol, so
     // reconnecting without a token would just spin forever behind a page that
@@ -301,7 +309,10 @@
       return;
     }
     const ws = new WebSocket(wsUrl, [token]);
-    ws.onopen = () => setConnection("connected", t("connected"));
+    ws.onopen = () => {
+      reconnectAttempts = 0;
+      setConnection("connected", t("connected"));
+    };
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
@@ -345,9 +356,16 @@
         console.warn("Malformed WS message:", err);
       }
     };
+    ws.onerror = () => {
+      // onclose always follows an error; it owns the state and the retry.
+      // This only keeps the console honest for a refused socket.
+      console.warn("[live] WebSocket error");
+    };
     ws.onclose = () => {
+      const delay = Math.min(BASE_RECONNECT_DELAY_MS * 2 ** reconnectAttempts, MAX_RECONNECT_DELAY_MS);
+      reconnectAttempts += 1;
       setConnection("offline", t("reconnecting"));
-      setTimeout(connectWs, 2500);
+      setTimeout(connectWs, delay);
     };
   }
 
