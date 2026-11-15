@@ -12,6 +12,7 @@ import type {
   Rundown,
   RundownStatePayload,
   TranscriptResult,
+  TypedVerseReference,
   Verse,
   VerseDetector,
   VerseIndex,
@@ -50,6 +51,9 @@ import { SilenceGate } from "../audio/silence-gate"
 import { ChurchOverlayWsServer, type ServerTokens, type WsClientLatencySnapshot } from "../ws/server"
 import { resolveTranscriptVerses } from "./resolve-transcript-verses"
 import { resolveVerse, resolveVerseDetailed, translationIdFor, type VerseLookupFailure } from "../verse/resolve-verse"
+import { resolveVerseRange } from "../verse/resolve-verse-range"
+import { MAX_RANGE_VERSES } from "./detect-and-validate"
+import type { DetectedVerseRange } from "../detector/verse-range-detector"
 import { passesTranscriptGate } from "./transcript-gate"
 import { LatencyTracker, type LatencySnapshot } from "./latency-tracker"
 import { correctTranscription } from "../asr/transcription-corrector"
@@ -1984,6 +1988,32 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       wsServer.broadcastToOperators({ id: generateUlid(), type, timestamp: Date.now(), correlationId, payload }),
   })
 
+  // Section 146 (frontend pass): the operator's TYPED range end ("Book
+  // C:V-E") becomes a DetectedVerseRange through the same guards as a
+  // detected spoken range (section 145's detectValidatedRanges): the START
+  // verse must already be confirmed by the known-valid index (the caller
+  // checks it), the end clamps down to the last CONTIGUOUS verse the index
+  // confirms, and MAX_RANGE_VERSES caps the span so one typed line can
+  // neither flood the overlay with a wall of text nor turn into an
+  // unbounded sequence of source reads. Returns null when what is left is
+  // the plain single verse — a malformed, reversed or fully-clamped end is
+  // never an error the operator must decode.
+  function operatorTypedRange(
+    typed: TypedVerseReference,
+    reference: VerseReference,
+    knownValid: VerseIndex
+  ): DetectedVerseRange | null {
+    const end = typed.verseEnd
+    if (typeof end !== "number" || !Number.isInteger(end) || end <= reference.verse) return null
+    let endVerse = Math.min(end, reference.verse + MAX_RANGE_VERSES - 1)
+    while (endVerse > reference.verse && !knownValid.exists({ book: reference.book, chapter: reference.chapter, verse: endVerse })) {
+      endVerse -= 1
+    }
+    return endVerse > reference.verse
+      ? { book: reference.book, chapter: reference.chapter, startVerse: reference.verse, endVerse }
+      : null
+  }
+
   /**
    * Resolves one preview through the SAME known-valid index and resolveVerse()
    * as a real override, but never calls beginDisplayIntent() or any
@@ -1994,7 +2024,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
    * shown to the operator as "no such verse".
    */
   async function answerPreview(message: WsMessage): Promise<void> {
-    const { seq, reference: typed } = message.payload as { seq: number; reference: VerseReference }
+    const { seq, reference: typed } = message.payload as { seq: number; reference: TypedVerseReference }
     const reference: VerseReference = {
       ...typed,
       book: resolveQuickBook(typed.book) ?? typed.book.trim().replace(/\s+/g, " ").toLowerCase(),
@@ -2007,7 +2037,14 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       suggestions = suggestNearestReferences(reference, index)
     } else {
       try {
-        verse = await resolveVerse(reference, source, cache, circuitBreaker, translationIdFor(source), logger)
+        // Section 146: a typed range ("Jean 3:16-18") previews as the JOINED
+        // range verse — exactly what Show will put on screen — through the
+        // same guarded path (clamped, capped, known-valid) as a detected
+        // range. A single reference keeps the plain resolveVerse().
+        const range = operatorTypedRange(typed, reference, index)
+        verse = range
+          ? await resolveVerseRange(range, source, cache, circuitBreaker, translationIdFor(source), logger)
+          : await resolveVerse(reference, source, cache, circuitBreaker, translationIdFor(source), logger)
       } catch (err) {
         logger.warn({
           component: "app-core",
@@ -2151,9 +2188,10 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         // never trust the operator's typed reference just because a
         // human entered it. The payload is already schema-shaped by
         // validateWsMessage (book/chapter/verse types are correct), but
-        // shape isn't existence: it still goes through resolveVerse()
-        // exactly like a detected reference would.
-        const payload = message.payload as VerseReference
+        // shape isn't existence: it still goes through the guarded
+        // resolution path exactly like a detected reference — or, since
+        // section 146, a detected RANGE — would.
+        const payload = message.payload as TypedVerseReference
         // Same book-id normalization the detector applies (trim, collapse
         // whitespace, lowercase): a typed "John" must reach the source as
         // "john", or the exact-match French source returns null and
@@ -2175,6 +2213,44 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
             metadata: { reference: payload, reason: "unknown-reference" },
           })
           reportLookup(reference, "invalid", "override")
+          return
+        }
+        // Section 146 (frontend pass): the operator may type a RANGE ("Jean
+        // 3:16-18"). It resolves through the SAME guarded path as a detected
+        // range (section 145) — clamped to contiguous known-valid verses,
+        // capped, resolved verse by verse through resolveVerseDetailed — so
+        // manual entry is never a second, weaker way to verse text.
+        const range = operatorTypedRange(payload, reference, index)
+        if (range) {
+          const ticket = beginDisplayIntent()
+          // resolveVerseRange reports every verse's failure through onLookup —
+          // the same SF-03 lookup report the single path gives.
+          const verse = await resolveVerseRange(
+            range,
+            source,
+            cache,
+            circuitBreaker,
+            translationIdFor(source),
+            logger,
+            (ref, failure) => reportLookup(ref, failure, "override"),
+          )
+          if (verse && isSupersededIntent(ticket)) {
+            dropStaleLookup("override", message.correlationId)
+            reportLookup(reference, "superseded", "override") // TS-05: the operator is told, not left waiting
+            return
+          }
+          if (verse) {
+            markIntentApplied(ticket)
+            broadcastVerse(verse, "override", message.correlationId)
+            logCorrectionCandidateIfRecentNearMiss(reference, message.correlationId)
+          } else {
+            logger.info({
+              component: "app-core",
+              event: "override.rejected",
+              correlationId: message.correlationId,
+              metadata: { reference, range },
+            })
+          }
           return
         }
         const ticket = beginDisplayIntent()

@@ -127,6 +127,37 @@ test("validateWsMessage: accepts a valid verse:override command with a VerseRefe
   assert.equal(result.ok, true)
 })
 
+// Section 146 (frontend pass): the operator's manual range end ("Book
+// C:V-E") is an additive optional number on the typed reference — shape
+// only here; AppCore owns the semantics (integer, forward, clamped, capped).
+test("validateWsMessage: accepts an optional numeric verseEnd on verse:override and verse:preview references", () => {
+  for (const type of ["verse:override", "verse:preview"] as const) {
+    const withRange = validateWsMessage(
+      {
+        id: "01ABC",
+        type,
+        timestamp: 1700000000000,
+        payload: type === "verse:preview" ? { seq: 1, reference: { book: "john", chapter: 3, verse: 16, verseEnd: 18 } } : { book: "john", chapter: 3, verse: 16, verseEnd: 18 },
+      },
+      "operator"
+    )
+    assert.equal(withRange.ok, true, type)
+  }
+})
+
+test("validateWsMessage: rejects a non-numeric verseEnd on a typed reference", () => {
+  const result = validateWsMessage(
+    {
+      id: "01ABC",
+      type: "verse:override",
+      timestamp: 1700000000000,
+      payload: { book: "john", chapter: 3, verse: 16, verseEnd: "18" },
+    },
+    "operator"
+  )
+  assert.equal(result.ok, false)
+})
+
 test("validateWsMessage: accepts optional correlationId and sequence when valid", () => {
   const result = validateWsMessage(
     {

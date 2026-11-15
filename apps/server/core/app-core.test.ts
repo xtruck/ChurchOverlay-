@@ -24,6 +24,7 @@ import type {
   TranscriptResult,
   Verse,
   VerseReference,
+  VerseShowPayload,
   VerseSource,
   WsMessage,
 } from "../../../packages/contracts"
@@ -103,6 +104,14 @@ class StubVerseSource implements VerseSource {
   constructor(private readonly byBook: Record<string, Verse>) {}
   async getVerse(reference: VerseReference): Promise<Verse | null> {
     return this.byBook[reference.book] ?? null
+  }
+}
+
+/** Serves one verse per "book:chapter:verse" key — what a typed RANGE (section 146) resolves verse by verse through. */
+class ReferenceStubSource implements VerseSource {
+  constructor(private readonly byReference: Record<string, Verse>) {}
+  async getVerse(reference: VerseReference): Promise<Verse | null> {
+    return this.byReference[`${reference.book}:${reference.chapter}:${reference.verse}`] ?? null
   }
 }
 
@@ -501,6 +510,114 @@ test("AppCore: verse:override with a reference that resolves broadcasts verse:sh
     assert.deepEqual(message.payload, { ...johnVerse, trigger: "override" })
     operatorSocket.close()
     viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: verse:override with a typed range (verseEnd) broadcasts ONE joined verse:show through the same guarded path as a detected range", async () => {
+  // Section 146 (frontend pass): "Jean 3:16-18" typed into the operator box
+  // is the manual twin of a detected spoken range (section 145) — one
+  // joined verse with bracketed numbers and the additive verseEnd, never a
+  // second, weaker way to verse text.
+  const verses: Verse[] = [16, 17, 18].map((v) => makeVerse({ book: "john", chapter: 3, verse: v }, `text of verse ${v}`))
+  const byReference: Record<string, Verse> = {}
+  for (const verse of verses) byReference[`${verse.reference.book}:${verse.reference.chapter}:${verse.reference.verse}`] = verse
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new ReferenceStubSource(byReference),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const viewerReceived = waitForMessage(viewerSocket)
+
+    operatorSocket.send(
+      JSON.stringify({
+        id: "01A",
+        type: "verse:override",
+        timestamp: Date.now(),
+        payload: { book: "john", chapter: 3, verse: 16, verseEnd: 18 },
+      })
+    )
+
+    const message = await viewerReceived
+    assert.equal(message.type, "verse:show")
+    const shown = message.payload as VerseShowPayload & { verseEnd?: number }
+    assert.equal(shown.trigger, "override")
+    assert.deepEqual(shown.reference, { book: "john", chapter: 3, verse: 16 })
+    assert.equal(shown.verseEnd, 18)
+    assert.equal(shown.text, "[16] text of verse 16 [17] text of verse 17 [18] text of verse 18")
+    operatorSocket.close()
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: a typed range end clamps to the last contiguous known-valid verse and to MAX_RANGE_VERSES", async () => {
+  // Section 146: the same guards as detectValidatedRanges (section 145),
+  // exercised through verse:preview — "john 3:30-99" clamps to the chapter's
+  // real end (36), "psalm 119:1-176" caps at MAX_RANGE_VERSES (12).
+  const verses: Verse[] = []
+  for (let v = 1; v <= 36; v++) verses.push(makeVerse({ book: "john", chapter: 3, verse: v }, `john text ${v}`))
+  for (let v = 1; v <= 12; v++) verses.push(makeVerse({ book: "psalm", chapter: 119, verse: v }, `psalm text ${v}`))
+  const byReference: Record<string, Verse> = {}
+  for (const verse of verses) byReference[`${verse.reference.book}:${verse.reference.chapter}:${verse.reference.verse}`] = verse
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new ReferenceStubSource(byReference),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const clamped = await new Promise<{ seq: number; reference: VerseReference; verse: Verse | null }>((resolve) => {
+      operatorSocket.on("message", (data) => {
+        const message = JSON.parse(String(data))
+        if (message.type === "verse:preview-result") resolve(message.payload)
+      })
+      operatorSocket.send(
+        JSON.stringify({
+          id: "01A",
+          type: "verse:preview",
+          timestamp: Date.now(),
+          payload: { seq: 1, reference: { book: "john", chapter: 3, verse: 30, verseEnd: 99 } },
+        })
+      )
+    })
+    assert.ok(clamped.verse)
+    assert.equal(clamped.verse.verseEnd, 36, "the end clamps to the chapter's real verse count")
+    assert.equal((clamped.verse.text.match(/\[\d+\]/g) ?? []).length, 7, "verses 30..36 join")
+
+    const capped = await new Promise<{ seq: number; reference: VerseReference; verse: Verse | null }>((resolve) => {
+      let sawStale = false
+      operatorSocket.on("message", (data) => {
+        const message = JSON.parse(String(data))
+        if (message.type === "verse:preview-result" && message.payload.seq === 2) resolve(message.payload)
+        else if (message.type === "verse:preview-result") sawStale = true
+      })
+      operatorSocket.send(
+        JSON.stringify({
+          id: "01B",
+          type: "verse:preview",
+          timestamp: Date.now(),
+          payload: { seq: 2, reference: { book: "psalm", chapter: 119, verse: 1, verseEnd: 176 } },
+        })
+      )
+      void sawStale
+    })
+    assert.ok(capped.verse)
+    assert.equal(capped.verse.verseEnd, 12, "one typed line can never exceed MAX_RANGE_VERSES")
+    operatorSocket.close()
   } finally {
     await app.stop()
   }

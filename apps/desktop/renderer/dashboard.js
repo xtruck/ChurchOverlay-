@@ -3062,31 +3062,13 @@
     log(t("log.sentMediaClear"), "sent")
   })
 
-  // Deliberately similar to, but NOT required to stay byte-for-byte in
-  // sync with, RegexDetector's REFERENCE_PATTERN in
-  // apps/server/detector/regex-detector.ts — unlike float32ToInt16/
-  // encodeAudioFrame above, a mismatch here is not a correctness risk:
-  // this only decides whether the manual-override input field accepts
-  // what the operator typed, then sends it as a plain payload. The
-  // server-side resolveVerse()/KnownValidVerseIndex path re-validates
-  // it exactly like a detected reference regardless of what this parser
-  // let through (see app-core.ts's verse:override handler, ARCHITECTURE.md
-  // section 36). Intentionally looser than the server pattern (e.g. it
-  // doesn't require the book name to start with a capital letter), since
-  // rejecting a typo-free field here isn't a security boundary.
-  function parseReference(text) {
-    // Unicode letters so "Gen\u00e8se 1:1" and multi-word names ("Song of Solomon 2:1") parse; the server re-validates.
-    // Quick entry: "jn 3 16", "1co 13 4", "gen 1:1" all work. The chapter and verse are
-    // separated by a space, colon, dot or comma; the book may be a shortcut (the server
-    // resolves it, see apps/server/detector/quick-book.ts).
-    const match = /^\s*((?:[123]\s*)?\p{L}[\p{L}.'\u2019 ]*?)\s*(\d{1,3})(?:\s+|\s*[:.,]\s*)(\d{1,3})\s*$/u.exec(text)
-    if (!match) return null
-    return {
-      book: match[1].trim().replace(/\s+/g, " ").toLowerCase(),
-      chapter: Number.parseInt(match[2], 10),
-      verse: Number.parseInt(match[3], 10),
-    }
-  }
+  // Section 146 (frontend pass): the typed-reference parser lives in its
+  // own module (parse-reference.js, loaded before this file) so it is
+  // unit-testable there — it now also accepts a range tail ("Jean 3:16-18",
+  // "jn 3 16 18"), which the server resolves through the same guarded path
+  // as a detected range. The "deliberately not byte-for-byte in sync with
+  // RegexDetector" reasoning moved with it.
+  const parseReference = globalThis.ChurchOverlayParseReference.parseReference
 
   // Media tiles and rundown scene chips are non-<button> elements (a
   // <div> grid tile, a chip with several independently-clickable actions
@@ -3687,7 +3669,7 @@
         onScreen.verse = ref ? formatDisplayedReference(message.payload) : "…"
         if (ref) {
           rememberRecentVerse(message.payload)
-          lastShownReference = { book: ref.book, chapter: ref.chapter, verse: ref.verse }
+          lastShownReference = rangeReference(ref, message.payload.verseEnd)
         }
         renderTally()
       } else if (message.type === "verse:clear") {
@@ -3754,12 +3736,12 @@
   // never re-displays cached text on its own (AGENTS.md sections 14, 50).
   const MAX_RECENT_VERSES = 9
   const recentVersesEl = document.getElementById("recent-verses")
-  let recentVerses = [] // [{ key, label, reference: { book, chapter, verse } }], newest first
+  let recentVerses = [] // [{ key, label, reference: { book, chapter, verse, verseEnd? } }], newest first (section 146: a range keeps its verseEnd)
   let renderedRecentVersesKey = null
 
   function rememberRecentVerse(verse) {
     const ref = verse.reference
-    const reference = { book: ref.book, chapter: ref.chapter, verse: ref.verse }
+    const reference = rangeReference(ref, verse.verseEnd)
     const key = referenceKey(reference)
     recentVerses = [{ key, label: formatDisplayedReference(verse), reference }]
       .concat(recentVerses.filter((entry) => entry.key !== key))
@@ -4213,10 +4195,16 @@
   // Alt+Left / Alt+Right: one verse back/forward from the last verse shown.
   // An ordinary verse:override, so the server validates it; past the end of a
   // chapter nothing is shown (no rollover to the next chapter).
+  // Section 146: lastShownReference carries the range end of a shown range,
+  // and stepping FORWARD continues at the range's END (Alt+Right after
+  // "Jean 3:16-18" shows 19, not 17 — the middle of the range the operator
+  // already has on screen); stepping back always starts from the range's
+  // FIRST verse.
   let lastShownReference = null
   function stepVerse(delta) {
     if (!lastShownReference) return
-    const verse = lastShownReference.verse + delta
+    const base = delta > 0 ? (lastShownReference.verseEnd ?? lastShownReference.verse) : lastShownReference.verse
+    const verse = base + delta
     if (verse < 1) return
     const reference = { book: lastShownReference.book, chapter: lastShownReference.chapter, verse }
     sendJson({ id: crypto.randomUUID(), type: "verse:override", timestamp: Date.now(), payload: reference })
@@ -4288,8 +4276,18 @@
     return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0")
   }
 
+  // Section 146: the reference payload for remembering/re-showing a verse,
+  // carrying the range end when the shown verse IS a range ("Book C:V-E")
+  // — recalling "Jean 3:16-18" must re-show the whole range, not silently
+  // truncate it to verse 16.
+  function rangeReference(ref, verseEnd) {
+    return typeof verseEnd === "number" && verseEnd > ref.verse
+      ? { book: ref.book, chapter: ref.chapter, verse: ref.verse, verseEnd }
+      : { book: ref.book, chapter: ref.chapter, verse: ref.verse }
+  }
+
   function referenceKey(ref) {
-    return ref.book + " " + ref.chapter + ":" + ref.verse
+    return ref.book + " " + ref.chapter + ":" + ref.verse + (typeof ref.verseEnd === "number" && ref.verseEnd > ref.verse ? "-" + ref.verseEnd : "")
   }
 
   let historyRenderToken = 0

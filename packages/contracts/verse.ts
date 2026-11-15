@@ -4,6 +4,19 @@ export type VerseReference = {
   verse: number
 }
 
+/**
+ * ARCHITECTURE.md section 146 (frontend pass): the OPERATOR's typed
+ * reference, as carried by verse:override and verse:preview. An optional
+ * additive `verseEnd` turns it into a manually entered RANGE ("Book C:V-E")
+ * — the operator's equivalent of a detected spoken range, resolved through
+ * the exact same guarded path (known-valid index, contiguous-verse clamp,
+ * MAX_RANGE_VERSES cap, resolveVerseRange) so manual entry is never a
+ * second, weaker way to verse text. A malformed or reversed verseEnd simply
+ * degrades to the single verse; it is never an error the operator must
+ * decode.
+ */
+export type TypedVerseReference = VerseReference & { readonly verseEnd?: number }
+
 export type Verse = {
   reference: VerseReference
   text: string

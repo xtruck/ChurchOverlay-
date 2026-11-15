@@ -25,9 +25,9 @@ import type {
   TimerStartPayload,
   TimerStatePayload,
   TranscriptResult,
+  TypedVerseReference,
   VerseLayoutPayload,
   VerseShowPayload,
-  VerseReference,
   WsCommandType,
   WsEventType,
   WsMessage,
@@ -113,12 +113,18 @@ function isNullPayload(payload: unknown): payload is null {
   return payload === null
 }
 
-function isVerseReferencePayload(payload: unknown): payload is VerseReference {
+function isVerseReferencePayload(payload: unknown): payload is TypedVerseReference {
   if (!isPlainObject(payload)) return false
   return (
     isNonEmptyString(payload.book) &&
     isFiniteNumber(payload.chapter) &&
-    isFiniteNumber(payload.verse)
+    isFiniteNumber(payload.verse) &&
+    // Section 146: the operator's manual range end ("Book C:V-E"). Shape
+    // only — the AppCore override/preview handlers decide its semantics
+    // (integer, forward, capped, clamped to the known-valid index) exactly
+    // like a detected range, so a malformed end degrades to the single
+    // verse instead of opening a second, weaker path to verse text.
+    (payload.verseEnd === undefined || isFiniteNumber(payload.verseEnd))
   )
 }
 
