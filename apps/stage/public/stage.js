@@ -98,12 +98,17 @@
   // verse:show carries reference as { book, chapter, verse } (packages/
   // contracts/verse.ts). Setting the object as textContent printed
   // "[object Object]"; format it. A plain string is still accepted.
-  function formatReference(ref) {
+  // Innovation pass (ARCHITECTURE.md section 145) + frontend pass (section
+  // 146): a detected range shown as ONE joined verse carries the additive
+  // `verseEnd`, and its reference line reads "Book C:V-E" — the same suffix
+  // the overlay, dashboard, remote and live view already render. Payloads
+  // without verseEnd render exactly as before.
+  function formatReference(ref, verseEnd) {
     if (!ref) return t("scripture");
     if (typeof ref === "string") return ref;
     if (typeof ref.book !== "string") return t("scripture");
     const book = ref.book.replace(/\b\w/g, (c) => c.toUpperCase());
-    return book + " " + ref.chapter + ":" + ref.verse;
+    return book + " " + ref.chapter + ":" + ref.verse + (typeof verseEnd === "number" && verseEnd > ref.verse ? "-" + verseEnd : "");
   }
 
   // The preacher cannot scroll a stage monitor: shrink the verse until it
@@ -175,7 +180,7 @@
     if (msg.type === "verse:show" && msg.payload) {
       if (verseCard) verseCard.className = "stage-verse-card";
       if (referenceEl) {
-        referenceEl.textContent = formatReference(msg.payload.reference);
+        referenceEl.textContent = formatReference(msg.payload.reference, msg.payload.verseEnd);
         referenceEl.lang = msg.payload.translation && ["ls1910", "lsg", "segond", "darby"].includes(String(msg.payload.translation).toLowerCase()) ? "fr" : "en";
       }
       if (verseTextEl) verseTextEl.textContent = msg.payload.text || "";
