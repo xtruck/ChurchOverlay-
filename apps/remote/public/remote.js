@@ -753,6 +753,12 @@
           const data = await res.json()
           servicePackResult.style.display = "block"
           servicePackText.value = `# YouTube Description:\n${data.youtubeDescription}\n\n# Service Analytics:\nDuration: ${data.analytics?.serviceDurationMinutes}m | WPM: ${data.analytics?.speechRateWpm}\nVerses Quoted: ${data.analytics?.uniqueVersesCount}`
+        } else {
+          // A non-OK answer (expired token, server error) used to reset the
+          // button as if nothing had happened — the same silence the catch
+          // below exists to prevent. Say it (ARCHITECTURE.md section 146).
+          servicePackResult.style.display = "block"
+          servicePackText.value = t("packFailed")
         }
       } catch (err) {
         servicePackResult.style.display = "block"
