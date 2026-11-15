@@ -187,7 +187,7 @@ const NARRATIVE_GUARDED_KINDS: ReadonlySet<string> = new Set(["next-verse", "pre
 // misread as a chapter-only goto instead of correctly falling through to
 // the full BOOK_CHAPTER_VERSE_PATTERN.
 const GOTO_CHAPTER_PATTERN =
-  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(?:[Cc]hapter|[Cc]hapitre)[\s,]+(\d{1,3})(?![\p{L}\d])(?!:\d)(?!\s*,?\s*(?:le\s+|the\s+)?(?:[Vv]erse|[Vv]erset)\b)/gu
+  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(?:[Cc]hapter|[Cc]hapitre)[\s,]+(\d{1,3})(?![\p{L}\d])(?!:\d)(?!\s*,?\s*(?:(?:[Ee]t|[Aa]nd)\s+)?(?:le\s+|the\s+)?(?:[Vv]erse|[Vv]erset)\b)/gu
 
 // TASK 1 + TASK 2: "<book> chapter|chapitre N[,] verse|verset M" — full
 // prose-form reference with all three components. Unlike goto-chapter (no
@@ -202,8 +202,15 @@ const GOTO_CHAPTER_PATTERN =
 // (matching SPOKEN_REFERENCE_PATTERN's own fix) plus "le verset"/"the
 // verse" tolerance — "Jean chapitre 1, le verset 2" is exactly as real and
 // common in spoken French as "Jean chapitre 1, verset 2".
+// CORRECTIF (2026-11-15, found by the same dry-run probe that fixed
+// RegexDetector's conjunction gap): the spoken conjunction between the two
+// numbers — "Jean chapitre 3 et verset 16", "John chapter 3 and verse 16" —
+// matched nothing here, while GOTO_CHAPTER_PATTERN (whose trailing exclusion
+// now knows the conjunction too) still fired goto-chapter, so the exact
+// verse was lost to a chapter jump. The conjunction slot is only accepted
+// BETWEEN the two numbers; the keyword still anchors the reference.
 const BOOK_CHAPTER_VERSE_PATTERN =
-  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(?:[Cc]hapter|[Cc]hapitre)[\s,]+(\d{1,3})[\s,]+(?:le\s+|the\s+)?(?:[Vv]erse|[Vv]erset)[\s,]+(\d{1,3})(?![\p{L}\d])/gu
+  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(?:[Cc]hapter|[Cc]hapitre)[\s,]+(\d{1,3})(?:[\s,]+(?:[Ee]t|[Aa]nd)[\s,]+|[\s,]+)(?:le\s+|the\s+)?(?:[Vv]erse|[Vv]erset)[\s,]+(\d{1,3})(?![\p{L}\d])/gu
 
 // ARCHITECTURE.md section 65.1: elliptical/continuation references —
 // "verse 16" or "chapter 9, verse 3" said after a book/chapter was already
@@ -221,7 +228,7 @@ const BOOK_CHAPTER_VERSE_PATTERN =
 // "le verset"/"the verse" tolerance, same reasoning as the two patterns
 // above.
 const BARE_CHAPTER_VERSE_PATTERN =
-  /(?<!(?:[123]\s+)?\p{Lu}[\p{L}]+\s)\b(?:[Cc]hapter|[Cc]hapitre)[\s,]+(\d{1,3})[\s,]+(?:le\s+|the\s+)?(?:[Vv]erse|[Vv]erset)[\s,]+(\d{1,3})\b/gu
+  /(?<!(?:[123]\s+)?\p{Lu}[\p{L}]+\s)\b(?:[Cc]hapter|[Cc]hapitre)[\s,]+(\d{1,3})(?:[\s,]+(?:[Ee]t|[Aa]nd)[\s,]+|[\s,]+)(?:le\s+|the\s+)?(?:[Vv]erse|[Vv]erset)[\s,]+(\d{1,3})\b/gu
 
 // The lookbehind here excludes a "verse M"/"verset M" that is really the
 // tail of a "chapter N, verse M" phrase already claimed by the pattern
@@ -231,8 +238,14 @@ const BARE_CHAPTER_VERSE_PATTERN =
 // as every pattern above; "le verset"/"the verse" needs no explicit
 // handling here — the keyword match itself has no anchor to the start of
 // the phrase, so "le "/"the " before it was already ignored harmlessly.
+// CORRECTIF (2026-11-15, alongside BOOK_CHAPTER_VERSE_PATTERN's conjunction
+// slot): the lookbehind must also recognize "chapter 3 et verset" / "chapter
+// 3 and verse" tails, or one utterance would again produce BOTH a
+// goto-bare-chapter-verse and a redundant goto-bare-verse for the same
+// reference. JS lookbehinds accept variable length, so the optional
+// conjunction group is safe here.
 const BARE_VERSE_PATTERN =
-  /(?<!\b(?:[Cc]hapter|[Cc]hapitre)[\s,]+\d{1,3}[,]?\s)\b(?:[Vv]erse|[Vv]erset)[\s,]+(\d{1,3})\b/gu
+  /(?<!\b(?:[Cc]hapter|[Cc]hapitre)[\s,]+\d{1,3}[,]?\s(?:(?:[Ee]t|[Aa]nd)\s+)?)\b(?:[Vv]erse|[Vv]erset)[\s,]+(\d{1,3})\b/gu
 
 // PROD AUDIT 2026-09: "<Book> N" without any "chapitre"/"chapter" keyword —
 // e.g. the production case "Daniel 8", repeated 3 times and previously
@@ -243,9 +256,11 @@ const BARE_VERSE_PATTERN =
 // "verset M" would be claimed by BOOK_CHAPTER_VERSE_PATTERN / BARE_VERSE).
 // CORRECTIF (2026-09-23, live-observed): comma-tolerant book/number
 // separator, plus "le verset"/"the verse" in the trailing exclusion — same
-// reasoning as every pattern above.
+// reasoning as every pattern above. The exclusion also knows the spoken
+// conjunction ("Daniel 3 et verset 4" is a full reference for
+// BOOK_CHAPTER_VERSE_PATTERN, never a chapter-only goto).
 const BOOK_BARE_CHAPTER_PATTERN =
-  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(\d{1,3})(?!\s*:)(?![\p{L}\d])(?!\s*,?\s*(?:le\s+|the\s+)?(?:[Vv]erse|[Vv]erset)\b)/gu
+  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(\d{1,3})(?!\s*:)(?![\p{L}\d])(?!\s*,?\s*(?:(?:[Ee]t|[Aa]nd)\s+)?(?:le\s+|the\s+)?(?:[Vv]erse|[Vv]erset)\b)/gu
 
 // PROD AUDIT 2026-09: near-miss guard helper for AppCore. True if any word
 // in the text normalizes to a catalog book name — lets the near-miss log

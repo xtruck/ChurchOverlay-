@@ -59,6 +59,15 @@ export class GetBibleVerseSource implements VerseSource, ChapterCapableSource {
   private readonly baseUrl: string
   private readonly timeoutMs: number
   private readonly timers: RequestTimers
+  // In-flight chapter reads, keyed by translation/bookNr/chapter. Concurrent
+  // lookups of the same chapter — three references of one chapter detected
+  // across one sentence, or Bible Browser and live detection arriving
+  // together — share ONE HTTP request instead of racing duplicate
+  // full-chapter downloads. Entries are removed the moment the read settles
+  // (success, 404 or failure), so the map stays bounded by the number of
+  // concurrent reads (AGENTS.md section 36); every waiter receives the same
+  // outcome, so cache/breaker accounting stays per-caller exactly as before.
+  private readonly inFlightChapters = new Map<string, Promise<unknown | null>>()
 
   constructor(
     fetchImpl: typeof fetch = fetch,
@@ -99,6 +108,29 @@ export class GetBibleVerseSource implements VerseSource, ChapterCapableSource {
     const bookNr = bookNumberFor(book)
     if (bookNr === null) return null // not a book this catalog knows — same as any other "not found"
 
+    // Single-flight (see the inFlightChapters field comment): concurrent
+    // reads of the same chapter share one HTTP request and its outcome.
+    const key = `${this.translation}/${bookNr}/${chapter}`
+    const existing = this.inFlightChapters.get(key)
+    if (existing) return existing
+
+    const request = this.requestChapterBody(bookNr, chapter)
+    this.inFlightChapters.set(key, request)
+    // The creator and every joiner await the same promise, so a rejection is
+    // always observed by at least one awaiter. The cleanup handlers are
+    // attached as .then(onSettled, onSettled) — NOT .finally(), whose
+    // derived promise would re-raise the rejection with no observer once
+    // every waiter is done — and both branches resolve, so cleanup can
+    // never surface as an unhandled rejection of its own.
+    const release = (): void => {
+      this.inFlightChapters.delete(key)
+    }
+    void request.then(release, release)
+    return request
+  }
+
+  /** The actual HTTP chapter read, with its timeout race. Never called for an unknown book. */
+  private async requestChapterBody(bookNr: number, chapter: number): Promise<unknown> {
     const url = `${this.baseUrl}/${this.translation}/${bookNr}/${chapter}.json`
 
     const controller = new AbortController()

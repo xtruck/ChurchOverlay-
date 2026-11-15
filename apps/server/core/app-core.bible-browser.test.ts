@@ -4,6 +4,7 @@ import { WebSocket } from "ws"
 import { startAppCore } from "./app-core"
 import { RegexDetector } from "../detector/regex-detector"
 import { KnownValidVerseIndex } from "../verse/known-valid-verse-index"
+import { BOOK_CATALOG } from "../verse/book-catalog"
 import { BibleWordSearch } from "../verse/bible-word-search"
 import { Logger } from "../../../packages/shared/logger"
 import type { AsrProvider, AudioFrame, TranscriptResult, Verse, VerseReference, VerseSource, WsMessage } from "../../../packages/contracts"
@@ -21,7 +22,14 @@ class FakeAsrProvider implements AsrProvider {
   onError(_callback: (error: Error) => void): void {}
 }
 
-/** A chapter-capable source counting its calls. Chapters of 4 verses for every book. */
+/**
+ * A chapter-capable source counting its calls. Chapter length follows the
+ * real catalog (BOOK_CATALOG) — resolveVerse() warms the whole chapter from
+ * a getChapter() answer, so a stub chapter SHORTER than the real one would
+ * turn any verse past its last entry into a confirmed "not found"
+ * (Revelation 22:21 could never display), which no real source does: they
+ * ship complete chapters.
+ */
 class ChapterStubSource implements VerseSource {
   verseCalls = 0
   chapterCalls = 0
@@ -31,12 +39,11 @@ class ChapterStubSource implements VerseSource {
   }
   async getChapter(book: string, chapter: number): Promise<readonly Verse[] | null> {
     this.chapterCalls += 1
-    return [1, 2, 3, 4].map((verse) => ({
-      reference: { book, chapter, verse },
-      text: `text ${book} ${chapter}:${verse}`,
-      translation: "kjv",
-      source: "stub",
-    }))
+    const verseCount = BOOK_CATALOG.find((entry) => entry.id === book)?.chapters[chapter - 1] ?? 4
+    return Array.from({ length: verseCount }, (_, index) => {
+      const verse = index + 1
+      return { reference: { book, chapter, verse }, text: `text ${book} ${chapter}:${verse}`, translation: "kjv", source: "stub" }
+    })
   }
 }
 
@@ -111,7 +118,13 @@ test("bible:chapter answers the operator only, bounded, and a repeat is served f
     const message = await first
     const payload = message.payload as { seq: number; verses: Array<{ verse: number; text: string }>; translation: string }
     assert.equal(payload.seq, 1)
-    assert.deepEqual(payload.verses.map((v) => v.verse), [1, 2, 3, 4])
+    // Chapter length follows the real catalog (John 3 = 36 verses) — the
+    // stub models complete chapters, which resolveVerse()'s warming relies on.
+    const john3VerseCount = BOOK_CATALOG.find((b) => b.id === "john")?.chapters[2] ?? 0
+    assert.deepEqual(
+      payload.verses.map((v) => v.verse),
+      Array.from({ length: john3VerseCount }, (_, index) => index + 1)
+    )
     assert.equal(payload.translation, "kjv")
 
     const second = waitForType(operator, "bible:chapter-result")

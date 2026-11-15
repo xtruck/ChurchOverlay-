@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { resolveVerse, translationIdFor } from "./resolve-verse"
+import { resolveVerse, resolveVerseDetailed, translationIdFor } from "./resolve-verse"
 import { VerseCache } from "./verse-cache"
 import { CircuitBreaker } from "./circuit-breaker"
 import { Logger } from "../../../packages/shared/logger"
@@ -270,4 +270,106 @@ test("resolveVerse: switching a source's mode (via getTranslationId) does not se
     translationIdFor(modeSwitchingSource)
   )
   assert.equal(french?.text, "french text") // NOT the stale "english text" from before the switch
+})
+
+// --- Chapter-capable sources: one chapter read warms the whole chapter ------
+// (Every current implementation answers getChapter() with ONE request — the
+// same cost as a single getVerse() — so the miss path reads the chapter once
+// and a consecutive read of the next verse resolves from the cache.)
+
+/** Named per AGENTS.md section 45 — a chapter-capable test double, never a real provider. */
+class FakeChapterSource implements VerseSource {
+  chapterCalls = 0
+  verseCalls = 0
+  constructor(
+    private readonly chapter: () => Promise<readonly Verse[] | null>,
+    private readonly verse?: () => Promise<Verse | null>
+  ) {}
+  async getVerse(_reference: VerseReference): Promise<Verse | null> {
+    this.verseCalls += 1
+    return this.verse ? this.verse() : null
+  }
+  async getChapter(): Promise<readonly Verse[] | null> {
+    this.chapterCalls += 1
+    return this.chapter()
+  }
+}
+
+function chapterVerses(verseNumbers: readonly number[]): Verse[] {
+  return verseNumbers.map((verse) => ({
+    reference: { book: "john", chapter: 3, verse },
+    text: `verse text ${verse}`,
+    translation: "kjv",
+    source: "fake",
+  }))
+}
+
+test("resolveVerse: a chapter-capable source serves the requested verse and warms its siblings from ONE chapter read", async () => {
+  const cache = new VerseCache()
+  const source = new FakeChapterSource(async () => chapterVerses([16, 17, 18]))
+
+  const first = await resolveVerse(JOHN_3_16, source, cache, new CircuitBreaker())
+  assert.equal(first?.text, "verse text 16")
+  assert.equal(source.chapterCalls, 1)
+  assert.equal(source.verseCalls, 0, "the verse path reads the chapter, not getVerse")
+
+  // A consecutive verse of the same chapter — the dominant live pattern —
+  // must resolve from the warmed cache without a second source call.
+  const second = await resolveVerse({ book: "john", chapter: 3, verse: 17 }, source, cache, new CircuitBreaker())
+  assert.equal(second?.text, "verse text 17")
+  assert.equal(source.chapterCalls, 1, "the sibling verse must come from the warmed cache")
+})
+
+test("resolveVerse: a verse number absent from a fetched chapter is a confirmed not-found; valid siblings stay warmed", async () => {
+  const cache = new VerseCache()
+  const { logger } = capturingLogger()
+  const source = new FakeChapterSource(async () => chapterVerses([16, 17]))
+
+  const result = await resolveVerseDetailed({ book: "john", chapter: 3, verse: 20 }, source, cache, new CircuitBreaker(), "kjv", logger)
+  assert.equal(result.verse, null)
+  assert.equal(result.failure, "not-found")
+  assert.equal(cache.isNegativelyCached({ book: "john", chapter: 3, verse: 20 }, "kjv"), true)
+  assert.ok(cache.getVerse(JOHN_3_16, "kjv"), "the valid siblings stay warmed")
+  assert.ok(cache.getVerse({ book: "john", chapter: 3, verse: 17 }, "kjv"))
+})
+
+test("resolveVerse: a chapter that is confirmed absent (null) is a not-found for the requested reference", async () => {
+  const cache = new VerseCache()
+  const source = new FakeChapterSource(async () => null)
+
+  const result = await resolveVerseDetailed(JOHN_3_16, source, cache, new CircuitBreaker())
+  assert.equal(result.verse, null)
+  assert.equal(result.failure, "not-found")
+  assert.equal(cache.isNegativelyCached(JOHN_3_16, "kjv"), true)
+})
+
+test("resolveVerse: a failed chapter read is a source failure — breaker sees it, nothing is cached either way", async () => {
+  const cache = new VerseCache()
+  const circuitBreaker = new CircuitBreaker()
+  const { logger, lines } = capturingLogger()
+  const source = new FakeChapterSource(async () => {
+    throw new Error("network down")
+  })
+
+  const result = await resolveVerseDetailed(JOHN_3_16, source, cache, circuitBreaker, "kjv", logger)
+  assert.equal(result.verse, null)
+  assert.equal(result.failure, "unavailable")
+  assert.equal((lines[0] as { event: string }).event, "source-failed")
+  assert.equal(cache.getVerse(JOHN_3_16, "kjv"), undefined)
+  assert.equal(cache.isNegativelyCached(JOHN_3_16, "kjv"), false)
+})
+
+test("resolveVerse: a chapter containing a verse without text is a faulty answer, never shown or cached", async () => {
+  const cache = new VerseCache()
+  const { logger, lines } = capturingLogger()
+  const faulty = chapterVerses([16, 17]).map((verse) =>
+    verse.reference.verse === 17 ? { ...verse, text: "   " } : verse
+  )
+  const source = new FakeChapterSource(async () => faulty)
+
+  const result = await resolveVerseDetailed(JOHN_3_16, source, cache, new CircuitBreaker(), "kjv", logger)
+  assert.equal(result.verse, null)
+  assert.equal(result.failure, "unavailable")
+  assert.equal((lines[0] as { event: string }).event, "source-failed")
+  assert.equal(cache.getVerse(JOHN_3_16, "kjv"), undefined)
 })

@@ -45,10 +45,55 @@ const FETCH_TIMEOUT_MS = 5000
 export class FreeApiSource implements VerseSource, ChapterCapableSource {
   private readonly fetchImpl: typeof fetch
   private readonly baseUrl: string
+  // In-flight requests keyed by URL. Concurrent identical lookups — the same
+  // reference detected through more than one pipeline path (settled hold,
+  // assembler, bare-verse continuation) in the same instant — share ONE HTTP
+  // request and its outcome instead of racing duplicates. Entries are removed
+  // the moment the request settles, so the map stays bounded by the number of
+  // concurrent requests (AGENTS.md section 36). Cleanup is attached as
+  // .then(onSettled, onSettled) — never .finally(), whose derived promise
+  // would re-raise a rejection with no observer.
+  private readonly inFlight = new Map<string, Promise<{ status: number; ok: boolean; json: () => Promise<unknown> }>>()
 
   constructor(fetchImpl: typeof fetch = fetch, baseUrl: string = DEFAULT_BASE_URL) {
     this.fetchImpl = fetchImpl
     this.baseUrl = baseUrl
+  }
+
+  /**
+   * The shared request unit: one fetch and ONE lazy, memoized body parse per
+   * URL. A Response's body can only be consumed once, so concurrent waiters
+   * cannot each call response.json() — the first parse is stored and every
+   * waiter (including later ones after a failure) receives the same result.
+   * Callers keep their own status handling (404 vs !ok), unchanged.
+   */
+  private request(url: string): Promise<{ status: number; ok: boolean; json: () => Promise<unknown> }> {
+    const existing = this.inFlight.get(url)
+    if (existing) return existing
+    const request = this.doRequest(url)
+    this.inFlight.set(url, request)
+    const release = (): void => {
+      this.inFlight.delete(url)
+    }
+    void request.then(release, release)
+    return request
+  }
+
+  private async doRequest(url: string): Promise<{ status: number; ok: boolean; json: () => Promise<unknown> }> {
+    const response = await this.fetchImpl(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
+    // The Response body can only be consumed once, so every waiter shares ONE
+    // parse PROMISE — not one parse result: memoizing the result would still
+    // let a second caller start a second (already-consumed) read while the
+    // first parse is still in flight.
+    let body: Promise<unknown> | null = null
+    return {
+      status: response.status,
+      ok: response.ok,
+      json: () => {
+        if (body === null) body = response.json()
+        return body
+      },
+    }
   }
 
   /**
@@ -58,9 +103,9 @@ export class FreeApiSource implements VerseSource, ChapterCapableSource {
    */
   async getChapter(book: string, chapter: number): Promise<readonly Verse[] | null> {
     const url = `${this.baseUrl}/${encodeURIComponent(book.trim())}+${chapter}?translation=${V1_TRANSLATION}`
-    let response: Response
+    let response: Awaited<ReturnType<FreeApiSource["request"]>>
     try {
-      response = await this.fetchImpl(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
+      response = await this.request(url)
     } catch (err) {
       throw new Error(`FreeApiSource: network request failed: ${err instanceof Error ? err.message : String(err)}`)
     }
@@ -78,9 +123,9 @@ export class FreeApiSource implements VerseSource, ChapterCapableSource {
   async getVerse(reference: VerseReference): Promise<Verse | null> {
     const url = buildRequestUrl(this.baseUrl, reference)
 
-    let response: Response
+    let response: Awaited<ReturnType<FreeApiSource["request"]>>
     try {
-      response = await this.fetchImpl(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
+      response = await this.request(url)
     } catch (err) {
       // Network failure (offline, DNS, timeout, ...): a real failure, not
       // "not found" — let the caller's circuit breaker see it.

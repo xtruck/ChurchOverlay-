@@ -86,8 +86,15 @@ const REFERENCE_PATTERN =
 // or comma, comma optional but never the *only* required character),
 // which still refuses to match a run-together "abacuc4verset2" with no
 // separator at all.
+// CORRECTIF (found by dry-running the pipeline with natural spoken phrasing,
+// 2026-11-15): a preacher saying the reference with the spoken conjunction —
+// "Jean 3 et verset 16", "John 3 and verse 16" — was missed entirely: the
+// pattern required the keyword to follow the chapter number directly. The
+// conjunction is only accepted BETWEEN the number and a reference keyword,
+// so ordinary enumeration ("3 et 16 personnes") can never half-match; the
+// keyword is still what anchors the reference reading.
 const SPOKEN_REFERENCE_PATTERN =
-  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(\d{1,3})[\s,]+(?:chapitre|chapter|versets?|verses?|le\s+versets?|the\s+verses?)[\s,]+(\d{1,3})(?![\p{L}\d])/giu
+  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(\d{1,3})(?:[\s,]+(?:et|and)[\s,]+|[\s,]+)(?:chapitre|chapter|versets?|verses?|le\s+versets?|the\s+verses?)[\s,]+(\d{1,3})(?![\p{L}\d])/giu
 
 // CORRECTIF (found investigating a verse-range navigation question,
 // 2026-09-23): the pattern above only covers "BOOK NUMBER KEYWORD NUMBER"
@@ -112,8 +119,15 @@ const SPOKEN_REFERENCE_PATTERN =
 // output was wrong on its own terms, the same reasoning as the CORRECTIF
 // above.
 
+// CORRECTIF (found by dry-running the pipeline, 2026-11-15, the same gap as
+// SPOKEN_REFERENCE_PATTERN above): "First Samuel chapter sixteen and verse
+// seven" normalized to "1 Samuel chapter 16 and verse 7" — and then matched
+// nothing, because this pattern also required the verse keyword to follow the
+// chapter number directly. The same optional conjunction slot fixes it; the
+// "au/à/a/dans le/in/at" link in front of "chapter" is untouched (it sits
+// BEFORE the keyword, not between the two numbers).
 const SPOKEN_REFERENCE_DOUBLE_KEYWORD_PATTERN =
-  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)(?:[\s,]+(?:au|à|a|dans\s+le|in|at))?[\s,]+(?:chapitre|chapter)[\s,]+(\d{1,3})[\s,]+(?:le\s+|the\s+)?(?:versets?|verses?)[\s,]+(\d{1,3})(?![\p{L}\d])/giu
+  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)(?:[\s,]+(?:au|à|a|dans\s+le|in|at))?[\s,]+(?:chapitre|chapter)[\s,]+(\d{1,3})(?:[\s,]+(?:et|and)[\s,]+|[\s,]+)(?:le\s+|the\s+)?(?:versets?|verses?)[\s,]+(\d{1,3})(?![\p{L}\d])/giu
 
 // The written/dictated compact forms ASR actually produces for a pause
 // between chapter and verse: "Jean 3.16", "Romains 8, 28", and the bare
@@ -123,6 +137,17 @@ const SPOKEN_REFERENCE_DOUBLE_KEYWORD_PATTERN =
 // KnownValidVerseIndex's job.
 const COMPACT_REFERENCE_PATTERN =
   /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(\d{1,3})(?:\s*[.,]\s*|\s+)(\d{1,3})(?![\p{L}\d]|\s*[.,:]\s*\d)/gu
+
+// The two pattern sets collect() iterates, hoisted to module level so a
+// detect() call no longer re-allocates its array (the detector instance is
+// shared and long-lived; every transcript, partials included, paid for a
+// fresh array). Same membership as the inline list it replaces.
+const EXPLICIT_PATTERNS: readonly RegExp[] = [
+  REFERENCE_PATTERN,
+  SPOKEN_REFERENCE_PATTERN,
+  SPOKEN_REFERENCE_DOUBLE_KEYWORD_PATTERN,
+]
+const DETECT_PATTERNS: readonly RegExp[] = [...EXPLICIT_PATTERNS, COMPACT_REFERENCE_PATTERN]
 
 // Deliberately small and conservative: only the short function words most
 // likely to coincidentally precede a "N:M"-shaped pattern in ordinary
@@ -214,12 +239,20 @@ export class RegexDetector implements VerseDetector {
     const references: VerseReference[] = []
     const text = normalizeSpokenReferences(normalizeAsrTypography(rawText), isCatalogBookWord)
 
-    for (const pattern of [
-      REFERENCE_PATTERN,
-      SPOKEN_REFERENCE_PATTERN,
-      SPOKEN_REFERENCE_DOUBLE_KEYWORD_PATTERN,
-      ...(includeCompact ? [COMPACT_REFERENCE_PATTERN] : []),
-    ]) {
+    // Every pattern below requires two digit groups, and the spoken-form
+    // normalizer has already rewritten number words into digits — so a
+    // normalized text with no digit anywhere cannot match, and the three or
+    // four full-text scans (plus their per-match filtering) are skipped for
+    // the digit-free partials that make up most of a live transcript stream.
+    // The check must stay AFTER normalizeSpokenReferences: number words
+    // ("Psaume cent dix-neuf") only become digits there, so a
+    // pre-normalization check would drop real references. Measured
+    // (detection-path.bench.ts): ~23 -> ~18 us on digit-free partials — the
+    // spoken-form normalization above this line dominates the remaining cost;
+    // what this saves is the pattern scans and per-match filtering.
+    if (!/\d/.test(text)) return []
+
+    for (const pattern of includeCompact ? DETECT_PATTERNS : EXPLICIT_PATTERNS) {
       for (const match of text.matchAll(pattern)) {
         const rawBook = match[1]
         const rawChapter = match[2]
