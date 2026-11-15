@@ -550,6 +550,14 @@
     "3 john": "3 Jean", jude: "Jude", revelation: "Apocalypse",
   }
 
+  // The translation ids whose text is FRENCH — the same rule, and the same
+  // list, as overlay.js's and remote.js's own FRENCH_TRANSLATIONS (guarded
+  // equal by reference-parity.test.ts). "darby" was missing from this list
+  // until the section 146 frontend pass: a Darby verse showed "John 3:16" in
+  // the pending banner, the tally chip and the recent chips while the
+  // overlay itself read "Jean 3:16".
+  const FRENCH_TRANSLATIONS = new Set(["ls1910", "lsg", "segond", "darby"])
+
   // Innovation pass (ARCHITECTURE.md section 145): a detected verse RANGE shows as
   // one joined verse; the optional verseEnd extends every label to "Book C:V-E".
   // Payloads without verseEnd render exactly as before.
@@ -571,7 +579,7 @@
     const ref = verse.reference
     if (verse.secondary) return formatBilingualReference(ref, verse.verseEnd)
     // Same rule as the overlay: the translation says the language.
-    if (["ls1910", "lsg", "segond"].includes(String(verse.translation || "").toLowerCase()) || currentDisplayMode() === "french") {
+    if (FRENCH_TRANSLATIONS.has(String(verse.translation || "").toLowerCase()) || currentDisplayMode() === "french") {
       return (FRENCH_BOOK_NAMES[ref.book] || capitalize(ref.book)) + " " + ref.chapter + ":" + ref.verse + rangeSuffix(ref, verse.verseEnd)
     }
     return formatReference(ref, verse.verseEnd)
