@@ -88,6 +88,12 @@ Current status:
 | Successful failover is informational rather than a critical rate-limit error | `app-core.test.ts` |
 | Deterministic transcript post-processing preserves words while normalizing input | `asr/postprocess/postprocess.test.ts` |
 | Live French phonetic ASR spellings recover Jean, verset, and Ésaïe conservatively | `asr/transcription-corrector.test.ts` |
+| The spoken conjunction between the two numbers ("Jean 3 et verset 16", "First Samuel chapter sixteen and verse seven") is detected by the RegexDetector and produces exactly ONE navigation command (no chapter-jump race); enumeration without a keyword still matches nothing | `detector/regex-detector.test.ts`, `detector/navigation-command-detector.test.ts` |
+| Accented Bible terms normalize after apostrophes and prepositions ("l'évangile" → "l'Évangile"); compounds and plurals untouched | `asr/postprocess/postprocess.test.ts` |
+| A chapter-capable source's one chapter read serves the requested verse and warms its siblings; absent verse = confirmed not-found with siblings warmed; a failed or faulty chapter is a breaker failure, never cached | `verse/resolve-verse.test.ts` |
+| Concurrent identical chapter/verse requests share one HTTP request and one body parse, share failures, and are retried after settling (single-flight on GetBibleVerseSource and FreeApiSource) | `verse/get-bible-verse-source.test.ts`, `verse/free-api-source.test.ts` |
+| WebSocket broadcasts travel as TEXT frames after the single-encode Buffer change (`isBinary === false` on a real client connection) | `ws/server.test.ts` |
+| Detection-path micro-benchmark (detect, nav-detect, compact keys, corrector, bible terms) for before/after comparisons | `detector/detection-path.bench.ts` (manual, like the audio bench) |
 | Audio chunking remains bounded by duration and frame count | `audio/audio-chunker.test.ts` |
 | WER benchmark reports deterministic substitution/deletion/insertion counts | `asr/benchmark/wer.test.ts` |
 | default verse display auto-clears after the fixed 2:30 ceiling | `app-core.test.ts` |
