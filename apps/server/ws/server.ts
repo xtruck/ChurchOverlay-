@@ -328,7 +328,14 @@ export class ChurchOverlayWsServer {
   }
 
   private broadcastWhere(message: WsMessage, wants: (role: WsRole | undefined) => boolean): void {
-    const payload = JSON.stringify(message)
+    // Encoded ONCE per broadcast, not once per client: ws UTF-8-encodes every
+    // string payload at send() time, so a string here cost one encode per
+    // connected client. The buffer is sent with binary:false, which keeps it
+    // a TEXT frame on the wire (verified against the ws library: clients
+    // receive a string, so the browser pages' JSON.parse(event.data) and
+    // every ws client test are unaffected) — the frame type, not the payload
+    // type, is what decides how the data is delivered.
+    const payload = Buffer.from(JSON.stringify(message), "utf8")
     const viewerMayReceive = VIEWER_OUTBOUND_EVENTS.has(message.type)
     for (const client of this.wss.clients) {
       if (client.readyState !== client.OPEN) continue
@@ -350,7 +357,7 @@ export class ChurchOverlayWsServer {
       }
 
       try {
-        client.send(payload)
+        client.send(payload, { binary: false })
       } catch (err) {
         this.onRejected?.(
           `broadcast send failed: ${err instanceof Error ? err.message : String(err)}`,

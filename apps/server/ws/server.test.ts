@@ -140,6 +140,37 @@ test("ChurchOverlayWsServer: a valid operator token connects and a valid command
   }
 })
 
+// CORRECTIF-guard (2026-11-15): broadcastWhere() now encodes its payload once
+// as a Buffer and sends it with { binary: false }. This pins the protocol
+// contract that change relies on: the frame must stay a TEXT frame, so every
+// browser page's JSON.parse(event.data) keeps working regardless of payload
+// encoding.
+test("ChurchOverlayWsServer: broadcasts arrive as TEXT frames (string payloads), never binary", async () => {
+  const server = await startServer()
+  try {
+    const socket = await connect(server.port, TOKENS.operatorToken)
+    const received: Array<{ data: unknown; isBinary: boolean }> = []
+    socket.on("message", (data, isBinary) => received.push({ data, isBinary }))
+    const message: WsMessage = {
+      id: "01TEXTFRAME",
+      type: "status:update",
+      timestamp: Date.now(),
+      payload: { ok: true },
+    }
+    server.broadcast(message)
+    await waitFor(() => received.length === 1)
+    assert.equal(received[0]?.isBinary, false, "a broadcast must travel as a text frame")
+    // Node's ws client delivers every frame as a Buffer and distinguishes the
+    // frame type via the isBinary flag (a browser delivers a string for a text
+    // frame) — what the overlay pages rely on is exactly that flag being false.
+    const payloadText = String(received[0]?.data)
+    assert.equal((JSON.parse(payloadText) as WsMessage).type, "status:update")
+    socket.close()
+  } finally {
+    await server.close()
+  }
+})
+
 test("ChurchOverlayWsServer: a viewer sending an operator-only command is rejected, not delivered to onCommand", async () => {
   const commands: unknown[] = []
   const rejections: { reason: string; role: WsRole | null }[] = []
