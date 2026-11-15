@@ -997,7 +997,12 @@
       }
       // The design preview shows only its placeholder, never live content.
       if (designPreview && (message.type === "verse:show" || message.type === "verse:clear")) return
-      if (message.type === "verse:show") {
+      // A payload without a reference is malformed (remote.js and the
+      // dashboard guard the same way): referenceText() would throw on
+      // ref.book of undefined INSIDE this listener, killing the rest of
+      // the message switch (media, announcements, outline) with it.
+      // Ignore it and stay on the last good verse.
+      if (message.type === "verse:show" && message.payload && message.payload.reference) {
         showVerse(message.payload)
       } else if (message.type === "verse:clear") {
         clearVerse()
