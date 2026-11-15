@@ -371,3 +371,39 @@ test("RegexDetector: the unit-word guard never touches explicit forms or an ordi
   assert.deepEqual(detector.detect("John 3 16 may be the most famous"), [{ book: "john", chapter: 3, verse: 16 }])
   assert.deepEqual(detector.detect("Matthieu 5 3"), [{ book: "matthew", chapter: 5, verse: 3 }])
 })
+
+// CORRECTIF (2026-11-15, found by dry-running the pipeline): the spoken
+// conjunction between the chapter number and the verse keyword — "et" and
+// "and" — was accepted by neither reference pattern, so the common preaching
+// forms below were silently lost. The conjunction slot sits BETWEEN the
+// number and a keyword, so plain enumeration can never half-match.
+test("RegexDetector: 'Book N et verset M' / 'Book N and verse M' (spoken conjunction before the keyword) is detected", () => {
+  const detector = new RegexDetector()
+  assert.deepEqual(detector.detect("Jean 3 et verset 16"), [{ book: "john", chapter: 3, verse: 16 }])
+  assert.deepEqual(detector.detect("John 3 and verse 16"), [{ book: "john", chapter: 3, verse: 16 }])
+  assert.deepEqual(detector.detect("lisez Romains 8, et verset 28"), [{ book: "romans", chapter: 8, verse: 28 }])
+})
+
+test("RegexDetector: 'chapter N and verse M' (conjunction in the double-keyword prose form) is detected", () => {
+  const detector = new RegexDetector()
+  assert.deepEqual(detector.detect("Proverbs chapter 3 and verse 5"), [{ book: "proverbs", chapter: 3, verse: 5 }])
+  assert.deepEqual(detector.detect("Psaumes chapitre 23 et verset 1"), [{ book: "psalm", chapter: 23, verse: 1 }])
+})
+
+test("RegexDetector: 'First Samuel chapter sixteen and verse seven' — ordinals, number words and the conjunction together (the original dry-run miss)", () => {
+  const detector = new RegexDetector()
+  const result = detector.detect("Let us look at First Samuel chapter sixteen and verse seven")
+  assert.deepEqual(result, [{ book: "1 samuel", chapter: 16, verse: 7 }])
+})
+
+test("RegexDetector: the conjunction is never enough without a keyword — enumeration stays a non-reference", () => {
+  const detector = new RegexDetector()
+  assert.deepEqual(detector.detect("Jean 3 et 16 personnes"), [])
+  assert.deepEqual(detector.detect("John 3 and 16 people were there"), [])
+})
+
+test("RegexDetector: digit-free transcripts produce no references (sound early-out: every pattern needs two digit groups)", () => {
+  const detector = new RegexDetector()
+  assert.deepEqual(detector.detect("et donc nous voyons que la grâce de Dieu a été répandue"), [])
+  assert.deepEqual(detector.detect("so what Paul is saying here in this passage"), [])
+})

@@ -441,3 +441,48 @@ test("NavigationCommandDetector: 'le verset'/'the verse' is tolerated everywhere
   ])
   assert.deepEqual(detector.detect("Turn to the verse 2"), [{ kind: "goto-bare-verse", verse: 2 }])
 })
+
+// CORRECTIF (2026-11-15, found by the same dry-run probe that fixed
+// RegexDetector's conjunction gap): with "et verset"/"and verse" between the
+// numbers, the exact verse command never fired and GOTO_CHAPTER_PATTERN —
+// whose exclusion lookahead did not know the conjunction — jumped the whole
+// chapter instead. All assertions here also pin the "exactly ONE command"
+// shape, so the exclusion/lookbehind updates can never reintroduce the
+// two-command race.
+test("NavigationCommandDetector: 'Book chapter N et verset M' / 'Book chapter N and verse M' is ONE goto-book-chapter-verse", () => {
+  const detector = new NavigationCommandDetector()
+  assert.deepEqual(detector.detect("Jean chapitre 3 et verset 16"), [
+    { kind: "goto-book-chapter-verse", book: "john", chapter: 3, verse: 16 },
+  ])
+  assert.deepEqual(detector.detect("John chapter 16 and verse 7"), [
+    { kind: "goto-book-chapter-verse", book: "john", chapter: 16, verse: 7 },
+  ])
+})
+
+test("NavigationCommandDetector: a bare 'chapter N et verset M' continuation resolves against the current position, once", () => {
+  const detector = new NavigationCommandDetector()
+  assert.deepEqual(detector.detect("allons au chapitre 9 et verset 3"), [
+    { kind: "goto-bare-chapter-verse", chapter: 9, verse: 3 },
+  ])
+  assert.deepEqual(detector.detect("turn to chapter 9 and verse 3"), [
+    { kind: "goto-bare-chapter-verse", chapter: 9, verse: 3 },
+  ])
+})
+
+test("NavigationCommandDetector: a '<Book> N et verset M' tail is never a chapter-only goto", () => {
+  const detector = new NavigationCommandDetector()
+  // RegexDetector owns the full "Jean 3 et verset 16" shape for verse display.
+  // Here the BOOK_BARE_CHAPTER exclusion must suppress the chapter-only goto
+  // (the conjunction is now part of its trailing lookahead); what remains is
+  // the same goto-bare-verse the pre-existing conjunction-free shape
+  // ("Jean 3 verset 16", "Daniel 3 verset 4") has always produced.
+  assert.deepEqual(detector.detect("Jean 3 et verset 16"), [{ kind: "goto-bare-verse", verse: 16 }])
+  assert.deepEqual(detector.detect("Daniel 3 et verset 4"), [{ kind: "goto-bare-verse", verse: 4 }])
+})
+
+test("NavigationCommandDetector: 'chapter N and M' without a verse keyword stays a chapter goto", () => {
+  const detector = new NavigationCommandDetector()
+  assert.deepEqual(detector.detect("Jean chapitre 3 et 4 personnes"), [
+    { kind: "goto-chapter", book: "john", chapter: 3 },
+  ])
+})
