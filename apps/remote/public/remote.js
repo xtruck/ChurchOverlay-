@@ -445,6 +445,25 @@
     showToast(t(kind, { ref }), "ok")
   }
 
+  // ONE path for every verse button and input — quick-fire, the presets and
+  // the prepared list alike (ARCHITECTURE.md section 146): parse, toast on an
+  // unparseable reference, send through the fully-validated verse:override
+  // (ARCHITECTURE.md section 50, AGENTS.md section 12 — no admin bypass), and
+  // arm the on-screen ack so a request that never shows anything is told,
+  // not silently dropped. Until this pass the prepared list had its own copy
+  // that returned false without a toast and never armed the ack, so a typo in
+  // a prepared verse vanished without a word. Uses `activeWs` (kept current
+  // by connect()/reconnect below) rather than a closed-over socket, so it
+  // works the same across reconnects.
+  function fireVerse(refStr) {
+    const ref = parseVerseString(refStr)
+    if (!ref) {
+      showToast(t("toastBadRef"), "error")
+      return
+    }
+    if (sendJson(activeWs, { id: crypto.randomUUID(), type: "verse:override", timestamp: Date.now(), payload: ref })) expectVerseAck()
+  }
+
   function renderPendingVerseAge() {
     if (!pendingVerse || !pendingVerseAgeEl) return
     pendingVerseAgeEl.textContent = t("pendingAge", { time: formatTime(Math.floor((Date.now() - pendingVerseSince) / 1000)) })
@@ -494,21 +513,6 @@
       sendPendingVerseAction("verse:confirm-pending")
     }
   })
-
-  // Sends a spoken-style reference string ("Jean 3:16") the exact same way
-  // a quick-fire or preset button already does: through verse:override,
-  // which the server validates against KnownValidVerseIndex identically to
-  // any other reference (ARCHITECTURE.md section 50, AGENTS.md section 12
-  // "Manual override is still subject to validation" — no admin bypass).
-  // Uses `activeWs` (kept current by connect()/reconnect below) rather than
-  // a closed-over socket, so this one function works for quick-fire,
-  // presets, and the prepared list alike.
-  function fireVerse(refStr) {
-    const ref = parseVerseString(refStr)
-    if (!ref) return false
-    sendJson(activeWs, { id: crypto.randomUUID(), type: "verse:override", timestamp: Date.now(), payload: ref })
-    return true
-  }
 
   // A pastor's own prepared verse list ("prepare these ahead of time, tap
   // to show whenever ready during the service") — deliberately just a
@@ -709,15 +713,6 @@
       if (!sendJson(ws, { id: crypto.randomUUID(), type: "stage:alert", timestamp: Date.now(), payload: { message: msg } })) return
       showToast(t("toastSent"), "ok")
       stageAlertInput.value = ""
-    }
-
-    const fireVerse = (refStr) => {
-      const ref = parseVerseString(refStr)
-      if (!ref) {
-        showToast(t("toastBadRef"), "error")
-        return
-      }
-      if (sendJson(ws, { id: crypto.randomUUID(), type: "verse:override", timestamp: Date.now(), payload: ref })) expectVerseAck()
     }
 
     quickVerseBtn.onclick = () => {
