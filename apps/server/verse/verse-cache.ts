@@ -1,11 +1,16 @@
 import type { Verse, VerseReference } from "../../../packages/contracts"
 import { LruTtlCache } from "./lru-ttl-cache"
 
-const DEFAULT_MAX_POSITIVE_ENTRIES = 500
+const DEFAULT_MAX_POSITIVE_ENTRIES = 1500
 const DEFAULT_MAX_NEGATIVE_ENTRIES = 200
 // Verse text is static, so a long TTL is reasonable — but AGENTS.md
 // section 36 still requires every cache to be bounded, so this is a
-// generous default, not an infinite one.
+// generous default, not an infinite one. Sized with chapter warming in
+// mind (resolve-verse.ts): a single Psalm 119 read warms 176 entries, so
+// the old 500-entry bound held barely three large chapters before LRU
+// eviction started dropping verses a consecutive read-through was about
+// to ask for. 1500 keeps roughly eight Psalm-119-sized chapters hot at
+// well under a megabyte of text.
 const DEFAULT_POSITIVE_TTL_MS = 24 * 60 * 60 * 1000
 // Deliberately much shorter than the positive TTL (ARCHITECTURE.md
 // section 20): a transient API hiccup must not permanently blacklist a
