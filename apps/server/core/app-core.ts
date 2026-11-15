@@ -78,6 +78,7 @@ import type { BibleWordSearch } from "../verse/bible-word-search"
 import { extractAnnouncedChapter } from "../detector/announced-context"
 import { joinSplitNumber, trailingNumberEquals, trailingVerseCouldGrow } from "../detector/trailing-number"
 import { detectValidatedReferences } from "./detect-and-validate"
+import { asVerseRangeDetector } from "../detector/verse-range-detector"
 import { RundownController } from "../rundown/rundown-controller"
 import { parseSermonPrep, type SermonPrepParseOutcome, type SermonPrepResult } from "../rundown/sermon-prep"
 import { GlossaryDetector } from "../glossary/glossary-detector"
@@ -441,6 +442,10 @@ export type AppCoreHandle = {
  */
 export async function startAppCore(options: StartAppCoreOptions): Promise<AppCoreHandle> {
   const { logger, asr, detector, index, source } = options
+  // Innovation pass (ARCHITECTURE.md section 145): the pipeline's single VerseDetector
+  // instance also carries the range capability when it is a RegexDetector; looked up
+  // once, structurally, so a non-range detector implementation stays valid.
+  const rangeDetector = asVerseRangeDetector(detector)
   const cache = options.cache ?? new VerseCache()
   const circuitBreaker = options.circuitBreaker ?? new CircuitBreaker()
   const silenceGate = options.silenceGate ?? new SilenceGate()
@@ -977,7 +982,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       currentVersePosition.verse === verse.reference.verse
 
     if (inferred) {
-      const verses = await resolveTranscriptVerses({ ...transcript, text: inferred }, detector, index, source, cache, circuitBreaker, logger)
+      const verses = await resolveTranscriptVerses({ ...transcript, text: inferred }, detector, index, source, cache, circuitBreaker, logger, undefined, rangeDetector ?? undefined)
       if (verses.length > 0 && isSupersededIntent(ticket)) {
         dropStaleLookup("volume-inference", transcript.correlationId)
         return
@@ -1002,7 +1007,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     for (const volume of ["1", "2"] as const) {
       const candidateText = applyVolumeHints(text, allFamiliesAtVolume(volume))
       if (!candidateText) return // no bare numbered book in this text
-      const verses = await resolveTranscriptVerses({ ...transcript, text: candidateText }, detector, index, source, cache, circuitBreaker, logger)
+      const verses = await resolveTranscriptVerses({ ...transcript, text: candidateText }, detector, index, source, cache, circuitBreaker, logger, undefined, rangeDetector ?? undefined)
       candidates.push(...verses.filter((verse) => !isOnScreen(verse)))
     }
     const [first, ...others] = candidates
@@ -1169,7 +1174,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     const ticket = beginDisplayIntent()
     // TS-08: the bare "Name N M" form is never auto-shown, whatever the confirmation mode.
     const compactOnly = compactOnlyReferenceKeys(job.detect.text)
-    resolveTranscriptVerses(job.detect, detector, index, source, cache, circuitBreaker, logger, (reference, failure) => reportLookup(reference, failure, "detected"))
+    resolveTranscriptVerses(job.detect, detector, index, source, cache, circuitBreaker, logger, (reference, failure) => reportLookup(reference, failure, "detected"), rangeDetector ?? undefined)
       .then(async (verses) => {
         if (verses.length > 0 && isSupersededIntent(ticket)) {
           dropStaleLookup(job.kind, job.deliver.correlationId)
@@ -2974,7 +2979,13 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       // The assembler must not re-join "verse 1" + "2" into a second, truncated detection.
       transcriptAssembler.reset()
     } else if (transcript.state === "final") {
-      const currentHasReference = detector.detect(transcript.text).length > 0
+      // Innovation pass (section 145): a detected RANGE is a complete
+      // reference too — a range-tailed line must reset the assembler like
+      // any single-reference line, never sit in the fragment window waiting
+      // to be merged into the next sentence.
+      const currentHasReference =
+        detector.detect(transcript.text).length > 0 ||
+        (rangeDetector?.detectRanges(transcript.text).length ?? 0) > 0
       const continuesAnnouncedChapter =
         announcedChapter !== null &&
         Date.now() - announcedChapter.at <= ANNOUNCED_CHAPTER_TTL_MS &&

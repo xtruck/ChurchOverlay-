@@ -10,6 +10,18 @@ export type Verse = {
   translation: string
   source: string
   /**
+   * Innovation pass (ARCHITECTURE.md section 145): present only when this
+   * verse is the START of a detected spoken/written RANGE ("verses 16 to
+   * 18", "Jean 3:16-18"). `text` then carries every verse of the range,
+   * each prefixed with its bracketed number ("[16] ... [17] ..."), and the
+   * overlay's reference line renders "Book C:V-E". The `reference` field
+   * itself stays the range's start verse, so navigation ("next verse" from
+   * a shown range continues at end+1) and session recording keep their
+   * existing single-reference semantics. Additive and optional — every
+   * existing producer and consumer is unaffected.
+   */
+  verseEnd?: number
+  /**
    * Phase 2 (ARCHITECTURE.md section 63.3): present only in bilingual
    * display mode. Additive and backward-compatible — every existing
    * reader of text/translation/reference is unaffected. In bilingual
