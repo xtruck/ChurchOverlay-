@@ -145,13 +145,16 @@
   // verse:show carries reference as { book, chapter, verse } (packages/
   // contracts/verse.ts); it used to be stored and shown as-is, which printed
   // "[object Object]". Format it; plain strings (and notes saved by older
-  // versions of this page) pass through.
-  function formatReference(ref) {
+  // versions of this page) pass through. Innovation pass (ARCHITECTURE.md
+  // section 145): a verseEnd on the payload (a detected range shown as one
+  // joined verse) extends the label to "Book C:V-E"; payloads without one
+  // render exactly as before.
+  function formatReference(ref, verseEnd) {
     if (!ref) return t("scripture");
     if (typeof ref === "string") return ref;
     if (typeof ref.book !== "string") return t("scripture");
     const book = ref.book.replace(/\b\w/g, (c) => c.toUpperCase());
-    return book + " " + ref.chapter + ":" + ref.verse;
+    return book + " " + ref.chapter + ":" + ref.verse + (typeof verseEnd === "number" && verseEnd > ref.verse ? "-" + verseEnd : "");
   }
 
   const SVG_NS = "http://www.w3.org/2000/svg";
@@ -305,7 +308,7 @@
         if (msg.type === "verse:show" && msg.payload) {
           const verseLanguage = ["ls1910", "lsg", "segond", "darby"].includes(String(msg.payload.translation || "").toLowerCase()) ? "fr" : "en";
           currentVerse = {
-            reference: formatReference(msg.payload.reference),
+            reference: formatReference(msg.payload.reference, msg.payload.verseEnd),
             text: msg.payload.text || "",
             language: verseLanguage,
           };

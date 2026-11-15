@@ -232,10 +232,13 @@
   // a French-language translation, so both should render French book names.
   const FRENCH_TRANSLATIONS = new Set(["ls1910", "lsg", "segond", "darby"])
   const capitalize = (book) => book.replace(/\b\w/g, (c) => c.toUpperCase())
-  function referenceText(reference, translation) {
+  // Innovation pass (ARCHITECTURE.md section 145): verseEnd on a verse:show payload
+  // (a detected range shown as one joined verse) extends the label to "Book C:V-E".
+  // A payload without verseEnd renders exactly as before.
+  function referenceText(reference, translation, verseEnd) {
     const french = FRENCH_TRANSLATIONS.has(String(translation || "").toLowerCase())
     const name = french ? FRENCH_BOOK_NAMES[reference.book] || capitalize(reference.book) : capitalize(reference.book)
-    return name + " " + reference.chapter + ":" + reference.verse
+    return name + " " + reference.chapter + ":" + reference.verse + (typeof verseEnd === "number" && verseEnd > reference.verse ? "-" + verseEnd : "")
   }
 
   function parseVerseString(str) {
@@ -450,7 +453,7 @@
   function showPendingVerse(payload, timestamp) {
     pendingVerse = payload
     pendingVerseSince = Number.isFinite(timestamp) && timestamp <= Date.now() ? timestamp : Date.now()
-    pendingVerseRefEl.textContent = referenceText(payload.reference, payload.translation)
+    pendingVerseRefEl.textContent = referenceText(payload.reference, payload.translation, payload.verseEnd)
     pendingVerseTextEl.textContent = typeof payload.heard === "string" ? payload.heard : (payload.text || "")
     pendingVerseEl.hidden = false
     renderPendingVerseAge()
@@ -654,10 +657,10 @@
         renderSceneList()
       } else if (message.type === "verse:pending" && message.payload?.reference) {
         showPendingVerse(message.payload, message.timestamp)
-        resolveVerseAck("toastPending", referenceText(message.payload.reference, message.payload.translation))
+        resolveVerseAck("toastPending", referenceText(message.payload.reference, message.payload.translation, message.payload.verseEnd))
       } else if (message.type === "verse:show" && message.payload?.reference) {
         clearPendingVerse()
-        const shownText = referenceText(message.payload.reference, message.payload.translation)
+        const shownText = referenceText(message.payload.reference, message.payload.translation, message.payload.verseEnd)
         renderOnScreen(shownText)
         resolveVerseAck("toastShown", shownText)
       } else if (message.type === "verse:clear") {

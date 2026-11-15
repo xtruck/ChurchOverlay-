@@ -139,9 +139,13 @@
     return FRENCH_TRANSLATIONS.has(String(translation || "").toLowerCase()) ? "fr" : "en"
   }
 
-  function referenceText(ref, language) {
+  // Innovation pass (ARCHITECTURE.md section 145): a detected verse RANGE shows as one
+  // joined verse whose reference is the range's START; `verseEnd` on the payload turns
+  // the reference line into "Book C:V-E" ("Jean 3:16-18"). Additive: a payload without
+  // verseEnd renders exactly as before.
+  function referenceText(ref, language, verseEnd) {
     const name = language === "fr" ? FRENCH_BOOK_NAMES[ref.book] || capitalize(ref.book) : capitalize(ref.book)
-    return name + " " + ref.chapter + ":" + ref.verse
+    return name + " " + ref.chapter + ":" + ref.verse + (typeof verseEnd === "number" && verseEnd > ref.verse ? "-" + verseEnd : "")
   }
 
   // ARCHITECTURE.md section 72: a viewer confirmed both languages must be
@@ -152,10 +156,10 @@
   // follows the same typographic rule as the verse text: English italic,
   // French upright. Two identical parts (two French translations) show once.
   function referenceParts(verse, primaryLanguage) {
-    const parts = [{ text: referenceText(verse.reference, primaryLanguage), language: primaryLanguage }]
+    const parts = [{ text: referenceText(verse.reference, primaryLanguage, verse.verseEnd), language: primaryLanguage }]
     if (verse.secondary) {
       const language = languageOf(verse.secondary.translation)
-      const text = referenceText(verse.reference, language)
+      const text = referenceText(verse.reference, language, verse.verseEnd)
       if (text !== parts[0].text) parts.push({ text, language })
     }
     return parts

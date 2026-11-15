@@ -550,8 +550,15 @@
     "3 john": "3 Jean", jude: "Jude", revelation: "Apocalypse",
   }
 
-  function formatReference(ref) {
-    return capitalize(ref.book) + " " + ref.chapter + ":" + ref.verse
+  // Innovation pass (ARCHITECTURE.md section 145): a detected verse RANGE shows as
+  // one joined verse; the optional verseEnd extends every label to "Book C:V-E".
+  // Payloads without verseEnd render exactly as before.
+  function rangeSuffix(ref, verseEnd) {
+    return typeof verseEnd === "number" && verseEnd > ref.verse ? "-" + verseEnd : ""
+  }
+
+  function formatReference(ref, verseEnd) {
+    return capitalize(ref.book) + " " + ref.chapter + ":" + ref.verse + rangeSuffix(ref, verseEnd)
   }
 
   function currentDisplayMode() {
@@ -562,18 +569,18 @@
   /** The reference as the congregation will read it: French names in French mode. */
   function formatDisplayedReference(verse) {
     const ref = verse.reference
-    if (verse.secondary) return formatBilingualReference(ref)
+    if (verse.secondary) return formatBilingualReference(ref, verse.verseEnd)
     // Same rule as the overlay: the translation says the language.
     if (["ls1910", "lsg", "segond"].includes(String(verse.translation || "").toLowerCase()) || currentDisplayMode() === "french") {
-      return (FRENCH_BOOK_NAMES[ref.book] || capitalize(ref.book)) + " " + ref.chapter + ":" + ref.verse
+      return (FRENCH_BOOK_NAMES[ref.book] || capitalize(ref.book)) + " " + ref.chapter + ":" + ref.verse + rangeSuffix(ref, verse.verseEnd)
     }
-    return formatReference(ref)
+    return formatReference(ref, verse.verseEnd)
   }
 
-  function formatBilingualReference(ref) {
+  function formatBilingualReference(ref, verseEnd) {
     const frenchName = FRENCH_BOOK_NAMES[ref.book]
-    const frenchRef = (frenchName || capitalize(ref.book)) + " " + ref.chapter + ":" + ref.verse
-    return frenchRef + " · " + formatReference(ref)
+    const frenchRef = (frenchName || capitalize(ref.book)) + " " + ref.chapter + ":" + ref.verse + rangeSuffix(ref, verseEnd)
+    return frenchRef + " · " + formatReference(ref, verseEnd)
   }
 
   // ARCHITECTURE.md section 69: the embedded overlay-preview-frame iframe
