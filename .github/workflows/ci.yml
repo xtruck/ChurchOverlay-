@@ -7,6 +7,12 @@ name: CI
 # broken main could ship. It also let 5 tests in app-core.test.ts sit nested
 # inside other tests' bodies (never really executed, 2 reported as cancelled)
 # without anyone noticing.
+#
+# S-02 pinning policy: every external action is pinned to a FULL COMMIT SHA
+# (verified with `git ls-remote <repo> refs/tags/<tag>{}`), never a moving
+# tag — a compromised or hijacked tag/branch upstream cannot silently change
+# what runs here. Each pin carries the version it names, and upgrading is a
+# deliberate, reviewable diff of the comment.
 
 on:
   push:
@@ -28,10 +34,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        # v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Install Node.js
-        uses: actions/setup-node@v4
+        # v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
           cache: npm
