@@ -11,12 +11,14 @@ import { join } from "node:path"
 // the operator UI while the congregation reads "Jean 3:16"). "darby" was
 // missing from the dashboard's translation list exactly that way. These
 // guards lock the copies equal; change a table here AND in every surface in
-// the same commit.
+// the same commit. P1-2 (section 149): the dashboard's copies moved to its
+// own globalThis module (reference-format.js) — the guard follows them
+// there; the surface that drifted is now only a diff of one file away.
 
 const REPO_ROOT = join(__dirname, "..", "..", "..", "..")
 
 const SURFACES = {
-  dashboard: join(REPO_ROOT, "apps", "desktop", "renderer", "dashboard.js"),
+  dashboard: join(REPO_ROOT, "apps", "desktop", "renderer", "reference-format.js"),
   overlay: join(REPO_ROOT, "apps", "overlay", "public", "overlay.js"),
   remote: join(REPO_ROOT, "apps", "remote", "public", "remote.js"),
 }
