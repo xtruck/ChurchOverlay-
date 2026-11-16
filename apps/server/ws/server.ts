@@ -1,9 +1,11 @@
-import { WebSocketServer, type WebSocket } from "ws"
-import type { Server as HttpServer } from "node:http"
+import { WebSocketServer, type VerifyClientCallbackAsync, type WebSocket } from "ws"
+import type { Server as HttpServer, IncomingMessage, OutgoingHttpHeaders } from "node:http"
 import type { AddressInfo } from "node:net"
 import type { AudioFrame, WsMessage, WsRole } from "../../../packages/contracts"
 import { decodeAudioFrame } from "../../../packages/shared/audio-frame-codec"
 import { validateWsMessage } from "./action-registry"
+import { HandshakeRateLimiter, offeredRole, type HandshakeRateLimitOptions } from "./handshake-rate-limiter"
+import { normalizeRemoteAddress } from "../../../packages/shared/ip-utils"
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto"
 
 /**
@@ -157,6 +159,24 @@ export type ChurchOverlayWsServerOptions = {
   readonly maxCommandsPerSecond?: number
 
   /**
+   * S-03: per-client-IP limiting of the WS handshake (attempts per
+   * minute, self-inflicted ban on flooding). Loopback is exempt. Pass
+   * `maxAttemptsPerMinute: 0` to disable. Defaults to the
+   * DEFAULT_HANDSHAKE_RATE_LIMIT thresholds.
+   */
+  readonly handshakeRateLimit?: HandshakeRateLimitOptions
+
+  /**
+   * S-03: connection slots held back for operators, so saturating the
+   * server with viewer connections (overlay pages, a flood of phones)
+   * can never lock out the one client that controls the service. When
+   * the cap is reached, an ARRIVING OPERATOR evicts the oldest viewer
+   * instead of being refused. Defaults to 1. `0` restores the old
+   * first-come behavior.
+   */
+  readonly reservedOperatorSlots?: number
+
+  /**
    * How many round-trip samples to keep per connected client for latency history. Defaults to 60 (one second of samples at a 10 Hz poll). Bounded by AGENTS.md section 36.
    */
   readonly wsLatencyCapacity?: number
@@ -169,6 +189,7 @@ const DEFAULT_HEARTBEAT_INTERVAL_MS = 30_000
 const DEFAULT_MAX_BUFFERED_BYTES = 4 * 1024 * 1024
 const DEFAULT_MAX_CONNECTIONS = 64
 const DEFAULT_MAX_COMMANDS_PER_SECOND = 100
+const DEFAULT_RESERVED_OPERATOR_SLOTS = 1
 const DEFAULT_WS_LATENCY_SAMPLE_INTERVAL_MS = 100
 const DEFAULT_WS_LATENCY_CAPACITY = 60
 
@@ -228,6 +249,18 @@ export class ChurchOverlayWsServer {
   private readonly maxBufferedBytes: number
   private readonly maxConnections: number
   private readonly maxCommandsPerSecond: number
+  /** S-03: per-address handshake limiter and the slots held back for operators. */
+  private readonly handshakeLimiter: HandshakeRateLimiter
+  private readonly reservedOperatorSlots: number
+  /**
+   * Connection-order bookkeeping for the operator-eviction rule (S-03):
+   * arrival timestamp per admitted client, so an arriving operator can
+   * evict the OLDEST viewer when the cap is reached. A Map (not a
+   * WeakMap) because it must be iterated; entries are deleted in the
+   * socket's close handler, so it can never outlive its connection or
+   * grow past maxConnections (AGENTS.md section 36).
+   */
+  private readonly connectedAt = new Map<WebSocket, number>()
   /** Per-connection one-second command window. */
   private readonly commandWindows = new WeakMap<WebSocket, { start: number; count: number }>()
   /**
@@ -258,6 +291,8 @@ export class ChurchOverlayWsServer {
     this.maxBufferedBytes = options.maxBufferedBytes ?? DEFAULT_MAX_BUFFERED_BYTES
     this.maxConnections = options.maxConnections ?? DEFAULT_MAX_CONNECTIONS
     this.maxCommandsPerSecond = options.maxCommandsPerSecond ?? DEFAULT_MAX_COMMANDS_PER_SECOND
+    this.handshakeLimiter = new HandshakeRateLimiter(options.handshakeRateLimit ?? {})
+    this.reservedOperatorSlots = Math.max(0, options.reservedOperatorSlots ?? DEFAULT_RESERVED_OPERATOR_SLOTS)
     this.clientLatencyCapacity = options.wsLatencyCapacity ?? DEFAULT_WS_LATENCY_CAPACITY
     this.wsLatencySampleIntervalMs = options.wsLatencySampleIntervalMs ?? DEFAULT_WS_LATENCY_SAMPLE_INTERVAL_MS
 
@@ -266,12 +301,18 @@ export class ChurchOverlayWsServer {
           server: options.server,
           maxPayload: MAX_MESSAGE_BYTES,
           handleProtocols: (protocols) => this.resolveProtocol(protocols),
+          // VerifyClientCallbackAsync is documented as deprecated by ws, but
+          // it is the only hook that answers an unwanted UPGRADE with a real
+          // HTTP status (429/503) instead of leaving the socket hanging —
+          // exactly what a rate limiter owes the caller (S-03).
+          verifyClient: ((info, callback) => this.verifyHandshake(info.req, callback)) as VerifyClientCallbackAsync,
         })
       : new WebSocketServer({
           host: options.host ?? DEFAULT_HOST,
           port: options.port,
           maxPayload: MAX_MESSAGE_BYTES,
           handleProtocols: (protocols) => this.resolveProtocol(protocols),
+          verifyClient: ((info, callback) => this.verifyHandshake(info.req, callback)) as VerifyClientCallbackAsync,
         })
 
     this.ready =
@@ -340,6 +381,86 @@ export class ChurchOverlayWsServer {
     }
   }
 
+  /** Currently OPEN connections — a socket being torn down (rotated token,
+   * evicted viewer) is CLOSED immediately by terminate() and must not count
+   * toward capacity, or the freshly admitted replacement would be refused
+   * by the backstop below. */
+  private openClientCount(): number {
+    let open = 0
+    for (const client of this.wss.clients) {
+      if (client.readyState === client.OPEN) open += 1
+    }
+    return open
+  }
+
+  /** The longest-connected OPEN viewer, for the S-03 operator-eviction rule. */
+  private oldestOpenViewer(): WebSocket | null {
+    let oldest: WebSocket | null = null
+    let oldestAt = Infinity
+    for (const client of this.wss.clients) {
+      if (client.readyState !== client.OPEN) continue
+      if (this.clientRoles.get(client) !== "viewer") continue
+      const at = this.connectedAt.get(client) ?? Infinity
+      if (at < oldestAt) {
+        oldestAt = at
+        oldest = client
+      }
+    }
+    return oldest
+  }
+
+  /**
+   * S-03 gate, BEFORE the token handshake completes: per-address rate
+   * limiting of the handshake itself, then role-aware capacity — viewer
+   * connections stop at (maxConnections - reservedOperatorSlots) so a
+   * flood of viewers can never lock out the operator, and an operator
+   * arriving at the cap evicts the OLDEST viewer instead of being
+   * refused. Unregistered tokens are not admitted here: they consume one
+   * rate-limit attempt and are then rejected by the existing
+   * handleProtocols/handleConnection path, unchanged.
+   */
+  private verifyHandshake(
+    req: IncomingMessage,
+    callback: (res: boolean, code?: number, message?: string, headers?: OutgoingHttpHeaders) => void
+  ): void {
+    const remote = req.socket?.remoteAddress
+    const outcome = this.handshakeLimiter.attempt(remote)
+    if (!outcome.allowed) {
+      // The address is reported for the operator's diagnosis; the offered
+      // tokens never are (they are attacker-controlled values).
+      this.onRejected?.(`${outcome.reason} (${normalizeRemoteAddress(remote)})`, null)
+      callback(false, 429, "Too Many Requests", { "Retry-After": String(outcome.retryAfterSeconds) })
+      return
+    }
+
+    const role = offeredRole(req.headers["sec-websocket-protocol"], this.tokens, tokenEquals)
+    if (role === "viewer") {
+      const ceiling = this.maxConnections - this.reservedOperatorSlots
+      if (this.openClientCount() >= ceiling) {
+        this.onRejected?.(
+          this.reservedOperatorSlots > 0
+            ? "connection refused: viewer slots are full (operator slots reserved)"
+            : `connection refused: more than ${this.maxConnections} clients connected`,
+          "viewer"
+        )
+        callback(false, 503, "Service Unavailable")
+        return
+      }
+    } else if (role === "operator" && this.openClientCount() >= this.maxConnections) {
+      const evicted = this.reservedOperatorSlots > 0 ? this.oldestOpenViewer() : null
+      if (evicted) {
+        this.onRejected?.("viewer evicted for an arriving operator", "viewer")
+        evicted.terminate()
+      } else {
+        this.onRejected?.(`connection refused: more than ${this.maxConnections} clients connected`, null)
+        callback(false, 503, "Service Unavailable")
+        return
+      }
+    }
+
+    callback(true)
+  }
+
   /** The actual bound port — useful when constructed with port: 0. */
   get port(): number {
     const address = this.wss.address()
@@ -353,7 +474,6 @@ export class ChurchOverlayWsServer {
   broadcast(message: WsMessage): void {
     this.broadcastWhere(message, () => true)
   }
-
   /**
    * Sends an event to operator-role clients only (ARCHITECTURE.md section 125):
    * content meant for the person running the service, never for the overlay,
@@ -559,7 +679,11 @@ export class ChurchOverlayWsServer {
       return
     }
 
-    if (this.wss.clients.size > this.maxConnections) {
+    let openClients = 0
+    for (const client of this.wss.clients) {
+      if (client.readyState === client.OPEN) openClients += 1
+    }
+    if (openClients > this.maxConnections) {
       this.onRejected?.(`connection refused: more than ${this.maxConnections} clients connected`, null)
       socket.terminate()
       return
@@ -568,6 +692,8 @@ export class ChurchOverlayWsServer {
     const role: WsRole = isOperator ? "operator" : "viewer"
     this.clientRoles.set(socket, role)
     this.aliveClients.add(socket)
+    // S-03: arrival order for the operator-eviction rule; deleted on close.
+    this.connectedAt.set(socket, Date.now())
 
     // Initialize round-trip latency tracking for this connection.
     const latency: ClientLatencyState = {
@@ -590,8 +716,9 @@ export class ChurchOverlayWsServer {
       this.clientRoles.delete(socket)
       // Bounded per-connection state: a finished connection must not keep
       // its latency window reachable through the snapshot Map
-      // (AGENTS.md section 36).
+      // (AGENTS.md section 36). Same bound for the arrival-order bookkeeping.
       this.clientLatency.delete(socket)
+      this.connectedAt.delete(socket)
     })
 
     if (role === "viewer") {

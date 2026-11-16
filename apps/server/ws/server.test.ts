@@ -4,6 +4,7 @@ import { WebSocket } from "ws"
 import { ChurchOverlayWsServer } from "./server"
 import { encodeAudioFrame } from "../../../packages/shared/audio-frame-codec"
 import type { AudioFrame, WsMessage, WsRole } from "../../../packages/contracts"
+import type { HandshakeRateLimitOptions } from "./handshake-rate-limiter"
 
 const TOKENS = { operatorToken: "op-secret-token", viewerToken: "viewer-secret-token" }
 
@@ -24,6 +25,8 @@ async function startServer(
     maxBufferedBytes: number
     maxConnections: number
     maxCommandsPerSecond: number
+    reservedOperatorSlots: number
+    handshakeRateLimit: HandshakeRateLimitOptions
     wsLatencySampleIntervalMs: number
     wsLatencyCapacity: number
   }> = {}
@@ -615,7 +618,9 @@ test("ChurchOverlayWsServer: commands past the per-second limit are dropped and 
 
 test("ChurchOverlayWsServer: connections beyond the cap are refused and reported; earlier ones keep working", async () => {
   const rejected: string[] = []
-  const server = await startServer({ maxConnections: 2, onRejected: (reason) => rejected.push(reason) })
+  // reservedOperatorSlots: 0 keeps this test about the RAW cap only — the
+  // reserved-operator-slot semantics (default on) have their own tests below.
+  const server = await startServer({ maxConnections: 2, reservedOperatorSlots: 0, onRejected: (reason) => rejected.push(reason) })
   try {
     const a = await connect(server.port, TOKENS.viewerToken)
     const b = await connect(server.port, TOKENS.viewerToken)
@@ -769,6 +774,82 @@ test("ChurchOverlayWsServer.setTokens: identical tokens revoke nothing — a no-
 
     operator.close()
     viewer.close()
+  } finally {
+    await server.close()
+  }
+})
+
+// S-03: reserved operator slots. A flood of viewers can fill the server
+// up to (cap - reserved) but never lock the operator out; an operator
+// arriving at the full cap evicts the OLDEST viewer instead of being
+// refused.
+test("ChurchOverlayWsServer: viewers cannot take the reserved operator slot, but the operator still gets in", async () => {
+  const rejected: Array<{ reason: string; role: WsRole | null }> = []
+  const server = await startServer({ maxConnections: 2, onRejected: (reason, role) => rejected.push({ reason, role }) })
+  try {
+    const firstViewer = await connect(server.port, TOKENS.viewerToken)
+    // The cap is 2 with 1 slot reserved: the SECOND viewer is refused at
+    // the handshake before it ever becomes a connection.
+    await expectConnectionRejected(server.port, TOKENS.viewerToken)
+    // The operator still gets the second slot.
+    const operator = await connect(server.port, TOKENS.operatorToken)
+
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.equal(firstViewer.readyState, WebSocket.OPEN)
+    assert.equal(operator.readyState, WebSocket.OPEN)
+    assert.ok(
+      rejected.some((r) => r.role === "viewer" && r.reason.includes("operator slots reserved")),
+      "the viewer refusal must be reported with the viewer role"
+    )
+    firstViewer.close()
+    operator.close()
+  } finally {
+    await server.close()
+  }
+})
+
+test("ChurchOverlayWsServer: an operator arriving at the full cap evicts the oldest viewer, not the newest", async () => {
+  const rejected: string[] = []
+  const server = await startServer({ maxConnections: 4, onRejected: (reason) => rejected.push(reason) })
+  try {
+    const viewerA = await connect(server.port, TOKENS.viewerToken)
+    const viewerB = await connect(server.port, TOKENS.viewerToken)
+    const viewerC = await connect(server.port, TOKENS.viewerToken)
+    // cap 4, reserved 1: the fourth VIEWER is refused (3 is the ceiling).
+    await expectConnectionRejected(server.port, TOKENS.viewerToken)
+    // Operator #4 fills the cap…
+    const operatorE = await connect(server.port, TOKENS.operatorToken)
+    // …and operator #5 evicts the OLDEST viewer (A), never B or C.
+    const operatorF = await connect(server.port, TOKENS.operatorToken)
+
+    const aClosed = new Promise<void>((resolve) => viewerA.once("close", resolve))
+    await aClosed
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.equal(viewerA.readyState, WebSocket.CLOSED, "the oldest viewer must be the one evicted")
+    assert.equal(viewerB.readyState, WebSocket.OPEN)
+    assert.equal(viewerC.readyState, WebSocket.OPEN)
+    assert.equal(operatorE.readyState, WebSocket.OPEN)
+    assert.equal(operatorF.readyState, WebSocket.OPEN)
+    assert.ok(rejected.some((r) => r.includes("viewer evicted for an arriving operator")))
+    viewerB.close()
+    viewerC.close()
+    operatorE.close()
+    operatorF.close()
+  } finally {
+    await server.close()
+  }
+})
+
+test("ChurchOverlayWsServer: reservedOperatorSlots 0 restores the raw first-come cap for viewers", async () => {
+  const server = await startServer({ maxConnections: 2, reservedOperatorSlots: 0 })
+  try {
+    const a = await connect(server.port, TOKENS.viewerToken)
+    const b = await connect(server.port, TOKENS.viewerToken)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.equal(a.readyState, WebSocket.OPEN)
+    assert.equal(b.readyState, WebSocket.OPEN, "without reserved slots viewers may fill the whole cap")
+    a.close()
+    b.close()
   } finally {
     await server.close()
   }
