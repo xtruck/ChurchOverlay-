@@ -59,6 +59,12 @@ jobs:
       - name: Test
         run: npm test
 
+      # P1-1: the same suite under c8 with hard thresholds (95% statements /
+      # 85% branches / 95% functions / 95% lines) — a drop below the floor
+      # fails CI instead of silently rotting the suite's guarantee.
+      - name: Coverage gate
+        run: npm run test:coverage
+
       - name: Dependency audit (production deps)
         # scripts/audit-gate.mjs = npm audit (high+) minus two allowlisted
         # advisories that have no patched release yet; see the script.
