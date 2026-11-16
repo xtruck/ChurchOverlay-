@@ -99,6 +99,15 @@
   },
   "overrides": {
     "tmp": "^0.2.7",
-    "body-parser": "^1.20.9"
+    "body-parser": "^1.20.9",
+    "eslint": {
+      "minimatch": "^11.0.1"
+    },
+    "typescript-eslint": {
+      "minimatch": "^11.0.1"
+    },
+    "electron-builder": {
+      "minimatch": "^11.0.1"
+    }
   }
 }
