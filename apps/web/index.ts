@@ -31,6 +31,7 @@ import type { DisplayMode, VerseConfirmationMode, MediaCueKind } from "../../pac
 import { buildPageUrls, buildStatusPayload, isDisplayMode, isUiLanguage, type UiLanguage } from "./status-payload"
 import { installApiGuard, isLoopbackHost, resolveWebHost, validateConfiguredTokens } from "./api-auth"
 import { buildHealthPayload } from "./health"
+import { redactUrl } from "./redact-url"
 
 export type { UiLanguage } from "./status-payload"
 
@@ -182,10 +183,21 @@ async function main() {
       if (!isLoopbackHost(HOST)) {
         console.log(`WARNING: bound to ${HOST}, reachable from the network. Anyone with the page URLs below holds those tokens; use a trusted network.`)
       }
-      console.log(`Overlay URL: http://${HOST}:${PORT}${pageUrls.overlay}`)
-      console.log(`Remote URL: http://${HOST}:${PORT}${pageUrls.remote}`)
-      console.log(`Stage Display URL: http://${HOST}:${PORT}${pageUrls.stage}`)
-      console.log(`Live Companion URL: http://${HOST}:${PORT}${pageUrls.live}`)
+      // S-09: these lines land in capture-everything sinks (journald,
+      // docker logs, pasted issues), so the advertised URLs carry a
+      // masked token fingerprint by default. The real links stay
+      // available to the authenticated caller via /api/status; an
+      // operator who wants copy-paste URLs here can opt back in with
+      // CHURCHOVERLAY_PRINT_FULL_URLS=1 (a trusted-console decision).
+      const printFullUrls = process.env.CHURCHOVERLAY_PRINT_FULL_URLS === "1"
+      const display = (url: string): string => (printFullUrls ? url : redactUrl(url))
+      console.log(`Overlay URL: ${display(pageUrls.overlay)}`)
+      console.log(`Remote URL: ${display(pageUrls.remote)}`)
+      console.log(`Stage Display URL: ${display(pageUrls.stage)}`)
+      console.log(`Live Companion URL: ${display(pageUrls.live)}`)
+      if (!printFullUrls) {
+        console.log(`Tokens are masked above (fingerprint only). Set CHURCHOVERLAY_PRINT_FULL_URLS=1 to print full links, or read them from /api/status.`)
+      }
       resolve()
     })
   })
