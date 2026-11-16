@@ -236,6 +236,39 @@ function generateToken(): string {
 }
 
 /**
+ * S-04: which token(s) a rotate-token IPC call rotates. "both" is the
+ * full revocation path (every WS client everywhere must re-authenticate).
+ */
+type TokenKind = "operator" | "viewer" | "both"
+
+function isTokenKind(value: unknown): value is TokenKind {
+  return value === "operator" || value === "viewer" || value === "both"
+}
+
+/**
+ * Rebuilds the two token-bearing URLs from the LIVE tokens without
+ * restarting any server (S-04 rotation). Both builders are the exact
+ * startServicesNow ones, so the dashboard never shows a stale link after
+ * a rotation. remoteUrl stays null on loopback-only installs.
+ */
+function rebuildTokenUrls(): { overlayUrl: string | null; remoteUrl: string | null } {
+  if (!appCoreHandle || !staticServer || !currentTokens) return { overlayUrl: null, remoteUrl: null }
+  const overlayUrl =
+    `http://127.0.0.1:${staticServer.port}/index.html` +
+    `?wsPort=${appCoreHandle.wsServer.port}#token=${currentTokens.viewerToken}`
+  let remoteUrl: string | null = null
+  if (currentAllowPhoneRemote && remoteStaticServer) {
+    const lanIp = getLanIpAddress()
+    if (lanIp) {
+      remoteUrl =
+        `http://${lanIp}:${remoteStaticServer.port}/index.html` +
+        `?wsPort=${appCoreHandle.wsServer.port}#token=${currentTokens.operatorToken}`
+    }
+  }
+  return { overlayUrl, remoteUrl }
+}
+
+/**
  * ARCHITECTURE.md section 65.6: the address a phone on the same WiFi
  * would use to reach this machine — the first non-internal IPv4 address
  * Node reports. Returns null if none is found (e.g. no network adapter
@@ -992,6 +1025,16 @@ ipcMain.handle("get-startup-status", async () => {
       remoteUrl: currentRemoteUrl,
       overlayUrl: currentOverlayUrl,
       allowPhoneRemote: currentAllowPhoneRemote,
+      // S-04: the dashboard's first-enable warning and token-age display
+      // both read from the config, not from module state. One load, not three.
+      ...(await getConfigStore()
+        .load()
+        .then((c) => ({
+          remoteWarningAcked: c?.allowPhoneRemoteWarningAck === true,
+          ...(c?.operatorTokenGeneratedAt ? { operatorTokenGeneratedAt: c.operatorTokenGeneratedAt } : {}),
+          ...(c?.viewerTokenGeneratedAt ? { viewerTokenGeneratedAt: c.viewerTokenGeneratedAt } : {}),
+        }))
+        .catch(() => ({ remoteWarningAcked: false }))),
       verseConfirmationMode: currentVerseConfirmationMode,
       enableSermonNotes: currentEnableSermonNotes,
       aiFeatures: currentAiFeatures,
@@ -1456,7 +1499,15 @@ ipcMain.handle("set-allow-phone-remote", async (_event, payload: unknown) => {
   const store = getConfigStore()
   const existing = await store.load().catch(() => null)
   if (!existing) throw new Error("Services are not started yet.")
-  const config: AppConfig = { ...existing, allowPhoneRemote: payload }
+  // S-04: enabling the exposure IS the operator acknowledging the
+  // trusted-network warning (the dashboard shows it before this call;
+  // complete-setup's checkbox carries the same warning). Persisted so the
+  // full warning text is never repeated at every later activation.
+  const config: AppConfig = {
+    ...existing,
+    allowPhoneRemote: payload,
+    ...(payload ? { allowPhoneRemoteWarningAck: true } : {}),
+  }
   await store.save(config)
   try {
     return await startServices(config)
@@ -1466,6 +1517,77 @@ ipcMain.handle("set-allow-phone-remote", async (_event, payload: unknown) => {
     // earlier ones (e.g. the old WS server) still bound.
     await shutdown()
     throw error
+  }
+})
+
+// S-04: the dashboard's explicit first-enable warning calls this so the
+// "trusted network" acknowledgment outlives the session. Harmless when
+// the ack already exists.
+ipcMain.handle("acknowledge-remote-network-warning", async () => {
+  await persistConfig((existing) => ({ ...existing, allowPhoneRemoteWarningAck: true }))
+  return { acknowledged: true }
+})
+
+/**
+ * S-04: rotate and revoke the WS tokens from the dashboard, without a
+ * service restart. Persisted first (ConfigStore.update, on the save
+ * queue), then swapped into the RUNNING server — every session
+ * authenticated with the rotated token is terminated by setTokens and
+ * reported via the server's own onRejected path, and the token-bearing
+ * URLs (OBS overlay link, phone remote link) are rebuilt from the new
+ * values. Returns the same shape the dashboard's status handlers render,
+ * so the UI refreshes from one response.
+ */
+ipcMain.handle("rotate-token", async (_event, payload: unknown) => {
+  const kind = typeof payload === "object" && payload !== null ? (payload as Record<string, unknown>).kind : payload
+  if (!isTokenKind(kind)) throw new Error("Invalid token kind.")
+  if (!appCoreHandle || !currentTokens) throw new Error("Services are not started yet.")
+
+  const rotatedAt = new Date().toISOString()
+  const saved = await getConfigStore().update((existing) => ({
+    ...existing,
+    ...(kind === "operator" || kind === "both" ? { operatorToken: generateToken(), operatorTokenGeneratedAt: rotatedAt } : {}),
+    ...(kind === "viewer" || kind === "both" ? { viewerToken: generateToken(), viewerTokenGeneratedAt: rotatedAt } : {}),
+  }))
+  if (!saved) throw new Error("Services are not started yet.")
+
+  // Swap the LIVE tokens and revoke every session holding the old ones.
+  // The old object must be replaced, not mutated: setTokens() keeps the
+  // server's reference and the revocation report in one place.
+  const nextTokens = { operatorToken: saved.operatorToken, viewerToken: saved.viewerToken }
+  appCoreHandle.wsServer.setTokens(nextTokens)
+  currentTokens = nextTokens
+
+  const { overlayUrl, remoteUrl } = rebuildTokenUrls()
+  currentOverlayUrl = overlayUrl ?? currentOverlayUrl
+  currentRemoteUrl = remoteUrl
+  // The NDI output embeds the overlay URL (viewer token): a rotated viewer
+  // token would otherwise leave that page reconnecting forever with the
+  // dead token until a full app restart.
+  if (overlayUrl && ndiWindow && (kind === "viewer" || kind === "both")) {
+    await ndiWindow.loadURL(overlayUrl).catch((err: unknown) => {
+      logger.warn({
+        component: "main",
+        event: "ndi.reload-after-rotation-failed",
+        error: err instanceof Error ? err.message : String(err),
+      })
+    })
+  }
+
+  logger.info({
+    component: "main",
+    event: "tokens.rotated",
+    metadata: { kind },
+  })
+
+  return {
+    port: appCoreHandle.wsServer.port,
+    token: currentTokens.operatorToken,
+    overlayUrl: currentOverlayUrl,
+    remoteUrl: currentRemoteUrl,
+    allowPhoneRemote: currentAllowPhoneRemote,
+    operatorTokenGeneratedAt: saved.operatorTokenGeneratedAt,
+    viewerTokenGeneratedAt: saved.viewerTokenGeneratedAt,
   }
 })
 
@@ -1534,6 +1656,11 @@ ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
       : {}),
     microphoneId: existing?.microphoneId ?? null,
     operatorToken: existing?.operatorToken ?? generateToken(),
+    // S-04: the age the dashboard shows comes from these timestamps; a
+    // token carried over from a previous install keeps its original date.
+    ...(existing?.operatorToken === undefined && existing?.operatorTokenGeneratedAt === undefined
+      ? { operatorTokenGeneratedAt: new Date().toISOString() }
+      : existing?.operatorTokenGeneratedAt ? { operatorTokenGeneratedAt: existing.operatorTokenGeneratedAt } : {}),
     // ARCHITECTURE.md section 65.3: not a setup-screen control (unlike
     // displayMode/uiLanguage) — "auto" is the confirmed default for every
     // fresh install; changeable afterward via the live dashboard toggle
@@ -1566,9 +1693,16 @@ ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
     // toggle (set-overlay-template).
     overlayTemplate: existing?.overlayTemplate ?? "classic",
     viewerToken: existing?.viewerToken ?? generateToken(),
+    ...(existing?.viewerToken === undefined && existing?.viewerTokenGeneratedAt === undefined
+      ? { viewerTokenGeneratedAt: new Date().toISOString() }
+      : existing?.viewerTokenGeneratedAt ? { viewerTokenGeneratedAt: existing.viewerTokenGeneratedAt } : {}),
     displayMode,
     uiLanguage,
     allowPhoneRemote,
+    // The setup screen's checkbox itself spells out the network exposure
+    // (S-04): enabling here records that acknowledgment, same as the
+    // dashboard toggle does.
+    ...(allowPhoneRemote ? { allowPhoneRemoteWarningAck: true } : {}),
     audioProfile: existing?.audioProfile ?? audioProfile,
     ndiEnabled: existing?.ndiEnabled ?? false,
     ...(organizationName || existing?.organizationName

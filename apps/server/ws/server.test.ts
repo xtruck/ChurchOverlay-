@@ -695,3 +695,81 @@ test("ChurchOverlayWsServer: per-client latency is measured through ping/pong an
     await server.close()
   }
 })
+
+// S-04: live token rotation. A rotated token revokes the sessions that
+// authenticated with the OLD one (they are terminated, never left half
+// authenticated), while sessions of the OTHER role stay untouched, and a
+// client presenting the NEW token is admitted right after.
+test("ChurchOverlayWsServer.setTokens: rotating the operator token revokes operator sessions, viewers stay connected", async () => {
+  const rejected: Array<{ reason: string; role: WsRole | null }> = []
+  const server = await startServer({ onRejected: (reason, role) => rejected.push({ reason, role }) })
+  try {
+    const operator = await connect(server.port, TOKENS.operatorToken)
+    const viewer = await connect(server.port, TOKENS.viewerToken)
+
+    const operatorClosed = new Promise<void>((resolve) => operator.once("close", resolve))
+    server.setTokens({ operatorToken: "rotated-operator-token", viewerToken: TOKENS.viewerToken })
+    await operatorClosed
+    assert.equal(operator.readyState, WebSocket.CLOSED, "the operator session must be revoked")
+
+    // The viewer's session was authenticated with an unchanged token: give
+    // the sweep a tick, then prove it is still open.
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.equal(viewer.readyState, WebSocket.OPEN, "an unchanged token must not revoke its sessions")
+
+    // The new operator token is live: the old one is refused, the new one
+    // admitted, and the revocation was reported, never silent.
+    await expectConnectionRejected(server.port, TOKENS.operatorToken)
+    const reconnected = await connect(server.port, "rotated-operator-token")
+    reconnected.close()
+
+    assert.ok(
+      rejected.some((r) => r.role === "operator" && r.reason.includes("operator token rotated")),
+      "the revocation must be reported via onRejected with the operator role"
+    )
+    viewer.close()
+  } finally {
+    await server.close()
+  }
+})
+
+test("ChurchOverlayWsServer.setTokens: rotating the viewer token revokes viewers, the operator session stays up", async () => {
+  const server = await startServer()
+  try {
+    const operator = await connect(server.port, TOKENS.operatorToken)
+    const viewer = await connect(server.port, TOKENS.viewerToken)
+
+    const viewerClosed = new Promise<void>((resolve) => viewer.once("close", resolve))
+    server.setTokens({ operatorToken: TOKENS.operatorToken, viewerToken: "rotated-viewer-token" })
+    await viewerClosed
+
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.equal(operator.readyState, WebSocket.OPEN, "the operator session must survive a viewer rotation")
+    await expectConnectionRejected(server.port, TOKENS.viewerToken)
+    const reconnected = await connect(server.port, "rotated-viewer-token")
+    reconnected.close()
+    operator.close()
+  } finally {
+    await server.close()
+  }
+})
+
+test("ChurchOverlayWsServer.setTokens: identical tokens revoke nothing — a no-op rotation keeps every session", async () => {
+  const rejected: string[] = []
+  const server = await startServer({ onRejected: (reason) => rejected.push(reason) })
+  try {
+    const operator = await connect(server.port, TOKENS.operatorToken)
+    const viewer = await connect(server.port, TOKENS.viewerToken)
+
+    server.setTokens({ ...TOKENS })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.equal(operator.readyState, WebSocket.OPEN)
+    assert.equal(viewer.readyState, WebSocket.OPEN)
+    assert.deepEqual(rejected, [], "a no-op rotation must not report any revocation")
+
+    operator.close()
+    viewer.close()
+  } finally {
+    await server.close()
+  }
+})

@@ -105,6 +105,12 @@ contextBridge.exposeInMainWorld("churchOverlay", {
   setNdiEnabled: (enabled: boolean) => ipcRenderer.invoke("set-ndi-enabled", enabled),
   getNdiStatus: () => ipcRenderer.invoke("get-ndi-status"),
   setAllowPhoneRemote: (enabled: boolean) => ipcRenderer.invoke("set-allow-phone-remote", enabled),
+  // S-04: the dashboard's explicit first-enable "trusted network" warning
+  // persists its acknowledgment through this call, and the token rotation
+  // buttons go through rotateToken() — both narrow, purpose-built calls,
+  // same shape as every other bridge method here.
+  acknowledgeRemoteNetworkWarning: () => ipcRenderer.invoke("acknowledge-remote-network-warning"),
+  rotateToken: (kind: "operator" | "viewer" | "both") => ipcRenderer.invoke("rotate-token", { kind }),
   setFrenchTranslation: (translation: string) => ipcRenderer.invoke("set-french-translation", translation),
   getCustomBibleApiUrl: () => ipcRenderer.invoke("get-custom-bible-api-url"),
   setCustomBibleApiUrl: (url: string) => ipcRenderer.invoke("set-custom-bible-api-url", url),

@@ -1049,6 +1049,13 @@
               <input id="obs-url" type="text" readonly />
               <button id="obs-copy-btn" class="btn-secondary btn-small" data-i18n="obs.copyButton">Copy</button>
             </div>
+            <!-- S-04: the viewer token rides in this URL — a rotation
+                 invalidates every overlay/stage/live link ever handed out,
+                 and the new URL must be re-pasted into OBS. -->
+            <div class="btn-row field-row">
+              <span id="obs-token-age" class="settings-hint token-age"></span>
+              <button id="obs-rotate-btn" class="btn-secondary btn-small" data-i18n="obs.rotateToken">Rotate viewer token</button>
+            </div>
           </div>
 
           <!-- ARCHITECTURE.md section 82: how a shown verse appears. -->
@@ -1191,6 +1198,12 @@
               <div class="btn-row field-row">
                 <input id="remote-url" type="text" readonly />
                 <button id="remote-copy-btn" class="btn-secondary btn-small" data-i18n="remote.copyButton">Copy</button>
+              </div>
+              <!-- S-04: the operator token rides in this URL — anyone who
+                   captures it over an open WiFi controls the overlay. -->
+              <div class="btn-row field-row">
+                <span id="remote-token-age" class="settings-hint token-age"></span>
+                <button id="remote-rotate-btn" class="btn-secondary btn-small" data-i18n="remote.rotateToken">Rotate remote token</button>
               </div>
             </div>
             <div id="remote-no-lan" class="settings-hint" style="display: none" data-i18n="remote.noLan">Enabled, but no local network address was found on this machine.</div>

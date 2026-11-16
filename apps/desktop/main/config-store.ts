@@ -148,6 +148,21 @@ export type AppConfig = {
    * Absent → use the default bible-api.com. Must be a valid HTTPS URL.
    */
   readonly customBibleApiUrl?: string
+  /**
+   * S-04: set to true the first time the operator confirms the
+   * "trusted-network" warning shown before allowPhoneRemote is ever
+   * enabled. Once true, later activations keep the short confirm() and
+   * never repeat the full warning. Absent (every pre-existing config)
+   * means "not acked yet".
+   */
+  readonly allowPhoneRemoteWarningAck?: boolean
+  /**
+   * S-04: when each WS token was last generated (ISO 8601). Absent on
+   * pre-existing configs and on tokens created before this field existed —
+   * the dashboard then shows no age rather than guessing one.
+   */
+  readonly operatorTokenGeneratedAt?: string
+  readonly viewerTokenGeneratedAt?: string
 }
 
 /**
@@ -203,6 +218,9 @@ const KNOWN_STORED_FIELDS: ReadonlySet<string> = new Set([
   "overlayTemplate",
   "overlayStyle",
   "customBibleApiUrl",
+  "allowPhoneRemoteWarningAck",
+  "operatorTokenGeneratedAt",
+  "viewerTokenGeneratedAt",
 ])
 
 type DecodedConfig = {
@@ -436,6 +454,9 @@ export class ConfigStore {
       ...(config.overlayTemplate === undefined ? {} : { overlayTemplate: config.overlayTemplate }),
       ...(config.overlayStyle === undefined ? {} : { overlayStyle: normalizeOverlayStyleSettings(config.overlayStyle) }),
       ...(config.customBibleApiUrl === undefined ? {} : { customBibleApiUrl: config.customBibleApiUrl }),
+      ...(config.allowPhoneRemoteWarningAck === undefined ? {} : { allowPhoneRemoteWarningAck: config.allowPhoneRemoteWarningAck }),
+      ...(config.operatorTokenGeneratedAt === undefined ? {} : { operatorTokenGeneratedAt: config.operatorTokenGeneratedAt }),
+      ...(config.viewerTokenGeneratedAt === undefined ? {} : { viewerTokenGeneratedAt: config.viewerTokenGeneratedAt }),
     }
 
     await mkdir(dirname(this.filePath), { recursive: true })
@@ -587,6 +608,9 @@ export class ConfigStore {
     const localEnabled = bool("localAsrEnabled", localAsrEnabled)
     const localModel = oneOf("localAsrModel", localAsrModel, ["base", "small"] as const)
     const localEngine = oneOf("localAsrEngine", localAsrEngine, ["whisper.cpp", "faster-whisper"] as const)
+    const warningAck = bool("allowPhoneRemoteWarningAck", stored.allowPhoneRemoteWarningAck)
+    const operatorGeneratedAt = text("operatorTokenGeneratedAt", stored.operatorTokenGeneratedAt)
+    const viewerGeneratedAt = text("viewerTokenGeneratedAt", stored.viewerTokenGeneratedAt)
 
     const extras: Record<string, unknown> = {}
     if (version > CONFIG_SCHEMA_VERSION) {
@@ -628,6 +652,9 @@ export class ConfigStore {
       overlayTemplate: oneOf("overlayTemplate", overlayTemplate, OVERLAY_TEMPLATES) ?? "classic",
       ...(overlayStyle === undefined ? {} : { overlayStyle: normalizeOverlayStyleSettings(overlayStyle) }),
       ...(safeUrl === undefined ? {} : { customBibleApiUrl: safeUrl }),
+      ...(warningAck === undefined ? {} : { allowPhoneRemoteWarningAck: warningAck }),
+      ...(operatorGeneratedAt === undefined ? {} : { operatorTokenGeneratedAt: operatorGeneratedAt }),
+      ...(viewerGeneratedAt === undefined ? {} : { viewerTokenGeneratedAt: viewerGeneratedAt }),
     }
     return { config, unreadable, extras, schemaVersion: version }
   }

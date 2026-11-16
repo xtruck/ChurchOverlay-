@@ -708,3 +708,53 @@ test("ConfigStore: concurrent loads are serialized - one quarantine, one restore
     assert.equal(asides.length, 1, "double-quarantine is impossible")
   })
 })
+
+// S-04: the trusted-network acknowledgment and the token-generation dates
+// round-trip like every other optional field (written when present, absent
+// — never defaulted — when not).
+test("ConfigStore: allowPhoneRemoteWarningAck and token timestamps round-trip when present", async () => {
+  await withTempDir(async (dir) => {
+    const store = new ConfigStore(join(dir, "config.json"), new FakeSecretCodec())
+    await store.save({
+      ...SAMPLE_CONFIG,
+      allowPhoneRemoteWarningAck: true,
+      operatorTokenGeneratedAt: "2025-11-01T09:00:00.000Z",
+      viewerTokenGeneratedAt: "2025-11-02T10:30:00.000Z",
+    })
+    const loaded = await store.load()
+    assert.equal(loaded?.allowPhoneRemoteWarningAck, true)
+    assert.equal(loaded?.operatorTokenGeneratedAt, "2025-11-01T09:00:00.000Z")
+    assert.equal(loaded?.viewerTokenGeneratedAt, "2025-11-02T10:30:00.000Z")
+  })
+})
+
+test("ConfigStore: S-04 fields are absent (not defaulted) when never set — no invented age, no invented warning ack", async () => {
+  await withTempDir(async (dir) => {
+    const store = new ConfigStore(join(dir, "config.json"), new FakeSecretCodec())
+    await store.save(SAMPLE_CONFIG)
+    const loaded = await store.load()
+    assert.equal(loaded?.allowPhoneRemoteWarningAck, undefined)
+    assert.equal(loaded?.operatorTokenGeneratedAt, undefined)
+    assert.equal(loaded?.viewerTokenGeneratedAt, undefined)
+  })
+})
+
+test("ConfigStore: a corrupt S-04 field degrades to its default with a warning instead of failing the load", async () => {
+  await withTempDir(async (dir) => {
+    const path = join(dir, "config.json")
+    const store = new ConfigStore(path, new FakeSecretCodec())
+    await store.save({ ...SAMPLE_CONFIG, allowPhoneRemoteWarningAck: true })
+    const raw = JSON.parse(await readFile(path, "utf8"))
+    raw.allowPhoneRemoteWarningAck = "yes"
+    raw.operatorTokenGeneratedAt = 42
+    await writeFile(path, JSON.stringify(raw), "utf8")
+    const warnings: unknown[] = []
+    const tolerating = new ConfigStore(path, new FakeSecretCodec(), { warn: (fields) => warnings.push(fields) })
+    const loaded = await tolerating.load()
+    assert.equal(loaded?.allowPhoneRemoteWarningAck, undefined)
+    assert.equal(loaded?.operatorTokenGeneratedAt, undefined)
+    const fields = warnings.map((w) => (w as { metadata?: { field?: string } }).metadata?.field)
+    assert.ok(fields?.includes("allowPhoneRemoteWarningAck"))
+    assert.ok(fields?.includes("operatorTokenGeneratedAt"))
+  })
+})

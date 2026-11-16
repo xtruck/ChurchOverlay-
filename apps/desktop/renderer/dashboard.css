@@ -1872,3 +1872,8 @@ header.topbar {
 .reference-preview.is-hint .reference-preview-label { display: none; }
 .reference-preview.is-hint .reference-preview-text { color: var(--warn-text); }
 .recent-hint { color: var(--text-faint); font-size: var(--fs-12); white-space: nowrap; }
+/* S-04: token-age lines next to the rotation buttons. Normal age is a
+   plain hint; past 7 days the same amber the app uses for "attention"
+   states, without ever blocking anything. */
+.token-age { flex: 1; min-width: 0; font-size: var(--fs-12); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.token-age-stale { color: var(--warn-text); font-weight: 600; }

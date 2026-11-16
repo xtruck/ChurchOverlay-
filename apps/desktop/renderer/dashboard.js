@@ -249,6 +249,11 @@
   const remoteToggleBtn = document.getElementById("remote-toggle-btn")
   const obsUrlInput = document.getElementById("obs-url")
   const obsCopyBtn = document.getElementById("obs-copy-btn")
+  // S-04: per-token rotation buttons and age lines (viewer = OBS panel, operator = remote panel).
+  const obsRotateBtn = document.getElementById("obs-rotate-btn")
+  const obsTokenAgeEl = document.getElementById("obs-token-age")
+  const remoteRotateBtn = document.getElementById("remote-rotate-btn")
+  const remoteTokenAgeEl = document.getElementById("remote-token-age")
   const ndiToggleBtn = document.getElementById("ndi-toggle-btn")
   const ndiStatusEl = document.getElementById("ndi-status")
   // ARCHITECTURE.md section 109: the output reports stats and an error/retry state, so the operator
@@ -380,6 +385,9 @@
   let ndiEnabled = false
   let currentNdiStatus = { state: "disabled" }
   let allowPhoneRemoteEnabled = false
+  // S-04: whether the trusted-network warning was already acknowledged
+  // (persisted in config); refreshed from get-startup-status on load.
+  let remoteWarningAcked = false
 
   // ARCHITECTURE.md section 64.5's authoring UI. `rundown:state` broadcasts
   // only the CURRENT scene (ARCHITECTURE.md section 64.4), not the whole
@@ -3619,7 +3627,16 @@
       const delaySeconds = Math.round(delay / 1000)
       setStatus(t("status.disconnectedRetrying", { seconds: delaySeconds }), "disconnected")
       log(t("log.disconnectedRetrying", { seconds: delaySeconds }), "error", { toast: false })
-      setTimeout(() => connect(port, token), delay)
+      setTimeout(() => {
+        // S-04: the token may have been rotated while this socket was gone
+        // (our own dashboard "rotate" button revokes this very session).
+        // Re-read the live values instead of retrying with the captured
+        // ones, or a rotated-away token would be retried forever.
+        window.churchOverlay
+          .getOperatorConnectionInfo()
+          .then((info) => connect(info.port, info.token))
+          .catch(() => connect(port, token))
+      }, delay)
     })
     ws.addEventListener("error", () => log(t("log.connectionError"), "error", { toast: false }))
     ws.addEventListener("message", (event) => {
@@ -4430,17 +4447,42 @@
   // so unlike those toggles, this one confirms with the operator first,
   // and warns specifically about the network-exposure consequence when
   // turning it ON (nothing new when turning it off).
+  //
+  // S-04 amendment: the FIRST activation replaces the generic confirm
+  // with the explicit trusted-network warning, and its acknowledgment is
+  // persisted (allowPhoneRemoteWarningAck) so it is never repeated —
+  // while set-allow-phone-remote itself records the acknowledgment too,
+  // so both entry points (setup checkbox, this toggle) converge.
   remoteToggleBtn.addEventListener("click", () => {
     const enabling = !allowPhoneRemoteEnabled
-    if (!window.confirm(t(enabling ? "remote.confirmEnable" : "remote.confirmDisable"))) return
+    const needsTrustWarning = enabling && !remoteWarningAcked
+    if (needsTrustWarning && !window.confirm(t("remote.trustWarning"))) return
+    if (!needsTrustWarning && !window.confirm(t(enabling ? "remote.confirmEnable" : "remote.confirmDisable"))) return
     remoteToggleBtn.disabled = true
-    window.churchOverlay
-      .setAllowPhoneRemote(enabling)
-      .then((info) => renderRemotePanel(info.remoteUrl, info.allowPhoneRemote))
-      .catch((err) => {
-        log(err.message, "error")
-        remoteToggleBtn.disabled = false
-      })
+    const proceed = () =>
+      window.churchOverlay
+        .setAllowPhoneRemote(enabling)
+        .then((info) => {
+          if (enabling) remoteWarningAcked = true
+          renderRemotePanel(info.remoteUrl, info.allowPhoneRemote)
+        })
+        .catch((err) => {
+          log(err.message, "error")
+          remoteToggleBtn.disabled = false
+        })
+    if (needsTrustWarning) {
+      // The acknowledgment is persisted first; a persist failure must not
+      // block the enable itself (the main-process toggle records it too).
+      window.churchOverlay
+        .acknowledgeRemoteNetworkWarning()
+        .then(() => {
+          remoteWarningAcked = true
+        })
+        .catch(() => {})
+        .then(proceed)
+    } else {
+      proceed()
+    }
   })
 
   remoteCopyBtn.addEventListener("click", () => {
@@ -4455,6 +4497,56 @@
   function renderObsPanel(overlayUrl) {
     if (overlayUrl) obsUrlInput.value = overlayUrl
   }
+
+  // S-04: age of each token, with a visual alert past 7 days. An absent
+  // timestamp (config predating rotation support) renders nothing rather
+  // than guessing an age from nothing.
+  function renderTokenAge(el, generatedAt) {
+    if (!el) return
+    if (!generatedAt) {
+      el.textContent = ""
+      el.classList.remove("token-age-stale")
+      return
+    }
+    const generated = new Date(generatedAt).getTime()
+    const days = Math.floor((Date.now() - generated) / 86400000)
+    if (!Number.isFinite(days) || days < 0) {
+      el.textContent = ""
+      el.classList.remove("token-age-stale")
+      return
+    }
+    el.textContent = t(days > 7 ? "remote.tokenAgeStale" : "remote.tokenAge", { days })
+    el.classList.toggle("token-age-stale", days > 7)
+  }
+
+  function renderTokenAges(info) {
+    renderTokenAge(obsTokenAgeEl, info && info.viewerTokenGeneratedAt)
+    renderTokenAge(remoteTokenAgeEl, info && info.operatorTokenGeneratedAt)
+  }
+
+  // S-04: rotate-and-revoke straight from the dashboard. The confirm
+  // spells out the consequence — every link already handed out for that
+  // token stops working immediately; the panel then shows the new ones.
+  function rotateToken(kind, btn) {
+    if (!window.confirm(t(kind === "operator" ? "remote.rotateConfirm" : "obs.rotateConfirm"))) return
+    btn.disabled = true
+    window.churchOverlay
+      .rotateToken(kind)
+      .then((info) => {
+        renderObsPanel(info.overlayUrl)
+        renderOverlayPreview(info.overlayUrl)
+        renderRemotePanel(info.remoteUrl, info.allowPhoneRemote)
+        renderTokenAges(info)
+        log(t(kind === "operator" ? "log.remoteTokenRotated" : "log.viewerTokenRotated"), "sent", { toast: true })
+      })
+      .catch((err) => log(err.message, "error"))
+      .finally(() => {
+        btn.disabled = false
+      })
+  }
+
+  obsRotateBtn.addEventListener("click", () => rotateToken("viewer", obsRotateBtn))
+  remoteRotateBtn.addEventListener("click", () => rotateToken("operator", remoteRotateBtn))
 
   // Derives mediaOrigin from the same overlayUrl the OBS panel and the
   // embedded preview iframe already use — one real, known-good origin,
@@ -4855,6 +4947,9 @@
         setActiveOption(verseLayoutToggleEl, "layout", info.verseLayout || "fullscreen")
         setActiveOption(frenchTranslationToggleEl, "translation", info.frenchTranslation || "ls1910")
         renderRemotePanel(info.remoteUrl, info.allowPhoneRemote)
+        // complete-setup persists the acknowledgment whenever it enables
+        // the exposure (S-04), so this session starts in the same state.
+        remoteWarningAcked = Boolean(info.allowPhoneRemote)
         renderObsPanel(info.overlayUrl)
         renderOverlayPreview(info.overlayUrl)
         setMediaOrigin(info.overlayUrl)
@@ -4896,6 +4991,10 @@
         setActiveOption(frenchTranslationToggleEl, "translation", status.frenchTranslation || "ls1910")
         renderRemotePanel(status.remoteUrl, status.allowPhoneRemote)
         renderObsPanel(status.overlayUrl)
+        // S-04: trust-warning state and token ages come from the persisted
+        // config, not from module state.
+        remoteWarningAcked = status.remoteWarningAcked === true
+        renderTokenAges(status)
         renderOverlayPreview(status.overlayUrl)
         setMediaOrigin(status.overlayUrl)
         renderNdiStatus(status.ndi)

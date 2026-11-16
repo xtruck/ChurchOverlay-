@@ -215,7 +215,7 @@ const MAX_MESSAGE_BYTES = 1024 * 1024
  */
 export class ChurchOverlayWsServer {
   private readonly wss: WebSocketServer
-  private readonly tokens: ServerTokens
+  private tokens: ServerTokens
   private readonly onCommand: ChurchOverlayWsServerOptions["onCommand"]
   private readonly onAudioFrame: ChurchOverlayWsServerOptions["onAudioFrame"]
   private readonly onRejected: ChurchOverlayWsServerOptions["onRejected"]
@@ -301,6 +301,42 @@ export class ChurchOverlayWsServer {
     if (sampleIntervalMs > 0) {
       this.wsLatencyTimer = setInterval(() => this.sampleClientLatency(), sampleIntervalMs)
       this.wsLatencyTimer.unref()
+    }
+  }
+
+  /**
+   * Live token replacement (S-04: rotation/révocation sans redémarrer le
+   * serveur). Chaque jeton qui CHANGE révoque immédiatement les sessions
+   * déjà authentifiées avec l'ancien : les clients de ce rôle sont
+   * terminés (et rapportés via onRejected, jamais silencieusement), ils
+   * se reconnectent alors avec le nouveau jeton. Un jeton inchangé ne
+   * touche pas ses sessions existantes — la rotation d'un seul rôle ne
+   * déconnecte jamais l'autre.
+   *
+   * La comparaison est faite en clair côté serveur uniquement (les deux
+   * valeurs sont déjà en mémoire ici) ; aucune valeur ne sort de la
+   * classe, ni dans les rapports onRejected ni dans les snapshots.
+   */
+  setTokens(tokens: ServerTokens): void {
+    const operatorChanged = !tokenEquals(tokens.operatorToken, this.tokens.operatorToken)
+    const viewerChanged = !tokenEquals(tokens.viewerToken, this.tokens.viewerToken)
+    this.tokens = { operatorToken: tokens.operatorToken, viewerToken: tokens.viewerToken }
+
+    if (operatorChanged) this.terminateRole("operator", "operator token rotated: session revoked")
+    if (viewerChanged) this.terminateRole("viewer", "viewer token rotated: session revoked")
+  }
+
+  /** The tokens the server currently accepts (plain values — operator-side only, never logged). */
+  getTokens(): ServerTokens {
+    return this.tokens
+  }
+
+  private terminateRole(role: WsRole, reason: string): void {
+    for (const client of this.wss.clients) {
+      if (client.readyState !== client.OPEN) continue
+      if (this.clientRoles.get(client) !== role) continue
+      this.onRejected?.(reason, role)
+      client.terminate()
     }
   }
 
