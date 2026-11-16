@@ -25,6 +25,7 @@
     "dist": "npm run build && npm run rebuild:native && electron-builder"
   },
   "devDependencies": {
+    "@electron/fuses": "^2.1.3",
     "@electron/rebuild": "^4.2.0",
     "@types/express": "^5.0.6",
     "@types/node": "^22.20.5",
@@ -42,6 +43,7 @@
     "ws": "^8.22.0"
   },
   "build": {
+    "afterPack": "scripts/apply-fuses.cjs",
     "appId": "com.churchoverlay.app",
     "productName": "ChurchOverlay",
     "directories": {

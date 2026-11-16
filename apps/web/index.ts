@@ -518,6 +518,19 @@ async function main() {
     next()
   })
 
+  // P1-4 (S-08): the phone remote is the one CONTROL page this server
+  // exposes — clickjacking it means pressing the operator's buttons from a
+  // decoy page — so it gets the anti-framing pair (X-Frame-Options for older
+  // engines, frame-ancestors for modern ones). The display pages (/overlay,
+  // /stage, /live) stay framable on purpose: the Electron dashboard's Live
+  // view embeds the overlay from a file:// null origin, which
+  // frame-ancestors cannot express, and OBS loads them top-level.
+  app.use("/remote", (_req, res, next) => {
+    res.setHeader("X-Frame-Options", "DENY")
+    res.setHeader("Content-Security-Policy", "frame-ancestors 'none'")
+    next()
+  })
+
   // Overlay static files
   const overlayStaticDir = join(REPO_ROOT, "apps", "overlay", "public")
   app.use("/overlay", express.static(overlayStaticDir))

@@ -51,6 +51,17 @@ const FONT_CACHE_CONTROL = "public, max-age=86400"
 /** Pages/scripts/styles are always revalidated (cheap: ETag -> 304), so an app update is picked up immediately. */
 const REVALIDATE_CACHE_CONTROL = "no-cache"
 
+/**
+ * P1-4 (S-08): sent on HTML responses of frameDeny instances only.
+ * X-Frame-Options alone is ignored by modern browsers when a CSP
+ * frame-ancestors is present, so both are sent — old engines keep the
+ * XFO denial, modern ones get the strict CSP form.
+ */
+const FRAME_DENY_HEADERS: Readonly<Record<string, string>> = {
+  "X-Frame-Options": "DENY",
+  "Content-Security-Policy": "frame-ancestors 'none'",
+}
+
 /** Narrow, structural — StaticServer depends on this shape, not the concrete MediaLibrary class (AGENTS.md section 26: one class, one responsibility). */
 export type MediaFileResolver = {
   resolveFilePath(id: string): string | null
@@ -61,6 +72,18 @@ export type StaticServerOptions = {
   readonly host?: string
   readonly port: number
   readonly rootDir: string
+  /**
+   * P1-4 (S-08): when true, every HTML response also carries
+   * `X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors
+   * 'none'` — the anti-clickjacking pair for pages that are CONTROL
+   * surfaces (the phone remote, which this server exposes on 0.0.0.0 when
+   * allowPhoneRemote is on). Display pages (the overlay) must NOT set it:
+   * the dashboard's Live view embeds them from a file:// null origin, which
+   * frame-ancestors cannot express, and OBS loads them top-level anyway.
+   * One server instance serves exactly one page (its rootDir), so a single
+   * boolean covers the whole instance — no path matching needed.
+   */
+  readonly frameDeny?: boolean
   /** Optional — when provided, serves imported media under /media/<id> (ARCHITECTURE.md section 60.4). */
   readonly mediaResolver?: MediaFileResolver
   /**
@@ -173,12 +196,14 @@ export class StaticServer {
   private readonly server: Server
   private readonly mediaResolver?: MediaFileResolver
   private readonly brandLogoPath?: () => string | null
+  private readonly frameDeny: boolean
   readonly ready: Promise<void>
 
   constructor(options: StaticServerOptions) {
     const rootDir = normalize(options.rootDir)
     this.mediaResolver = options.mediaResolver
     this.brandLogoPath = options.brandLogoPath
+    this.frameDeny = options.frameDeny ?? false
     this.server = createServer((req, res) => {
       this.handleRequest(req, res, rootDir).catch(() => {
         if (!res.headersSent) res.writeHead(500, SECURITY_HEADERS)
@@ -262,6 +287,12 @@ export class StaticServer {
       "Cache-Control": extension === ".woff2" ? FONT_CACHE_CONTROL : REVALIDATE_CACHE_CONTROL,
       ETag: etag,
       ...SECURITY_HEADERS,
+    }
+    // P1-4 (S-08): the anti-clickjacking pair rides on every HTML response
+    // of a frameDeny instance (200 and 304 alike), and never on scripts,
+    // fonts or media — those are not documents and cannot be clickjacked.
+    if (this.frameDeny && extension === ".html") {
+      Object.assign(headers, FRAME_DENY_HEADERS)
     }
     // The dashboard embeds this overlay in a sandboxed iframe (origin
     // "null"), and browsers fetch web fonts in CORS mode: without this

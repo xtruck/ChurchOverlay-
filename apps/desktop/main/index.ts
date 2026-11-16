@@ -719,6 +719,12 @@ async function startServicesNow(config: AppConfig): Promise<StartedServices> {
       host: "0.0.0.0",
       port: REMOTE_HTTP_PORT,
       rootDir: join(REPO_ROOT, "apps", "remote", "public"),
+      // P1-4 (S-08): the phone remote is a CONTROL page exposed to the whole
+      // LAN — exactly the clickjacking target the overlay is not. The overlay
+      // instance below stays framable on purpose: the dashboard's Live view
+      // embeds it from a file:// null origin (frame-ancestors cannot express
+      // that), and OBS loads it top-level.
+      frameDeny: true,
     })
     await remoteStaticServer.ready
     const lanIp = getLanIpAddress()
