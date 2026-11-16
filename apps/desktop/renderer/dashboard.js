@@ -614,7 +614,6 @@
   // wins"; this mirrors that on the display side too).
   function showPendingVerse(verse) {
     versePendingTextEl.textContent = verse.text
-    const ref = verse.reference
     versePendingRefEl.textContent = formatDisplayedReference(verse)
     // A verse recognised from a reading (no reference spoken) is always a
     // suggestion, even in auto mode — say why it is waiting.

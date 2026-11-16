@@ -306,7 +306,7 @@
     const y = clamp(+snap(drag.y0 + dy).toFixed(2), 0, 100)
     edit((s) => { s.brand[drag.key].x = x; s.brand[drag.key].y = y })
   }
-  function endDrag(e) {
+  function endDrag(_e) {
     if (!drag) return
     drag.handle.removeEventListener("pointermove", onMove)
     drag.handle.removeEventListener("pointerup", endDrag)
@@ -374,10 +374,12 @@
       edit((s) => { s.brand[selected].x = clamp(+x.toFixed(2), 0, 100); s.brand[selected].y = clamp(+y.toFixed(2), 0, 100) })
     }))
     els.reset.addEventListener("click", () => {
-      api.getOverlayStyleMeta && edit((s) => {
-        const d = selected === "name" ? { x: 90, y: 5, scale: 1, rotation: 0, opacity: 0.85 } : { x: 6, y: 9, scale: 1, rotation: 0, opacity: 1 }
-        Object.assign(s.brand[selected], d)
-      })
+      if (api.getOverlayStyleMeta) {
+        edit((s) => {
+          const d = selected === "name" ? { x: 90, y: 5, scale: 1, rotation: 0, opacity: 0.85 } : { x: 6, y: 9, scale: 1, rotation: 0, opacity: 1 }
+          Object.assign(s.brand[selected], d)
+        })
+      }
     })
   }
 

@@ -760,7 +760,7 @@
           servicePackResult.style.display = "block"
           servicePackText.value = t("packFailed")
         }
-      } catch (err) {
+      } catch (_err) {
         servicePackResult.style.display = "block"
         servicePackText.value = t("packFailed")
       } finally {
