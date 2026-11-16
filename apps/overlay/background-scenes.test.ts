@@ -84,3 +84,27 @@ test("every scene keyframe animates ONLY transform and opacity (GPU-compositable
     assert.ok(!FORBIDDEN.test(rules), `@keyframes ${name} animates layout/paint properties: only transform and opacity are allowed`)
   }
 })
+
+test("the fire and liquid warps are ANIMATED SVG turbulence, applied only when motion is allowed", () => {
+  // The warp (feTurbulence + feDisplacementMap, SMIL-morphed) is what makes
+  // the flames writhe and the liquid roll; without <animate> the scenes would
+  // be static blobs again — the exact regression this pass fixes.
+  for (const id of ["scene-fire-warp", "scene-liquid-warp"]) {
+    const filter = overlayHtml.match(new RegExp(`<filter id="${id}"[\\s\\S]*?<\\/filter>`))
+    assert.ok(filter, `the ${id} filter is missing from index.html`)
+    assert.ok(filter[0].includes("feTurbulence") && filter[0].includes("feDisplacementMap"), `${id} must be a turbulence displacement`)
+    assert.ok(filter[0].includes("<animate"), `${id} must animate its noise via SMIL or the scene is a static blob`)
+  }
+  // The filters are paint-time effects (not composited transforms), so they
+  // must be attached ONLY under prefers-reduced-motion: no-preference —
+  // otherwise reduced-motion would keep the fire boiling.
+  const start = overlayHtml.indexOf("@media (prefers-reduced-motion: no-preference)")
+  assert.notEqual(start, -1, "the warp filters must be gated behind prefers-reduced-motion: no-preference")
+  const block = overlayHtml.slice(start, overlayHtml.indexOf("\n  }", start))
+  for (const id of ["scene-fire-warp", "scene-liquid-warp"]) {
+    const uses = [...overlayHtml.matchAll(new RegExp(`url\\(#${id}\\)`, "g"))].map((m) => m.index ?? 0)
+    assert.ok(uses.length > 0, `${id} is never applied to a scene layer`)
+    const end = start + block.length
+    assert.ok(uses.every((index) => index >= start && index < end), `${id} must only be applied inside the no-preference media block`)
+  }
+})
