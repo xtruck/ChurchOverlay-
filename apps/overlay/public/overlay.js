@@ -15,7 +15,6 @@
   const natureBackgroundVideo = document.getElementById("nature-background-video")
   const natureBackgroundRequested = params.get("background") === "nature"
   const isGalleryPreview = new URLSearchParams(window.location.hash.slice(1)).get("token") === "gallery"
-  let galleryNatureBackgroundRequested = false
   // The token is in the URL fragment (#token=..., never sent to a server); ?token= is the older form.
   const token = new URLSearchParams(window.location.hash.slice(1)).get("token") || params.get("token")
   const wsPort = params.get("wsPort") || window.location.port
@@ -205,14 +204,34 @@
   const SECONDARY_FONT_RATIO = 1
   const MIN_SECONDARY_FONT_PX = 10
 
-  function syncNatureBackground() {
+  // Section 147: the background comes from THREE places, most specific wins:
+  // the design gallery's override, the operator's `overlay:style` choice, and
+  // the legacy ?background=nature URL parameter (kept so existing OBS browser
+  // sources keep working). One resolver drives BOTH the nature video and the
+  // CSS scene layers below it. The list mirrors the contract's closed
+  // OVERLAY_BACKGROUNDS enum (duplicated here — no build step, same precedent
+  // as CARD_DESIGNS).
+  const BACKGROUNDS = ["none", "nature", "pentecost-fire", "winepress", "glory-rays", "living-water", "heavenly-clouds"]
+  let styleBackground = "none"
+  let galleryBackground = null // any valid id while the design gallery previews one
+  function effectiveBackground() {
+    if (galleryBackground) return galleryBackground
+    if (styleBackground !== "none") return styleBackground
+    if (natureBackgroundRequested) return "nature"
+    return "none"
+  }
+
+  function syncBackgrounds() {
     const root = document.documentElement
-    const enabled = natureBackgroundRequested || galleryNatureBackgroundRequested
+    const bg = effectiveBackground()
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    root.classList.toggle("nature-background", enabled)
-    root.classList.toggle("nature-background-fallback", enabled && reducedMotion)
+    // Scenes: exactly one data-scene attribute, only ever a closed-list id.
+    if (bg !== "none" && bg !== "nature") root.setAttribute("data-scene", bg)
+    else root.removeAttribute("data-scene")
+    root.classList.toggle("nature-background", bg === "nature")
+    root.classList.toggle("nature-background-fallback", bg === "nature" && reducedMotion)
     root.classList.remove("nature-video-ready")
-    if (!enabled || reducedMotion) {
+    if (bg !== "nature" || reducedMotion) {
       natureBackgroundVideo.pause()
       natureBackgroundVideo.removeAttribute("src")
       delete natureBackgroundVideo.dataset.localSource
@@ -233,7 +252,7 @@
     natureBackgroundVideo.src = url.href
     natureBackgroundVideo.load()
     const markReady = () => {
-      if (natureBackgroundRequested || galleryNatureBackgroundRequested) {
+      if (effectiveBackground() === "nature") {
         root.classList.add("nature-video-ready")
         root.classList.remove("nature-background-fallback")
       }
@@ -249,14 +268,19 @@
     }
   }
   if (isGalleryPreview) {
+    // The design gallery previews any single background over its sample verse.
+    window.__setGalleryBackground = (id) => {
+      galleryBackground = typeof id === "string" && BACKGROUNDS.includes(id) && id !== "none" ? id : null
+      syncBackgrounds()
+    }
+    // Older gallery builds only knew the nature toggle.
     window.__setGalleryNatureBackground = (enabled) => {
-      galleryNatureBackgroundRequested = enabled === true
-      syncNatureBackground()
+      window.__setGalleryBackground(enabled === true ? "nature" : null)
     }
   }
   const natureMotionPreference = window.matchMedia("(prefers-reduced-motion: reduce)")
-  if (natureMotionPreference.addEventListener) natureMotionPreference.addEventListener("change", syncNatureBackground)
-  syncNatureBackground()
+  if (natureMotionPreference.addEventListener) natureMotionPreference.addEventListener("change", syncBackgrounds)
+  syncBackgrounds()
 
   function clearVerseSizing() {
     textEl.style.fontSize = ""
@@ -593,6 +617,11 @@
     const c = style.colors
     if (!c || ![c.backdrop, c.card, c.text, c.textSecondary, c.accent, c.border].every((v) => typeof v === "string" && HEX.test(v))) return
     lastStyleRevision = style.revision
+
+    // Section 147: the operator's background choice (closed-list validated;
+    // anything else keeps the plain palette gradient).
+    styleBackground = BACKGROUNDS.includes(style.background) ? style.background : "none"
+    syncBackgrounds()
 
     setVar("--accent", c.accent)
     setVar("--accent-rgb", rgbTriple(c.accent))

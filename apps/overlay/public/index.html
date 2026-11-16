@@ -110,6 +110,158 @@
   @media (prefers-reduced-motion: reduce) { #nature-background-video { display: none; } }
 
   /*
+    ARCHITECTURE.md section 147: animated worship scenes behind the verse card.
+    Pure CSS: no media download, every keyframe animates ONLY transform and
+    opacity (OBS composites them on the GPU), exactly one scene is displayed at
+    a time (the others are display:none and cost nothing), and under
+    prefers-reduced-motion every animation stops, leaving the scene's static
+    gradient — the same fallback contract as the nature loop above. The scene
+    is chosen server-side (overlay:style's closed background list) and applied
+    by overlay.js as html[data-scene="<id>"].
+  */
+  #scene-backdrop { position: fixed; inset: 0; z-index: 0; display: none; overflow: hidden; pointer-events: none; background: #0a0e14; }
+  html[data-scene] #scene-backdrop { display: block; }
+  .scene { position: absolute; inset: 0; display: none; }
+  /* A soft scrim on every scene (lighter than the nature plate, whose video is
+     brighter): the verse card's own palette keeps full control of legibility. */
+  .scene::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(5, 10, 17, 0.16), rgba(5, 10, 17, 0.34)); }
+
+  html[data-scene="pentecost-fire"] .scene-pentecost-fire { display: block; }
+  html[data-scene="winepress"] .scene-winepress { display: block; }
+  html[data-scene="glory-rays"] .scene-glory-rays { display: block; }
+  html[data-scene="living-water"] .scene-living-water { display: block; }
+  html[data-scene="heavenly-clouds"] .scene-heavenly-clouds { display: block; }
+
+  /* Pentecost: tongues of flame flicker at the base while embers rise. */
+  .scene-pentecost-fire {
+    background:
+      radial-gradient(130% 85% at 50% 112%, rgba(255, 122, 40, 0.30), transparent 62%),
+      linear-gradient(180deg, #120404 0%, #2a0c0c 52%, #3f1108 100%);
+  }
+  .scene-pentecost-fire .flame {
+    position: absolute; bottom: -8vh; width: 36vw; height: 48vh; border-radius: 50%;
+    filter: blur(4vh); transform-origin: 50% 100%;
+    animation: scene-flicker 2.7s ease-in-out infinite alternate;
+  }
+  .scene-pentecost-fire .f1 { left: -8vw; background: radial-gradient(closest-side, rgba(255, 116, 36, 0.55), rgba(178, 48, 18, 0.26) 56%, transparent 76%); }
+  .scene-pentecost-fire .f2 { left: 30vw; height: 56vh; background: radial-gradient(closest-side, rgba(255, 156, 60, 0.5), rgba(196, 62, 20, 0.24) 58%, transparent 78%); animation-duration: 3.3s; animation-delay: -1.4s; }
+  .scene-pentecost-fire .f3 { right: -10vw; background: radial-gradient(closest-side, rgba(255, 96, 30, 0.45), rgba(150, 40, 16, 0.22) 56%, transparent 76%); animation-duration: 2.2s; animation-delay: -0.7s; }
+  @keyframes scene-flicker {
+    from { transform: scaleY(0.94) translateY(1.2vh); opacity: 0.5; }
+    to { transform: scaleY(1.07) translateY(-1.2vh); opacity: 0.8; }
+  }
+  .scene-pentecost-fire i {
+    position: absolute; bottom: -2vh; width: 0.5vh; height: 0.5vh; border-radius: 50%;
+    background: #ffc46b; box-shadow: 0 0 1.4vh 0.3vh rgba(255, 150, 60, 0.55); opacity: 0;
+    animation: scene-ember 8.5s linear infinite;
+  }
+  @keyframes scene-ember {
+    0% { transform: translate(0, 0) scale(1); opacity: 0; }
+    10% { opacity: 1; }
+    72% { opacity: 0.6; }
+    100% { transform: translate(var(--dx, 14px), -108vh) scale(0.5); opacity: 0; }
+  }
+
+  /* Winepress: slow pressed-grape flows at the base, grapes drifting down. */
+  .scene-winepress { background: linear-gradient(180deg, #1a0a24 0%, #2b0f33 46%, #3d1030 74%, #4a0f28 100%); }
+  .scene-winepress .flow {
+    position: absolute; left: -30vw; width: 160vw; height: 38vh; bottom: -16vh; border-radius: 46%;
+    filter: blur(3vh); animation: scene-sway 26s ease-in-out infinite alternate;
+  }
+  .scene-winepress .juice1 { background: radial-gradient(closest-side, rgba(128, 22, 56, 0.75), rgba(76, 10, 40, 0.4) 62%, transparent 78%); opacity: 0.55; }
+  .scene-winepress .juice2 { bottom: -22vh; height: 32vh; opacity: 0.4; animation-duration: 34s; animation-delay: -9s; background: radial-gradient(closest-side, rgba(96, 24, 92, 0.7), rgba(56, 12, 56, 0.38) 60%, transparent 78%); }
+  .scene-winepress .pool { bottom: -30vh; height: 44vh; opacity: 0.35; animation-duration: 44s; animation-delay: -18s; background: radial-gradient(closest-side, rgba(58, 8, 30, 0.8), rgba(40, 6, 24, 0.4) 60%, transparent 80%); }
+  @keyframes scene-sway {
+    from { transform: translateX(-4vw) rotate(-1.4deg); }
+    to { transform: translateX(4vw) rotate(1.4deg); }
+  }
+  .scene-winepress i {
+    position: absolute; top: -8vh; width: 2.4vh; height: 2.4vh; border-radius: 50%; opacity: 0;
+    background: radial-gradient(circle at 35% 30%, #8a4a9e, #47134e 66%, #2c0b31);
+    animation: scene-grape 19s linear infinite;
+  }
+  @keyframes scene-grape {
+    0% { transform: translate(0, 0) scale(1); opacity: 0; }
+    8% { opacity: 0.85; }
+    82% { opacity: 0.65; }
+    100% { transform: translate(var(--dx, 10px), 116vh) scale(0.92); opacity: 0; }
+  }
+
+  /* Glory rays: soft light falls from above and breathes. */
+  .scene-glory-rays {
+    background:
+      radial-gradient(90% 55% at 50% -8%, rgba(255, 214, 150, 0.30), transparent 60%),
+      linear-gradient(180deg, #39404f 0%, #232936 48%, #101319 100%);
+  }
+  .scene-glory-rays .glow {
+    position: absolute; left: 50%; top: -20vh; width: 70vw; height: 55vh; transform: translateX(-50%);
+    background: radial-gradient(closest-side, rgba(255, 226, 180, 0.4), rgba(255, 214, 150, 0.14) 58%, transparent 78%);
+    filter: blur(2vh); animation: scene-breathe 9.5s ease-in-out infinite alternate;
+  }
+  .scene-glory-rays .ray {
+    position: absolute; top: -14vh; left: 50%; width: 12vw; height: 126vh; filter: blur(1.4vh);
+    background: linear-gradient(180deg, rgba(255, 226, 180, 0.22), rgba(255, 226, 180, 0.06) 55%, transparent 80%);
+    animation: scene-ray 17s ease-in-out infinite alternate;
+  }
+  .scene-glory-rays .r1 { --tilt: -18deg; width: 15vw; }
+  .scene-glory-rays .r2 { --tilt: -6deg; width: 10vw; animation-duration: 21s; animation-delay: -8s; }
+  .scene-glory-rays .r3 { --tilt: 7deg; width: 11vw; animation-duration: 15s; animation-delay: -4s; }
+  .scene-glory-rays .r4 { --tilt: 19deg; width: 14vw; animation-duration: 23s; animation-delay: -12s; }
+  @keyframes scene-ray {
+    from { transform: translateX(-50%) rotate(calc(var(--tilt, 0deg) - 2.2deg)); opacity: 0.5; }
+    to { transform: translateX(-50%) rotate(calc(var(--tilt, 0deg) + 2.2deg)); opacity: 0.9; }
+  }
+  @keyframes scene-breathe {
+    from { opacity: 0.55; }
+    to { opacity: 0.95; }
+  }
+
+  /* Living water: baptismal bands roll slowly; a cool shimmer drifts. */
+  .scene-living-water { background: linear-gradient(180deg, #06222c 0%, #053440 52%, #042630 78%, #031a22 100%); }
+  .scene-living-water .wave {
+    position: absolute; left: -30vw; width: 160vw; height: 30vh; bottom: -14vh; border-radius: 48%;
+    filter: blur(2.6vh); animation: scene-sway 30s ease-in-out infinite alternate;
+  }
+  .scene-living-water .w1 { background: radial-gradient(closest-side, rgba(24, 116, 128, 0.7), rgba(12, 78, 92, 0.38) 62%, transparent 78%); opacity: 0.55; }
+  .scene-living-water .w2 { bottom: -20vh; height: 26vh; opacity: 0.42; animation-duration: 40s; animation-delay: -11s; background: radial-gradient(closest-side, rgba(30, 140, 148, 0.6), rgba(14, 88, 96, 0.34) 60%, transparent 78%); }
+  .scene-living-water .w3 { bottom: -26vh; height: 34vh; opacity: 0.3; animation-duration: 50s; animation-delay: -25s; background: radial-gradient(closest-side, rgba(16, 96, 110, 0.75), rgba(8, 60, 72, 0.4) 60%, transparent 80%); }
+  .scene-living-water .shimmer {
+    position: absolute; width: 46vw; height: 20vh; border-radius: 50%; filter: blur(3vh);
+    background: radial-gradient(closest-side, rgba(190, 240, 244, 0.22), transparent 75%);
+    animation: scene-drift-y 18s ease-in-out infinite alternate;
+  }
+  .scene-living-water .s1 { left: 8vw; top: 34vh; }
+  .scene-living-water .s2 { right: 6vw; top: 52vh; animation-duration: 24s; animation-delay: -9s; }
+  @keyframes scene-drift-y {
+    from { transform: translateY(-2.5vh) scale(0.96); opacity: 0.5; }
+    to { transform: translateY(2.5vh) scale(1.05); opacity: 0.85; }
+  }
+
+  /* Heavenly clouds: a warm dawn with clouds drifting through. */
+  .scene-heavenly-clouds { background: linear-gradient(180deg, #5d4a6e 0%, #a8788e 26%, #e7b78e 52%, #8a5f4a 78%, #2e1e28 100%); }
+  .scene-heavenly-clouds .glow {
+    position: absolute; left: 50%; top: 24vh; width: 60vw; height: 44vh; transform: translateX(-50%);
+    background: radial-gradient(closest-side, rgba(255, 214, 150, 0.42), rgba(255, 190, 130, 0.16) 58%, transparent 78%);
+    filter: blur(2.4vh); animation: scene-breathe 11s ease-in-out infinite alternate;
+  }
+  .scene-heavenly-clouds .cloud {
+    position: absolute; height: 22vh; border-radius: 50%; filter: blur(2.6vh);
+    background: radial-gradient(closest-side, rgba(255, 244, 230, 0.5), rgba(255, 220, 190, 0.22) 60%, transparent 78%);
+    animation: scene-drift-x linear infinite;
+  }
+  @keyframes scene-drift-x {
+    from { transform: translateX(-64vw); }
+    to { transform: translateX(164vw); }
+  }
+
+  /* Reduced motion: every scene freezes into its static gradient. */
+  @media (prefers-reduced-motion: reduce) {
+    #scene-backdrop .flame, #scene-backdrop i, #scene-backdrop .flow, #scene-backdrop .pool,
+    #scene-backdrop .glow, #scene-backdrop .ray, #scene-backdrop .wave, #scene-backdrop .shimmer,
+    #scene-backdrop .cloud { animation: none; }
+  }
+
+  /*
     Connection chrome: a diagnostic, never content. It starts hidden (no
     flash on load), stays hidden while connected, and appears only when
     something has been wrong for longer than a short grace period (see
@@ -331,6 +483,12 @@
       linear-gradient(180deg, var(--ov-backdrop), var(--ov-backdrop-2));
   }
   html.nature-background #verse.fullscreen { background: linear-gradient(180deg, rgba(3, 8, 14, 0.34), rgba(3, 8, 14, 0.58)); }
+  /* Scenes need a LIGHT veil only (the bright nature video gets a heavier
+     one): the fullscreen verse gradient is opaque and would otherwise hide the
+     scene completely. The veil keeps the brightest scene areas readable while
+     the animation shows through; the palette's card keeps its computed
+     contrast on top of that. */
+  html[data-scene] #verse.fullscreen { background: linear-gradient(180deg, rgba(3, 8, 14, 0.18), rgba(3, 8, 14, 0.42)); }
   /* Fullscreen is read from the back of the room: no narrow measure, the type
      fills the frame (overlay.js picks the largest size that fits). */
   #verse.fullscreen :is(#verse-text, #verse-secondary-text) { line-height: 1.28; max-width: 100%; }
@@ -1700,6 +1858,50 @@
 </head>
 <body>
   <div id="nature-backdrop" aria-hidden="true"><video id="nature-background-video" autoplay muted loop playsinline preload="none" tabindex="-1"></video><div id="nature-background-scrim"></div></div>
+  <div id="scene-backdrop" aria-hidden="true">
+    <div class="scene scene-pentecost-fire">
+      <div class="flame f1"></div><div class="flame f2"></div><div class="flame f3"></div>
+      <i style="left:4%; --dx:18px; animation-duration:8.5s; animation-delay:-2.1s;"></i>
+      <i style="left:11%; --dx:-22px; animation-duration:7.2s; animation-delay:-5.6s;"></i>
+      <i style="left:18%; --dx:26px; animation-duration:9.4s; animation-delay:-0.9s;"></i>
+      <i style="left:26%; --dx:-16px; animation-duration:6.8s; animation-delay:-3.8s;"></i>
+      <i style="left:33%; --dx:30px; animation-duration:10.2s; animation-delay:-6.4s;"></i>
+      <i style="left:41%; --dx:-20px; animation-duration:7.6s; animation-delay:-1.7s;"></i>
+      <i style="left:52%; --dx:24px; animation-duration:8.8s; animation-delay:-4.9s;"></i>
+      <i style="left:60%; --dx:-28px; animation-duration:6.5s; animation-delay:-0.4s;"></i>
+      <i style="left:68%; --dx:20px; animation-duration:9.8s; animation-delay:-3.2s;"></i>
+      <i style="left:77%; --dx:-18px; animation-duration:7.9s; animation-delay:-5.1s;"></i>
+      <i style="left:85%; --dx:28px; animation-duration:8.2s; animation-delay:-2.8s;"></i>
+      <i style="left:93%; --dx:-24px; animation-duration:9.1s; animation-delay:-7.3s;"></i>
+    </div>
+    <div class="scene scene-winepress">
+      <div class="flow juice1"></div><div class="flow juice2"></div><div class="flow pool"></div>
+      <i style="left:7%; --dx:14px; animation-duration:16s; animation-delay:-4s;"></i>
+      <i style="left:18%; --dx:-10px; animation-duration:22s; animation-delay:-12s;"></i>
+      <i style="left:30%; --dx:18px; animation-duration:19s; animation-delay:-7s;"></i>
+      <i style="left:44%; --dx:-16px; animation-duration:26s; animation-delay:-20s;"></i>
+      <i style="left:57%; --dx:12px; animation-duration:17.5s; animation-delay:-2.5s;"></i>
+      <i style="left:68%; --dx:-12px; animation-duration:24s; animation-delay:-15s;"></i>
+      <i style="left:80%; --dx:16px; animation-duration:20s; animation-delay:-9s;"></i>
+      <i style="left:91%; --dx:-14px; animation-duration:18s; animation-delay:-5.5s;"></i>
+    </div>
+    <div class="scene scene-glory-rays">
+      <div class="glow"></div>
+      <div class="ray r1"></div><div class="ray r2"></div><div class="ray r3"></div><div class="ray r4"></div>
+    </div>
+    <div class="scene scene-living-water">
+      <div class="wave w1"></div><div class="wave w2"></div><div class="wave w3"></div>
+      <div class="shimmer s1"></div><div class="shimmer s2"></div>
+    </div>
+    <div class="scene scene-heavenly-clouds">
+      <div class="glow"></div>
+      <div class="cloud" style="top:6vh; width:46vw; animation-duration:78s; animation-delay:-12s; opacity:0.55;"></div>
+      <div class="cloud" style="top:16vh; width:60vw; animation-duration:96s; animation-delay:-48s; opacity:0.4;"></div>
+      <div class="cloud" style="top:30vh; width:38vw; animation-duration:66s; animation-delay:-30s; opacity:0.5;"></div>
+      <div class="cloud" style="top:44vh; width:54vw; animation-duration:110s; animation-delay:-70s; opacity:0.35;"></div>
+      <div class="cloud" style="top:12vh; width:30vw; animation-duration:58s; animation-delay:-22s; opacity:0.6;"></div>
+    </div>
+  </div>
   <div id="status" class="status-hidden" role="status">connecting…</div>
   <div id="brand-name" class="brand-item"></div>
   <img id="brand-logo" class="brand-item" alt="" />

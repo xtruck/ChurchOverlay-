@@ -114,3 +114,27 @@ test("section 133: transition defaults to cinematic, accepts the closed list onl
   void _t2
   assert.equal(isOverlayStylePayload(missing), false)
 })
+
+// ARCHITECTURE.md section 147: the animated background style.
+test("section 147: background defaults to none, accepts the closed list only, and old stored settings load", () => {
+  assert.equal(defaultOverlayStyleSettings().background, "none")
+  for (const background of ["none", "nature", "pentecost-fire", "winepress", "glory-rays", "living-water", "heavenly-clouds"]) {
+    assert.equal(normalizeOverlayStyleSettings({ background }).background, background)
+  }
+  for (const bad of ["flames", "<script>", 3, null, "", "NATURE"]) {
+    assert.equal(normalizeOverlayStyleSettings({ background: bad }).background, "none")
+  }
+  // A settings object stored before section 147 has no background field at all.
+  const { background: _b, ...legacy } = defaultOverlayStyleSettings()
+  void _b
+  const loaded = normalizeOverlayStyleSettings({ ...legacy, card: "glass" })
+  assert.equal(loaded.background, "none")
+  assert.equal(loaded.card, "glass")
+  const good = resolveOverlayStyle(defaultOverlayStyleSettings(), 5)
+  assert.equal(isOverlayStylePayload({ ...good, background: "pentecost-fire" }), true)
+  assert.equal(isOverlayStylePayload({ ...good, background: "lava" }), false)
+  // A viewer payload must always carry the field (it is part of the normalized settings).
+  const { background: _b2, ...missing } = good
+  void _b2
+  assert.equal(isOverlayStylePayload(missing), false)
+})

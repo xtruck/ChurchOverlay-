@@ -62,7 +62,14 @@ const SHIM = String.raw`
     stage: "radial-gradient(26% 42% at 28% 30%, rgba(255,206,140,.55), transparent 70%), radial-gradient(22% 36% at 74% 26%, rgba(150,180,255,.35), transparent 70%), repeating-linear-gradient(90deg, rgba(0,0,0,.18) 0 3vw, transparent 3vw 13vw), linear-gradient(180deg, #2a2e39 0%, #4b4038 58%, #1a1615 100%)",
     bright: "radial-gradient(40% 50% at 30% 30%, #ffffff, transparent 70%), linear-gradient(180deg, #e9e4d8 0%, #cfc6b4 60%, #9c907c 100%)",
     none: "transparent",
-    nature: "transparent"
+    nature: "transparent",
+    // Section 147: the CSS scenes render inside the overlay iframe itself, so
+    // the gallery page stays transparent behind them.
+    "pentecost-fire": "transparent",
+    "winepress": "transparent",
+    "glory-rays": "transparent",
+    "living-water": "transparent",
+    "heavenly-clouds": "transparent"
   }
   function send(type, payload) {
     var data = JSON.stringify({ type: type, payload: payload })
@@ -72,7 +79,7 @@ const SHIM = String.raw`
     var p = PALETTES.filter(function (x) { return x.id === paletteId })[0] || PALETTES[0]
     revision += 1
     send("overlay:style", {
-      revision: revision, paletteId: p.id, card: card, transition: transition || "cinematic",
+      revision: revision, paletteId: p.id, card: card, transition: transition || "cinematic", background: "none",
       brand: { name: { visible: false, text: "", font: "sans", size: 28, weight: 600, plate: true, x: 90, y: 5, scale: 1, rotation: 0, opacity: 0.85 }, logo: { visible: false, version: 0, x: 6, y: 9, scale: 1, rotation: 0, opacity: 1 } },
       colors: p.colors
     })
@@ -80,7 +87,11 @@ const SHIM = String.raw`
   window.__sim = {
     setup: function (o) {
       document.documentElement.style.background = SCENES[o.scene || "stage"] || SCENES.stage
-      if (window.__setGalleryNatureBackground) window.__setGalleryNatureBackground(o.scene === "nature")
+      // Section 147: any closed-list scene id drives the overlay's animated
+      // background; anything else (stage/bright/none) clears the override.
+      // overlay.js validates the id, so an unknown value is simply ignored.
+      if (window.__setGalleryBackground) window.__setGalleryBackground(o.scene)
+      else if (window.__setGalleryNatureBackground) window.__setGalleryNatureBackground(o.scene === "nature")
       send("layout:update", { layout: o.layout === "fullscreen" ? "fullscreen" : "lower-third" })
       style(o.card || "classic", o.palette || "gilt-night", o.transition)
     },
@@ -181,8 +192,8 @@ const gallery = `<!DOCTYPE html>
   <label>Palette <select id="palette"></select></label>
   <label>Layout <select id="layout"><option value="lower-third">Lower third</option><option value="fullscreen">Fullscreen</option></select></label>
   <label>Transition <select id="transition"></select></label>
-  <label>Background <select id="scene"><option value="stage">Stage (dark)</option><option value="bright">Bright</option><option value="none">Transparent</option><option value="nature">Nature loop (local)</option></select></label>
-  <p class="background-help">For the live overlay, append <code>?background=nature</code> to its URL. Playback uses only the local overlay asset and is disabled for reduced-motion preference.</p>
+  <label>Background <select id="scene"><option value="stage">Stage (dark)</option><option value="bright">Bright</option><option value="none">Transparent</option><option value="nature">Nature loop (local)</option><option value="pentecost-fire">Pentecost flames</option><option value="winepress">Winepress</option><option value="glory-rays">Glory rays</option><option value="living-water">Living water</option><option value="heavenly-clouds">Heavenly clouds</option></select></label>
+  <p class="background-help">The live overlay picks its background in the dashboard's Overlay settings; the old <code>?background=nature</code> URL opt-in still works. Playback uses only local assets and is disabled for reduced-motion preference.</p>
   <label>Second tile <select id="second"><option value="long">Long verse</option><option value="bilingual">Bilingual</option></select></label>
   <div class="btns">
     <button id="all-enter">Replay all: enter</button>

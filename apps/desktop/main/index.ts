@@ -66,7 +66,7 @@ import { NDIOutput, type PaintSource } from "./ndi-output"
 import { createNdiWindow } from "./ndi-window"
 import { PALETTES } from "../../server/overlay/palettes"
 import { BRAND_NAME_SIZE, BRAND_SCALE, BRAND_TEXT_MAX } from "../../server/overlay/overlay-style"
-import { OVERLAY_BRAND_FONTS, OVERLAY_CARD_DESIGNS, OVERLAY_PALETTE_GROUPS, OVERLAY_TRANSITIONS } from "../../../packages/contracts/overlay-style"
+import { OVERLAY_BACKGROUNDS, OVERLAY_BRAND_FONTS, OVERLAY_CARD_DESIGNS, OVERLAY_PALETTE_GROUPS, OVERLAY_TRANSITIONS } from "../../../packages/contracts/overlay-style"
 import { OverlayStyleController } from "./overlay-style-controller"
 import { TranscriptionPolicy } from "../../server/asr/noise-mode"
 import { LogoRejectedError, type DecodedLogo } from "./brand-logo"
@@ -1380,6 +1380,7 @@ ipcMain.handle("get-overlay-style-meta", () => ({
   groups: OVERLAY_PALETTE_GROUPS,
   cards: OVERLAY_CARD_DESIGNS,
   transitions: OVERLAY_TRANSITIONS,
+  backgrounds: OVERLAY_BACKGROUNDS,
   fonts: OVERLAY_BRAND_FONTS,
   limits: { textMax: BRAND_TEXT_MAX, size: BRAND_NAME_SIZE, scale: BRAND_SCALE },
 }))
