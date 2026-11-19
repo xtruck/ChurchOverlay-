@@ -61,7 +61,24 @@ test("SessionHistoryStore: getEntries() returns a fresh copy — mutating it nev
     await store.record(makeVerse(), 1000)
     const entries = store.getEntries()
     ;(entries as unknown[]).push("corruption")
+    ;(entries[0]!.reference as { book: string }).book = "corruption"
     assert.equal(store.getEntries().length, 1)
+    assert.equal(store.getEntries()[0]?.reference.book, "john")
+  })
+})
+
+test("SessionHistoryStore: record() snapshots nested reference data before persistence", async () => {
+  await withTempDir(async (historyDir) => {
+    const store = new SessionHistoryStore({ historyDir })
+    const verse = makeVerse()
+    const recording = store.record(verse, 1000)
+    ;(verse.reference as { book: string }).book = "corruption"
+    await recording
+
+    assert.equal(store.getEntries()[0]?.reference.book, "john")
+    const reloaded = new SessionHistoryStore({ historyDir })
+    await reloaded.load()
+    assert.equal(reloaded.getEntries()[0]?.reference.book, "john")
   })
 })
 

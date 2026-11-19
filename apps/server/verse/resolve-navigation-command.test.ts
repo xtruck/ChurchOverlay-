@@ -107,13 +107,11 @@ test("resolveNavigationCommand: goto-chapter for an invalid book or out-of-range
     resolveNavigationCommand({ kind: "goto-chapter", book: "frogs", chapter: 1 }, null, index),
     { kind: "no-op", reason: "unknown_book" }
   )
-  // TASK 5: out-of-range chapter now falls back to last valid chapter instead of no-op
-  // This test now expects the fallback behavior
-  const fallbackResult = resolveNavigationCommand({ kind: "goto-chapter", book: "john", chapter: 999 }, null, index)
-  assert.equal(fallbackResult.kind, "reference")
-  assert.equal(fallbackResult.fallback, true)
-  assert.equal(fallbackResult.reference.chapter, 21) // John has 21 chapters
-  assert.equal(fallbackResult.reference.verse, 1)
+  // An out-of-range chapter never substitutes the book's last chapter.
+  assert.deepEqual(
+    resolveNavigationCommand({ kind: "goto-chapter", book: "john", chapter: 999 }, null, index),
+    { kind: "no-op", reason: "chapter_out_of_range" }
+  )
 })
 
 test("resolveNavigationCommand: cancel always resolves to cancel, regardless of current position", () => {
@@ -185,36 +183,29 @@ test("resolveNavigationCommand: goto-display-mode is always a no-op here, regard
   )
 })
 
-// PROD AUDIT 2026-09: both exact production cases. "Daniel chapitre 13
-// verset 14" used to no-op (Daniel has 12 chapters); it now falls back to
-// the book's LAST chapter at its LAST verse, with fallback:true.
-test("resolveNavigationCommand: 'Daniel chapitre 13 verset 14' falls back to Daniel 12:13 with fallback:true (production case)", () => {
+// "Daniel chapitre 13 verset 14" (Daniel has 12 chapters) must not be
+// substituted with Daniel 12:13; it is a no-op.
+test("resolveNavigationCommand: 'Daniel chapitre 13 verset 14' is a no-op, never a fallback to Daniel 12:13", () => {
   const result = resolveNavigationCommand(
     { kind: "goto-book-chapter-verse", book: "daniel", chapter: 13, verse: 14 },
     null,
     index
   )
-  assert.deepEqual(result, {
-    kind: "reference",
-    reference: { book: "daniel", chapter: 12, verse: 13 }, // Daniel has 12 chapters; ch12 has 13 verses
-    fallback: true,
-  })
+  assert.deepEqual(result, { kind: "no-op", reason: "chapter_out_of_range" })
 })
 
-// PROD AUDIT 2026-09: "Esaïe chapitre 4, verset 18" — chapter is valid,
-// the verse alone is out of range (Isaiah 4 has 6 verses); clamps to the
-// chapter's LAST verse, not verse:1.
-test("resolveNavigationCommand: 'Esaïe chapitre 4 verset 18' clamps to Isaiah 4:6 with fallback:true (production case)", () => {
-  const result = resolveNavigationCommand(
-    { kind: "goto-book-chapter-verse", book: "isaiah", chapter: 4, verse: 18 },
-    null,
-    index
-  )
-  assert.deepEqual(result, {
-    kind: "reference",
-    reference: { book: "isaiah", chapter: 4, verse: 6 }, // Isaiah 4 has exactly 6 verses
-    fallback: true,
-  })
+// Live log 2026-10-12: "Esaïe 4, verset 8" — chapter is valid, the verse is
+// beyond its end (Isaiah 4 has 6 verses). Must NOT substitute a different
+// verse; it is a no-op.
+test("resolveNavigationCommand: 'Esaïe chapitre 4 verset 8' is a no-op, never a clamp to Isaiah 4:6", () => {
+  for (const verse of [8, 18]) {
+    const result = resolveNavigationCommand(
+      { kind: "goto-book-chapter-verse", book: "isaiah", chapter: 4, verse },
+      null,
+      index
+    )
+    assert.deepEqual(result, { kind: "no-op", reason: "verse_out_of_range" })
+  }
 })
 
 // Exact in-range references must NEVER get the fallback flag — only the

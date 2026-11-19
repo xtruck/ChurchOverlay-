@@ -18,6 +18,7 @@
     palettes: $("ov-palettes"),
     cards: $("ov-cards"),
     transitions: $("ov-transitions"),
+    backgrounds: $("ov-backgrounds"),
     customBox: $("ov-custom"),
     customGrid: $("ov-custom-grid"),
     customOpacity: $("ov-custom-opacity"),
@@ -73,7 +74,7 @@
 
   /** Settings the server stores: the received style minus revision/colours (colours only matter for custom). */
   function settingsFrom(s) {
-    const out = { paletteId: s.paletteId, card: s.card, transition: s.transition, brand: JSON.parse(JSON.stringify(s.brand)) }
+    const out = { paletteId: s.paletteId, card: s.card, transition: s.transition, background: s.background, brand: JSON.parse(JSON.stringify(s.brand)) }
     if (s.paletteId === "custom") out.customColors = { ...s.colors }
     return out
   }
@@ -167,6 +168,18 @@
       els.transitions.appendChild(b)
     }
   }
+  // Section 147: what plays behind the card (none / nature video / CSS scenes).
+  function buildBackgrounds() {
+    els.backgrounds.textContent = ""
+    for (const bg of meta.backgrounds || []) {
+      const b = document.createElement("button")
+      b.type = "button"
+      b.dataset.background = bg
+      b.textContent = t("overlay.background." + bg)
+      b.addEventListener("click", () => edit((s) => { s.background = bg }))
+      els.backgrounds.appendChild(b)
+    }
+  }
   function buildCustom() {
     els.customGrid.textContent = ""
     for (const role of COLOR_ROLES) {
@@ -198,10 +211,11 @@
 
   function render(rebuildLists) {
     if (!style || !meta) return
-    if (rebuildLists) { buildPalettes(); buildCards(); buildTransitions(); buildCustom(); buildFonts() }
+    if (rebuildLists) { buildPalettes(); buildCards(); buildTransitions(); buildBackgrounds(); buildCustom(); buildFonts() }
     els.palettes.querySelectorAll("[data-palette]").forEach((b) => b.classList.toggle("active", b.dataset.palette === style.paletteId))
     els.cards.querySelectorAll("[data-card]").forEach((b) => b.classList.toggle("active", b.dataset.card === style.card))
     els.transitions.querySelectorAll("[data-transition]").forEach((b) => b.classList.toggle("active", b.dataset.transition === style.transition))
+    els.backgrounds.querySelectorAll("[data-background]").forEach((b) => b.classList.toggle("active", b.dataset.background === style.background))
     const isCustom = style.paletteId === "custom"
     els.customBox.hidden = !isCustom
     if (isCustom) {
@@ -292,7 +306,7 @@
     const y = clamp(+snap(drag.y0 + dy).toFixed(2), 0, 100)
     edit((s) => { s.brand[drag.key].x = x; s.brand[drag.key].y = y })
   }
-  function endDrag(e) {
+  function endDrag(_e) {
     if (!drag) return
     drag.handle.removeEventListener("pointermove", onMove)
     drag.handle.removeEventListener("pointerup", endDrag)
@@ -360,10 +374,12 @@
       edit((s) => { s.brand[selected].x = clamp(+x.toFixed(2), 0, 100); s.brand[selected].y = clamp(+y.toFixed(2), 0, 100) })
     }))
     els.reset.addEventListener("click", () => {
-      api.getOverlayStyleMeta && edit((s) => {
-        const d = selected === "name" ? { x: 90, y: 5, scale: 1, rotation: 0, opacity: 0.85 } : { x: 6, y: 9, scale: 1, rotation: 0, opacity: 1 }
-        Object.assign(s.brand[selected], d)
-      })
+      if (api.getOverlayStyleMeta) {
+        edit((s) => {
+          const d = selected === "name" ? { x: 90, y: 5, scale: 1, rotation: 0, opacity: 0.85 } : { x: 6, y: 9, scale: 1, rotation: 0, opacity: 1 }
+          Object.assign(s.brand[selected], d)
+        })
+      }
     })
   }
 

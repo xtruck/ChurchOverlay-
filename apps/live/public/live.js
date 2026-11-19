@@ -1,4 +1,82 @@
 (function () {
+  const STRINGS = {
+    en: {
+      title: "Live",
+      connecting: "Connecting…",
+      connected: "Connected",
+      reconnecting: "Reconnecting…",
+      noAccess: "No access link",
+      bible: "Bible",
+      translationInfo: "Bible translation currently on screen",
+      translationUnknown: "Version not announced",
+      translationLsgShort: "LSG",
+      translationKjvShort: "KJV",
+      translationWebShort: "WEB",
+      translationDarbyShort: "Darby",
+      nowReading: "Now reading",
+      welcome: "Welcome to Service",
+      waiting: "Verses spoken during the sermon will appear here in real time.",
+      save: "Save to My Notes",
+      copy: "Copy",
+      savedVerses: "My Saved Verses",
+      export: "Export All",
+      emptyNotes: 'Tap "Save to My Notes" on any verse above to bookmark it for later study.',
+      removeVerse: "Remove {reference}",
+      noActive: "No active verse to save",
+      saved: "Saved {reference}",
+      alreadySaved: "Already in your notes",
+      copied: "Copied to clipboard",
+      copyFailed: "Copy failed",
+      noSaved: "No saved notes to export",
+      exported: "Notes exported",
+      notesExportHeader: "SERMON NOTES",
+      scripture: "Scripture",
+    },
+    fr: {
+      title: "En direct",
+      connecting: "Connexion…",
+      connected: "Connecté",
+      reconnecting: "Reconnexion…",
+      noAccess: "Lien d’accès manquant",
+      bible: "Bible",
+      translationInfo: "Traduction biblique actuellement à l’écran",
+      translationUnknown: "Version non indiquée",
+      translationLsgShort: "LSG",
+      translationKjvShort: "KJV",
+      translationWebShort: "WEB",
+      translationDarbyShort: "Darby",
+      nowReading: "Lecture en cours",
+      welcome: "Bienvenue au culte",
+      waiting: "Les versets prononcés pendant le sermon apparaîtront ici en temps réel.",
+      save: "Enregistrer dans mes notes",
+      copy: "Copier",
+      savedVerses: "Mes versets enregistrés",
+      export: "Tout exporter",
+      emptyNotes: "Touchez « Enregistrer dans mes notes » sur un verset pour le garder.",
+      removeVerse: "Retirer {reference}",
+      noActive: "Aucun verset actif à enregistrer",
+      saved: "{reference} enregistré",
+      alreadySaved: "Déjà dans vos notes",
+      copied: "Copié dans le presse-papiers",
+      copyFailed: "Échec de la copie",
+      noSaved: "Aucune note à exporter",
+      exported: "Notes exportées",
+      notesExportHeader: "NOTES DE PRÉDICATION",
+      scripture: "Écriture",
+    },
+  };
+  const lang = (navigator.language || "en").toLowerCase().startsWith("fr") ? "fr" : "en";
+  const t = (key, vars) => {
+    let value = STRINGS[lang][key] || STRINGS.en[key] || key;
+    for (const [name, replacement] of Object.entries(vars || {})) {
+      value = value.split("{" + name + "}").join(String(replacement));
+    }
+    return value;
+  };
+  document.documentElement.lang = lang;
+  document.querySelectorAll("[data-t]").forEach((el) => { el.textContent = t(el.dataset.t); });
+  document.title = "ChurchOverlay — " + t("title");
+
   const params = new URLSearchParams(window.location.search);
   // The token is in the URL fragment (#token=..., never sent to a server); ?token= is the older form.
   const token = new URLSearchParams(window.location.hash.slice(1)).get("token") || params.get("token") || "";
@@ -20,11 +98,31 @@
   const savedList = document.getElementById("saved-verses-list");
   const savedCount = document.getElementById("saved-count");
   const toastEl = document.getElementById("live-toast");
-  const translationSelect = document.getElementById("translation-select");
+  const translationLabel = document.getElementById("translation-label");
 
   let currentVerse = null;
   const liveStatusEl = document.getElementById("live-status");
   const savedVerses = JSON.parse(localStorage.getItem("churchoverlay_saved_verses") || "[]");
+  const TRANSLATION_LABEL_KEYS = {
+    ls1910: "translationLsgShort",
+    lsg: "translationLsgShort",
+    segond: "translationLsgShort",
+    kjv: "translationKjvShort",
+    web: "translationWebShort",
+    darby: "translationDarbyShort",
+  };
+
+  function updateTranslationLabel(translation) {
+    if (!translationLabel) return;
+    const key = TRANSLATION_LABEL_KEYS[String(translation || "").toLowerCase()] || "translationUnknown";
+    translationLabel.textContent = t(key);
+  }
+
+  function updateVerseActions() {
+    const enabled = Boolean(currentVerse && currentVerse.text);
+    if (btnSave) btnSave.disabled = !enabled;
+    if (btnCopy) btnCopy.disabled = !enabled;
+  }
 
   // Connection state for the header dot + text (data-conn drives the colour
   // in live.css; the text says the same thing in words).
@@ -47,13 +145,16 @@
   // verse:show carries reference as { book, chapter, verse } (packages/
   // contracts/verse.ts); it used to be stored and shown as-is, which printed
   // "[object Object]". Format it; plain strings (and notes saved by older
-  // versions of this page) pass through.
-  function formatReference(ref) {
-    if (!ref) return "Scripture";
+  // versions of this page) pass through. Innovation pass (ARCHITECTURE.md
+  // section 145): a verseEnd on the payload (a detected range shown as one
+  // joined verse) extends the label to "Book C:V-E"; payloads without one
+  // render exactly as before.
+  function formatReference(ref, verseEnd) {
+    if (!ref) return t("scripture");
     if (typeof ref === "string") return ref;
-    if (typeof ref.book !== "string") return "Scripture";
+    if (typeof ref.book !== "string") return t("scripture");
     const book = ref.book.replace(/\b\w/g, (c) => c.toUpperCase());
-    return book + " " + ref.chapter + ":" + ref.verse;
+    return book + " " + ref.chapter + ":" + ref.verse + (typeof verseEnd === "number" && verseEnd > ref.verse ? "-" + verseEnd : "");
   }
 
   const SVG_NS = "http://www.w3.org/2000/svg";
@@ -98,7 +199,7 @@
     remove.type = "button";
     remove.className = "btn-remove-saved";
     remove.dataset.index = String(i);
-    remove.setAttribute("aria-label", "Remove " + reference);
+    remove.setAttribute("aria-label", t("removeVerse", { reference }));
     remove.appendChild(closeIcon());
     remove.addEventListener("click", (e) => {
       const idx = Number(e.currentTarget.dataset.index);
@@ -125,7 +226,7 @@
       savedList.classList.add("empty");
       const hint = document.createElement("p");
       hint.className = "empty-hint";
-      hint.textContent = 'Tap "Save to My Notes" on any verse above to bookmark it for later study.';
+      hint.textContent = t("emptyNotes");
       savedList.appendChild(hint);
       return;
     }
@@ -139,7 +240,7 @@
 
   function saveCurrentVerse() {
     if (!currentVerse || !currentVerse.text) {
-      showToast("No active verse to save");
+      showToast(t("noActive"));
       return;
     }
     const exists = savedVerses.some((v) => v.reference === currentVerse.reference);
@@ -151,9 +252,9 @@
       });
       localStorage.setItem("churchoverlay_saved_verses", JSON.stringify(savedVerses));
       renderSavedList();
-      showToast(`Saved ${currentVerse.reference}`);
+      showToast(t("saved", { reference: currentVerse.reference }));
     } else {
-      showToast("Already in your notes");
+      showToast(t("alreadySaved"));
     }
   }
 
@@ -162,19 +263,19 @@
     const textToCopy = `${currentVerse.reference}\n"${currentVerse.text}"`;
     navigator.clipboard
       .writeText(textToCopy)
-      .then(() => showToast("Copied to clipboard"))
-      .catch(() => showToast("Copy failed"));
+      .then(() => showToast(t("copied")))
+      .catch(() => showToast(t("copyFailed")));
   }
 
   function exportAllNotes() {
     if (savedVerses.length === 0) {
-      showToast("No saved notes to export");
+      showToast(t("noSaved"));
       return;
     }
     const formatted = savedVerses
       .map((v) => `${formatReference(v.reference)}\n"${v.text}"\n`)
       .join("\n---\n\n");
-    const blob = new Blob([`SERMON NOTES — ${new Date().toLocaleDateString()}\n\n${formatted}`], {
+    const blob = new Blob([`${t("notesExportHeader")} — ${new Date().toLocaleDateString()}\n\n${formatted}`], {
       type: "text/plain",
     });
     const url = URL.createObjectURL(blob);
@@ -183,12 +284,20 @@
     a.download = `Sermon-Notes-${new Date().toISOString().slice(0, 10)}.txt`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast("Notes exported");
+    showToast(t("exported"));
   }
 
   if (btnSave) btnSave.addEventListener("click", saveCurrentVerse);
   if (btnCopy) btnCopy.addEventListener("click", copyCurrentVerse);
   if (btnExport) btnExport.addEventListener("click", exportAllNotes);
+
+  // The same bounded, backoff-aware reconnect every other surface carries
+  // (duplicated, not shared — no build step; ARCHITECTURE.md section 48,
+  // AGENTS.md section 37 — the DELAY is capped and grows, reconnection
+  // itself never stops; a live view must keep trying through an outage).
+  const BASE_RECONNECT_DELAY_MS = 1000;
+  const MAX_RECONNECT_DELAY_MS = 30000;
+  let reconnectAttempts = 0;
 
   function connectWs() {
     // The server terminates a connection that presents no subprotocol, so
@@ -196,23 +305,34 @@
     // looks live. Say what's actually missing instead.
     if (!token) {
       console.warn("[live] no viewer token in the page URL — copy the companion link from the app");
-      setConnection("offline", "No access link");
+      setConnection("offline", t("noAccess"));
       return;
     }
     const ws = new WebSocket(wsUrl, [token]);
-    ws.onopen = () => setConnection("connected", "Connected");
+    ws.onopen = () => {
+      reconnectAttempts = 0;
+      setConnection("connected", t("connected"));
+    };
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
         if (msg.type === "verse:show" && msg.payload) {
+          const verseLanguage = ["ls1910", "lsg", "segond", "darby"].includes(String(msg.payload.translation || "").toLowerCase()) ? "fr" : "en";
           currentVerse = {
-            reference: formatReference(msg.payload.reference),
+            reference: formatReference(msg.payload.reference, msg.payload.verseEnd),
             text: msg.payload.text || "",
+            language: verseLanguage,
           };
+          updateVerseActions();
+          updateTranslationLabel(msg.payload.translation);
           if (heroCard) heroCard.className = "verse-hero";
-          if (referenceEl) referenceEl.textContent = currentVerse.reference;
+          if (referenceEl) {
+            referenceEl.textContent = currentVerse.reference;
+            referenceEl.lang = verseLanguage;
+          }
           if (textEl) {
             textEl.textContent = currentVerse.text;
+            textEl.lang = verseLanguage;
             // Replay the gentle fade-in for each new verse.
             textEl.style.animation = "none";
             void textEl.offsetWidth;
@@ -220,23 +340,36 @@
           }
         } else if (msg.type === "verse:clear") {
           currentVerse = null;
+          updateVerseActions();
+          updateTranslationLabel("");
           if (heroCard) heroCard.className = "verse-hero empty";
-          if (referenceEl) referenceEl.textContent = "Welcome to Service";
-          if (textEl)
-            textEl.textContent =
-              "Verses spoken during the sermon will appear here in real-time.";
+          if (referenceEl) {
+            referenceEl.textContent = t("welcome");
+            referenceEl.lang = lang;
+          }
+          if (textEl) {
+            textEl.textContent = t("waiting");
+            textEl.lang = lang;
+          }
         }
       } catch (err) {
         console.warn("Malformed WS message:", err);
       }
     };
+    ws.onerror = () => {
+      // onclose always follows an error; it owns the state and the retry.
+      // This only keeps the console honest for a refused socket.
+      console.warn("[live] WebSocket error");
+    };
     ws.onclose = () => {
-      setConnection("offline", "Reconnecting…");
-      setTimeout(connectWs, 2500);
+      const delay = Math.min(BASE_RECONNECT_DELAY_MS * 2 ** reconnectAttempts, MAX_RECONNECT_DELAY_MS);
+      reconnectAttempts += 1;
+      setConnection("offline", t("reconnecting"));
+      setTimeout(connectWs, delay);
     };
   }
 
-  setConnection("connecting", "Connecting…");
+  setConnection("connecting", t("connecting"));
   renderSavedList();
   connectWs();
 })();

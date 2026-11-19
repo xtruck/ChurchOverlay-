@@ -26,7 +26,9 @@ test("GroqTextClient: posts an OpenAI-style chat request with the key in the Aut
   assert.equal(headers.authorization, "Bearer gsk_test_key_123456")
   const body = JSON.parse(String(captured[0]?.init.body)) as Record<string, unknown>
   assert.equal(body.model, DEFAULT_GROQ_TEXT_MODEL)
-  assert.equal(body.max_completion_tokens, 80)
+  // gpt-oss reasons first and reasoning tokens count against the cap: the visible 80 gets headroom.
+  assert.ok((body.max_completion_tokens as number) >= 80 + 500)
+  assert.equal(body.reasoning_effort, "low")
   assert.equal(body.temperature, 0)
   assert.deepEqual(body.messages, [
     { role: "system", content: "be strict" },
@@ -68,4 +70,60 @@ test("GroqTextClient: a hung request is aborted by the timeout", async () => {
       })) as typeof fetch,
   })
   await assert.rejects(client.complete({ system: "s", user: "u", timeoutMs: 30 }), /timed out/)
+})
+
+test("GroqTextClient.checkAvailability: ok when the key lists the model, model-unavailable when it does not, auth on 401/403, unknown otherwise", async () => {
+  const captured: Captured[] = []
+  const listing = (ids: unknown) => fakeFetch(() => ok({ data: ids }), captured)
+  const client = (fetchImpl: typeof fetch) => new GroqTextClient({ apiKey: "gsk_test_key_123456", fetchImpl })
+
+  assert.equal(await client(listing([{ id: DEFAULT_GROQ_TEXT_MODEL }, { id: "other" }])).checkAvailability(), "ok")
+  assert.equal(captured[0]?.url, "https://api.groq.com/openai/v1/models")
+  assert.equal((captured[0]?.init.headers as Record<string, string>).authorization, "Bearer gsk_test_key_123456")
+  assert.equal(await client(listing([{ id: "other" }])).checkAvailability(), "model-unavailable")
+  assert.equal(await client(fakeFetch(() => new Response("no", { status: 401 }))).checkAvailability(), "auth")
+  assert.equal(await client(fakeFetch(() => new Response("no", { status: 403 }))).checkAvailability(), "auth")
+  assert.equal(await client(fakeFetch(() => new Response("no", { status: 500 }))).checkAvailability(), "unknown")
+  // Never trust the body (AGENTS.md section 15): odd shapes are "could not tell", not "unavailable".
+  assert.equal(await client(listing("nope")).checkAvailability(), "unknown")
+  assert.equal(await client(listing([])).checkAvailability(), "unknown")
+  assert.equal(await client(listing([{ id: 5 }, null])).checkAvailability(), "unknown")
+  assert.equal(await client(fakeFetch(() => { throw new Error("offline") })).checkAvailability(), "unknown")
+})
+
+// Reproduction of "the AI features do nothing" on the free provider: a reasoning model spends the
+// whole max_completion_tokens on hidden reasoning and answers with empty content, which every
+// helper treated as "no suggestion". Fake Groq: needs ~300 tokens of reasoning before it answers.
+function reasoningModelFetch(reasoningTokens: number): typeof fetch {
+  return (async (_url: string | URL | Request, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as { max_completion_tokens: number }
+    if (body.max_completion_tokens <= reasoningTokens) {
+      return ok({ choices: [{ message: { content: "" }, finish_reason: "length" }] })
+    }
+    return ok({ choices: [{ message: { content: "{\"book\":\"Jean\",\"chapter\":3,\"verse\":16}" }, finish_reason: "stop" }] })
+  }) as typeof fetch
+}
+
+test("GroqTextClient: a short visible limit still yields an answer from a reasoning model (regression: empty replies)", async () => {
+  const client = new GroqTextClient({ apiKey: "gsk_key_0123456789", fetchImpl: reasoningModelFetch(300) })
+  const answer = await client.complete({ system: "s", user: "u", maxTokens: 60 })
+  assert.match(answer, /Jean/)
+})
+
+test("GroqTextClient: an empty answer cut off by the token limit is a visible failure, not a silent empty string", async () => {
+  const client = new GroqTextClient({ apiKey: "gsk_key_0123456789", fetchImpl: reasoningModelFetch(100_000) })
+  await assert.rejects(client.complete({ system: "s", user: "u", maxTokens: 60 }), /token limit/)
+})
+
+test("GroqTextClient: a non-reasoning model gets no reasoning_effort and no extra token headroom (a 400 would trip the breaker)", async () => {
+  const captured: Captured[] = []
+  const client = new GroqTextClient({
+    apiKey: "gsk_key_0123456789",
+    model: "llama-3.1-8b-instant",
+    fetchImpl: fakeFetch(() => ok({ choices: [{ message: { content: "x" } }] }), captured),
+  })
+  await client.complete({ system: "s", user: "u", maxTokens: 80 })
+  const body = JSON.parse(String(captured[0]?.init.body)) as Record<string, unknown>
+  assert.equal("reasoning_effort" in body, false)
+  assert.equal(body.max_completion_tokens, 80)
 })

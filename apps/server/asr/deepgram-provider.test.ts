@@ -2,6 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { EventEmitter } from "node:events"
 import { DeepgramProvider } from "./deepgram-provider"
+import { TranscriptionPolicy } from "./noise-mode"
 import type { AudioFrame } from "../../../packages/contracts"
 
 class MockWebSocket extends EventEmitter {
@@ -62,6 +63,8 @@ test("DeepgramProvider: opens the documented streaming URL and sends canonical P
   class CapturingWebSocket extends MockWebSocket {
     constructor(url: string, options: unknown) {
       super(url, options)
+      // The test double records its own instance so the test can drive it.
+      // eslint-disable-next-line @typescript-eslint/no-this-alias
       socket = this
       this.readyState = MockWebSocket.OPEN
       queueMicrotask(() => this.emit("open"))
@@ -87,6 +90,28 @@ test("DeepgramProvider: opens the documented streaming URL and sends canonical P
   assert.equal(parsed.searchParams.get("sample_rate"), "16000")
   assert.deepEqual(socket.sent[0], Buffer.from(frame.samples.buffer))
   await provider.stop()
+})
+
+test("DeepgramProvider: stop() while the socket is still connecting leaves no live connection behind", async () => {
+  let socket: MockWebSocket | undefined
+  class SlowWebSocket extends MockWebSocket {
+    constructor(url: string, options: unknown) {
+      super(url, options)
+      // The test double records its own instance so the test can drive it.
+      // eslint-disable-next-line @typescript-eslint/no-this-alias
+      socket = this
+    }
+  }
+  const provider = new DeepgramProvider({ apiKey: "deepgram-test", WebSocketImpl: SlowWebSocket as never })
+
+  const starting = provider.start() // the socket is created but has not opened yet
+  await provider.stop() // the operator stops the mic mid-connect
+  assert.ok(socket)
+  socket.readyState = MockWebSocket.OPEN
+  socket.emit("open") // the connection completes anyway
+  await starting // a deliberate stop is not an error
+
+  assert.equal(socket.readyState, 3, "the late-opening socket was closed, not left live")
 })
 
 test("DeepgramProvider: unexpected close reports once and permits a fresh start", async () => {
@@ -166,6 +191,37 @@ test("DeepgramProvider: URL carries endpointing and weighted biblical keywords f
   assert.ok(keywords.includes("Deutéronome:2"))
   assert.ok(keywords.includes("verset:2"))
   assert.equal(url.searchParams.getAll("keyterm").length, 0)
+})
+
+test("DeepgramProvider: boosts Philemon in French, English and bilingual sessions", () => {
+  const french = new URL(new DeepgramProvider({ apiKey: "k", language: "fr" }).buildUrl())
+  assert.ok(french.searchParams.getAll("keywords").includes("Philémon:2"))
+
+  const english = new URL(new DeepgramProvider({ apiKey: "k", language: "en" }).buildUrl())
+  assert.ok(english.searchParams.getAll("keywords").includes("Philemon:2"))
+
+  const bilingual = new URL(new DeepgramProvider({ apiKey: "k", language: "multi" }).buildUrl())
+  assert.ok(bilingual.searchParams.getAll("keyterm").includes("Philémon"))
+  assert.ok(bilingual.searchParams.getAll("keyterm").includes("Philemon"))
+})
+
+test("DeepgramProvider: biases toward difficult Old Testament names in every language mode", () => {
+  const french = new URL(new DeepgramProvider({ apiKey: "k", language: "fr" }).buildUrl())
+  for (const book of ["Néhémie", "Ézéchiel", "Michée", "Nahum", "Zacharie", "Esdras", "Osée"]) {
+    assert.ok(french.searchParams.getAll("keywords").includes(`${book}:2`), book)
+  }
+
+  const english = new URL(new DeepgramProvider({ apiKey: "k", language: "en" }).buildUrl())
+  for (const book of ["Nehemiah", "Ezekiel", "Micah", "Nahum", "Zechariah", "Ezra", "Hosea"]) {
+    assert.ok(english.searchParams.getAll("keywords").includes(`${book}:2`), book)
+  }
+
+  const bilingual = new URL(new DeepgramProvider({ apiKey: "k", language: "multi" }).buildUrl())
+  const keyterms = bilingual.searchParams.getAll("keyterm")
+  assert.ok(keyterms.includes("Ézéchiel"))
+  assert.ok(keyterms.includes("Ezekiel"))
+  assert.ok(keyterms.includes("Néhémie"))
+  assert.ok(keyterms.includes("Nehemiah"))
 })
 
 test("DeepgramProvider: nova-3 uses keyterm prompting instead of weighted keywords", () => {
@@ -307,4 +363,180 @@ test("DeepgramProvider: an explicit endpointing wins over the multi default, and
   const french = new URL(new DeepgramProvider({ apiKey: "k", language: "fr" }).buildUrl())
   assert.equal(french.searchParams.get("model"), "nova-2")
   assert.equal(french.searchParams.get("endpointing"), "300")
+})
+
+test("DeepgramProvider: a transcript Nova-3 multi reports as another language is dropped; French/English and unlabelled ones pass", () => {
+  const provider = new DeepgramProvider({ apiKey: "test", language: "multi" })
+  const results: { text: string }[] = []
+  provider.onTranscript((result) => results.push(result))
+  const send = (alternative: object) =>
+    (provider as unknown as { handleMessage(raw: string): void }).handleMessage(JSON.stringify({ is_final: true, channel: { alternatives: [alternative] } }))
+  const es = (n: number) => Array.from({ length: n }, (_, i) => ({ word: `palabra${i}`, language: "es" }))
+  send({ transcript: "gracias hermanos por todo hoy", languages: ["es"], words: es(5) })
+  send({ transcript: "namaste amigos buenas noches hoy", languages: ["hi"] })
+  send({ transcript: "Ouvrez Jean 3", languages: ["fr"], words: [{ language: "fr" }, { language: "fr" }, { language: "en" }] })
+  send({ transcript: "Turn to John 3", languages: ["en"] })
+  send({ transcript: "Jean 3 16" }) // no language info: kept, never an error
+  assert.deepEqual(results.map((r) => r.text), ["Ouvrez Jean 3", "Turn to John 3", "Jean 3 16"])
+})
+
+test("DeepgramProvider: tongues mode tolerates less off-language speech than normal mode", () => {
+  const run = (mode: "normal" | "tongues") => {
+    const provider = new DeepgramProvider({ apiKey: "test", language: "multi", policy: new TranscriptionPolicy(mode) })
+    const results: unknown[] = []
+    provider.onTranscript((result) => results.push(result))
+    ;(provider as unknown as { handleMessage(raw: string): void }).handleMessage(
+      JSON.stringify({
+        is_final: true,
+        channel: { alternatives: [{ transcript: "a b c d", words: [{ word: "a", language: "fr" }, { word: "b", language: "fr" }, { word: "c", language: "fr" }, { word: "d", language: "es" }] }] },
+      }),
+    )
+    return results.length
+  }
+  assert.equal(run("normal"), 1) // 25% off: kept
+  assert.equal(run("tongues"), 0) // 25% off: dropped
+})
+
+// --- Fix round: tolerant language judging and the safety valve ---
+
+function deepgramHarness(mode: "normal" | "tongues" = "normal") {
+  const policy = new TranscriptionPolicy(mode)
+  const provider = new DeepgramProvider({ apiKey: "test", language: "multi", policy })
+  const results: { text: string }[] = []
+  provider.onTranscript((result) => results.push(result))
+  const send = (transcript: string, words: { word: string; language: string }[], state = true) =>
+    (provider as unknown as { handleMessage(raw: string): void }).handleMessage(
+      JSON.stringify({ is_final: state, channel: { alternatives: [{ transcript, words }] } }),
+    )
+  return { policy, results, send }
+}
+
+const tag = (text: string, language: string) => text.split(" ").map((word) => ({ word, language }))
+
+test("DeepgramProvider: regional tags (en-US, fr-CA) are English and French, never dropped", () => {
+  const { results, send } = deepgramHarness("tongues")
+  send("ouvrez vos bibles ensemble", tag("ouvrez vos bibles ensemble", "fr-CA"))
+  send("turn to your neighbor today", tag("turn to your neighbor today", "en-US"))
+  assert.equal(results.length, 2)
+})
+
+test("DeepgramProvider: a short reference mis-tagged as another language is never judged", () => {
+  const { results, send } = deepgramHarness("tongues")
+  send("Jean 3 16", [{ word: "Jean", language: "es" }, { word: "3", language: "hi" }, { word: "16", language: "hi" }])
+  send("Romains huit", tag("Romains huit", "pt"))
+  assert.equal(results.length, 2)
+})
+
+test("DeepgramProvider: fewer than 4 alphabetic words are not enough to drop, and numbers and book names do not count", () => {
+  const { results, send } = deepgramHarness("tongues")
+  send("gracias hermanos amigos", tag("gracias hermanos amigos", "es")) // 3 words: not judged
+  send("Jean 3 16 gracias hermanos", [...tag("Jean", "es"), ...tag("3 16", "hi"), ...tag("gracias hermanos", "es")]) // 2 judged words
+  assert.equal(results.length, 2)
+  send("gracias hermanos por todo hoy", tag("gracias hermanos por todo hoy", "es")) // 5 judged, all off
+  assert.equal(results.length, 2)
+})
+
+test("DeepgramProvider: after 5 off-language drops in a row it stops dropping, warns, shows the valve, and closes it when a transcript passes", () => {
+  const warnings: string[] = []
+  const policy = new TranscriptionPolicy()
+  const provider = new DeepgramProvider({
+    apiKey: "test",
+    language: "multi",
+    policy,
+    logger: { info() {}, debug() {}, error() {}, warn: (line: { event: string }) => warnings.push(line.event) } as never,
+  })
+  const results: { text: string }[] = []
+  provider.onTranscript((result) => results.push(result))
+  const send = (text: string, language: string) =>
+    (provider as unknown as { handleMessage(raw: string): void }).handleMessage(
+      JSON.stringify({ is_final: true, channel: { alternatives: [{ transcript: text, words: tag(text, language) }] } }),
+    )
+  for (let i = 0; i < 5; i++) send("gracias hermanos por todo hoy", "es")
+  assert.equal(results.length, 0)
+  send("gracias hermanos por todo hoy", "es")
+  assert.equal(results.length, 1, "the sixth is let through")
+  assert.deepEqual(policy.ledger.openValves(), ["deepgram-language"])
+  assert.deepEqual(warnings, ["deepgram.language-guard-bypassed"])
+  send("ouvrez vos bibles ensemble", "fr")
+  assert.deepEqual(policy.ledger.openValves(), [])
+  assert.equal(policy.ledger.perMinute()["off-language"], 5)
+})
+
+
+// ---- SF-19: reconnect when Deepgram is the only / last provider ----
+
+function reconnectFixture(options: { reconnectOnClose: boolean }, refuse: { failAfterOpens?: number } = {}) {
+  const sockets: MockWebSocket[] = []
+  let opens = 0
+  class AutoSocket extends MockWebSocket {
+    constructor(url: string, opts: unknown) {
+      super(url, opts)
+      sockets.push(this)
+      opens += 1
+      if (refuse.failAfterOpens !== undefined && opens > refuse.failAfterOpens) {
+        queueMicrotask(() => this.emit("error", new Error("connect refused")))
+      } else {
+        this.readyState = MockWebSocket.OPEN
+        queueMicrotask(() => this.emit("open"))
+      }
+    }
+  }
+  const clock = { t: 1_000_000 }
+  const provider = new DeepgramProvider({ apiKey: "k", WebSocketImpl: AutoSocket as never, now: () => clock.t, ...options })
+  const errors: Error[] = []
+  provider.onError((e) => errors.push(e))
+  const frame: AudioFrame = { samples: Int16Array.from([1, 2, 3]), sampleRate: 16000, sequence: 1 }
+  return { provider, sockets, clock, errors, frame }
+}
+
+test("DeepgramProvider SF-19: with reconnectOnClose, audio after an unexpected close reopens the socket (after the backoff) and resumes", async () => {
+  const f = reconnectFixture({ reconnectOnClose: true })
+  await f.provider.start()
+  f.sockets[0]!.close() // dropped mid-service
+  assert.equal(f.errors.length, 1)
+  await assert.rejects(() => f.provider.sendAudio(f.frame), /not connected/, "inside the first 1 s backoff nothing is reopened")
+  assert.equal(f.sockets.length, 1)
+  f.clock.t += 1_000
+  await f.provider.sendAudio(f.frame)
+  assert.equal(f.sockets.length, 2, "reconnected")
+  assert.equal(f.sockets[1]!.sent.length, 1, "the frame went out on the new socket")
+  await f.provider.sendAudio(f.frame)
+  assert.equal(f.sockets.length, 2, "no further reconnects while connected")
+  await f.provider.stop()
+})
+
+test("DeepgramProvider SF-19: failed reconnects back off exponentially, each failure is reported, concurrent frames share one attempt", async () => {
+  const f = reconnectFixture({ reconnectOnClose: true }, { failAfterOpens: 1 }) // the first connection works, every later one is refused
+  await f.provider.start()
+  f.sockets[0]!.close()
+  const baseErrors = f.errors.length
+  f.clock.t += 1_000
+  await Promise.allSettled([f.provider.sendAudio(f.frame), f.provider.sendAudio(f.frame), f.provider.sendAudio(f.frame)])
+  assert.equal(f.sockets.length, 2, "one shared attempt")
+  assert.ok(f.errors.length > baseErrors, "the failure is reported")
+  f.clock.t += 1_999
+  await assert.rejects(() => f.provider.sendAudio(f.frame))
+  assert.equal(f.sockets.length, 2, "backing off 2 s")
+  f.clock.t += 1
+  await assert.rejects(() => f.provider.sendAudio(f.frame))
+  assert.equal(f.sockets.length, 3)
+  f.clock.t += 3_999
+  await assert.rejects(() => f.provider.sendAudio(f.frame))
+  assert.equal(f.sockets.length, 3, "then 4 s")
+})
+test("DeepgramProvider SF-19: without reconnectOnClose nothing is reopened, and stop() ends reconnecting", async () => {
+  const off = reconnectFixture({ reconnectOnClose: false })
+  await off.provider.start()
+  off.sockets[0]!.close()
+  off.clock.t += 60_000
+  await assert.rejects(() => off.provider.sendAudio(off.frame), /not connected/)
+  assert.equal(off.sockets.length, 1)
+
+  const on = reconnectFixture({ reconnectOnClose: true })
+  await on.provider.start()
+  on.sockets[0]!.close()
+  await on.provider.stop()
+  on.clock.t += 60_000
+  await assert.rejects(() => on.provider.sendAudio(on.frame), /not connected/)
+  assert.equal(on.sockets.length, 1, "stopped on purpose: never reopened")
 })

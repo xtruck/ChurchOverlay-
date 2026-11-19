@@ -7,8 +7,10 @@ import type {
   CanvasShowPayload,
   DefinitionShowPayload,
   DetectorNearMissPayload,
+  VerseLookupFailedPayload,
   MicAutoGainPayload,
   MicHealthPayload,
+  MicStartFailedPayload,
   MediaCue,
   MediaShowPayload,
   MediaSetDurationPayload,
@@ -23,15 +25,23 @@ import type {
   TimerStartPayload,
   TimerStatePayload,
   TranscriptResult,
+  TypedVerseReference,
   VerseLayoutPayload,
   VerseShowPayload,
-  VerseReference,
   WsCommandType,
   WsEventType,
   WsMessage,
   WsRole,
 } from "../../../packages/contracts"
 import { isPlainObject } from "../../../packages/shared/type-guards"
+import {
+  isBibleChapterRequestPayload,
+  isBibleChapterResultPayload,
+  isBibleSearchRequestPayload,
+  isBibleSearchResultPayload,
+  isVerseNavigatePayload,
+  isVerseNavigateResultPayload,
+} from "./bible-browser-payloads"
 
 /**
  * v1 WS Action Registry (ARCHITECTURE.md section 30, section 50 fourth
@@ -66,7 +76,7 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0
 }
 
-const MIC_HEALTH_STATES = new Set(["warming-up", "ok", "listening", "too-quiet", "clipping", "noisy", "no-signal"])
+const MIC_HEALTH_STATES = new Set(["warming-up", "ok", "listening", "too-quiet", "clipping", "noisy", "no-signal", "no-audio"])
 
 function isNullableNumber(value: unknown): boolean {
   return value === null || (typeof value === "number" && Number.isFinite(value))
@@ -87,20 +97,34 @@ function isMicHealthPayload(payload: unknown): payload is MicHealthPayload {
   )
 }
 
+function isMicStartFailedPayload(payload: unknown): payload is MicStartFailedPayload {
+  return isPlainObject(payload) && Object.keys(payload).length === 1 && typeof payload.reason === "string" && payload.reason.length > 0 && payload.reason.length <= 500
+}
+
 function isMicAutoGainPayload(payload: unknown): payload is MicAutoGainPayload {
   return isPlainObject(payload) && typeof payload.enabled === "boolean" && Object.keys(payload).length === 1
+}
+
+function isAsrNoiseModePayload(payload: unknown): payload is { readonly mode: "normal" | "noisy" | "tongues" } {
+  return isPlainObject(payload) && Object.keys(payload).length === 1 && (payload.mode === "normal" || payload.mode === "noisy" || payload.mode === "tongues")
 }
 
 function isNullPayload(payload: unknown): payload is null {
   return payload === null
 }
 
-function isVerseReferencePayload(payload: unknown): payload is VerseReference {
+function isVerseReferencePayload(payload: unknown): payload is TypedVerseReference {
   if (!isPlainObject(payload)) return false
   return (
     isNonEmptyString(payload.book) &&
     isFiniteNumber(payload.chapter) &&
-    isFiniteNumber(payload.verse)
+    isFiniteNumber(payload.verse) &&
+    // Section 146: the operator's manual range end ("Book C:V-E"). Shape
+    // only — the AppCore override/preview handlers decide its semantics
+    // (integer, forward, capped, clamped to the known-valid index) exactly
+    // like a detected range, so a malformed end degrades to the single
+    // verse instead of opening a second, weaker path to verse text.
+    (payload.verseEnd === undefined || isFiniteNumber(payload.verseEnd))
   )
 }
 
@@ -151,7 +175,18 @@ function isVersePreviewResultPayload(payload: unknown): payload is Record<string
     typeof payload.seq === "number" &&
     isVerseReferencePayload(payload.reference) &&
     (payload.verse === null || isBareVersePayload(payload.verse)) &&
-    (payload.reason === undefined || payload.reason === "not-found" || payload.reason === "unavailable")
+    (payload.reason === undefined || payload.reason === "not-found" || payload.reason === "unavailable") &&
+    isOptionalSuggestionList(payload.suggestions)
+  )
+}
+
+const MAX_REFERENCE_SUGGESTIONS = 3
+
+/** "Did you mean?" candidates on operator-only events: absent, or a short list of well-formed references. */
+function isOptionalSuggestionList(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (Array.isArray(value) && value.length <= MAX_REFERENCE_SUGGESTIONS && value.every((entry) => isVerseReferencePayload(entry)))
   )
 }
 
@@ -258,7 +293,22 @@ function isStatusUpdatePayload(payload: unknown): payload is AsrStatusPayload {
     (payload.error === undefined || typeof payload.error === "string") &&
     (payload.micCalibrating === undefined || typeof payload.micCalibrating === "boolean") &&
     (payload.micThreshold === undefined || isFiniteNumber(payload.micThreshold)) &&
-    isEchoWarningField(payload.echoWarning)
+    isEchoWarningField(payload.echoWarning) &&
+    isAiHelpersField(payload.aiHelpers)
+  )
+}
+
+/** Optional. A fixed state and reason vocabulary only: free text is rejected so an upstream error body can never ride along. */
+function isAiHelpersField(value: unknown): boolean {
+  if (value === undefined) return true
+  return (
+    isPlainObject(value) &&
+    (value.state === "ok" || value.state === "paused" || value.state === "unavailable") &&
+    (value.reason === undefined ||
+      value.reason === "model-unavailable" ||
+      value.reason === "auth" ||
+      value.reason === "rate-limited" ||
+      value.reason === "repeated-failures")
   )
 }
 
@@ -495,7 +545,30 @@ function isSermonNotesPayload(payload: unknown): payload is SermonNotesPayload {
 
 /** ARCHITECTURE.md section 91: shape-only, same discipline as every other payload here. */
 function isDetectorNearMissPayload(payload: unknown): payload is DetectorNearMissPayload {
-  return isPlainObject(payload) && typeof payload.text === "string"
+  return isPlainObject(payload) && typeof payload.text === "string" && isOptionalSuggestionList(payload.suggestions)
+}
+
+/** SF-03: operator-only lookup-failure notice. Shape-checked and bounded like every other payload. */
+const LOOKUP_FAILURE_REASONS = new Set(["unavailable", "not-found", "invalid", "superseded"])
+const LOOKUP_FAILURE_ORIGINS = new Set(["detected", "override", "navigate"])
+function isVerseLookupFailedPayload(payload: unknown): payload is VerseLookupFailedPayload {
+  if (!isPlainObject(payload) || !isPlainObject(payload.reference)) return false
+  const reference = payload.reference
+  return (
+    typeof reference.book === "string" &&
+    reference.book.length > 0 &&
+    reference.book.length <= 64 &&
+    Number.isInteger(reference.chapter) &&
+    (reference.chapter as number) >= 0 &&
+    (reference.chapter as number) <= 9999 &&
+    Number.isInteger(reference.verse) &&
+    (reference.verse as number) >= 0 &&
+    (reference.verse as number) <= 9999 &&
+    typeof payload.reason === "string" &&
+    LOOKUP_FAILURE_REASONS.has(payload.reason) &&
+    typeof payload.origin === "string" &&
+    LOOKUP_FAILURE_ORIGINS.has(payload.origin)
+  )
 }
 
 /** ARCHITECTURE.md section 94: both fields optional — absence is valid ("show nothing extra"), not corruption. */
@@ -552,7 +625,43 @@ export const ACTION_REGISTRY: Readonly<Record<WsCommandType | WsEventType, Actio
     allowedSenders: [],
     validatePayload: isVersePreviewResultPayload,
   },
+  // Bible Browser (audit-notes/bible-browser.md): operator-only commands, server-only events.
+  "verse:navigate": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isVerseNavigatePayload,
+  },
+  "bible:chapter": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isBibleChapterRequestPayload,
+  },
+  "bible:chapter-result": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isBibleChapterResultPayload,
+  },
+  "bible:search": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isBibleSearchRequestPayload,
+  },
+  "bible:search-result": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isBibleSearchResultPayload,
+  },
+  "verse:navigate-result": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isVerseNavigateResultPayload,
+  },
   "verse:confirm-pending": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isNullPayload,
+  },
+  "verse:dismiss-pending": {
     kind: "command",
     allowedSenders: ["operator"],
     validatePayload: isNullPayload,
@@ -720,6 +829,11 @@ export const ACTION_REGISTRY: Readonly<Record<WsCommandType | WsEventType, Actio
     allowedSenders: ["operator"],
     validatePayload: isNullPayload,
   },
+  "asr:noise-mode": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isAsrNoiseModePayload,
+  },
   "mic:auto-gain": {
     kind: "command",
     allowedSenders: ["operator"],
@@ -734,6 +848,11 @@ export const ACTION_REGISTRY: Readonly<Record<WsCommandType | WsEventType, Actio
     kind: "event",
     allowedSenders: [],
     validatePayload: isDetectorNearMissPayload,
+  },
+  "verse:lookup-failed": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isVerseLookupFailedPayload,
   },
   "branding:update": {
     kind: "event",
@@ -751,6 +870,12 @@ export const ACTION_REGISTRY: Readonly<Record<WsCommandType | WsEventType, Actio
     kind: "event",
     allowedSenders: [],
     validatePayload: isMicHealthPayload,
+  },
+  // SF-06: operator-only (not in the viewer outbound allow-list); no sender may emit it.
+  "mic:start-failed": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isMicStartFailedPayload,
   },
   "timer:start": {
     kind: "command",

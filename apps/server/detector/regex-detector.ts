@@ -1,6 +1,13 @@
+import { nullProto } from "../../../packages/shared/type-guards"
 import type { VerseDetector, VerseReference } from "../../../packages/contracts"
 import { normalizeSpokenReferences } from "./spoken-reference-normalizer"
 import { BOOK_CATALOG } from "../verse/book-catalog"
+import { RANGE_TAIL } from "./range-tail"
+import { VerseRangeDetector, type DetectedVerseRange } from "./verse-range-detector"
+
+// Backward-compatible re-export: RANGE_TAIL moved to its own cycle-free
+// module (range-tail.ts) when the range detector landed (section 145).
+export { RANGE_TAIL }
 
 /**
  * v1 VerseDetector implementation (ARCHITECTURE.md section 12, section 50).
@@ -72,8 +79,10 @@ import { BOOK_CATALOG } from "../verse/book-catalog"
  * still produces a candidate; existence is, as always, KnownValidVerseIndex's
  * job downstream, not this detector's.
  */
-const REFERENCE_PATTERN =
-  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)\s+(\d{1,3}):(\d{1,3})(?![\p{L}\d])/gu
+const REFERENCE_PATTERN = new RegExp(
+  String.raw`(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)\s+(\d{1,3}):(\d{1,3})(?!${RANGE_TAIL}\d)(?![\p{L}\d])`,
+  "gu"
+)
 // CORRECTIF (observed live, 2026-09-23): a real service reading references
 // aloud produced ASR output with a comma after every spoken pause — not
 // just between the chapter number and "verset" (already tolerated below),
@@ -85,8 +94,17 @@ const REFERENCE_PATTERN =
 // or comma, comma optional but never the *only* required character),
 // which still refuses to match a run-together "abacuc4verset2" with no
 // separator at all.
-const SPOKEN_REFERENCE_PATTERN =
-  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(\d{1,3})[\s,]+(?:chapitre|chapter|verset|verse|le\s+verset|the\s+verse)[\s,]+(\d{1,3})(?![\p{L}\d])/giu
+// CORRECTIF (found by dry-running the pipeline with natural spoken phrasing,
+// 2026-11-15): a preacher saying the reference with the spoken conjunction —
+// "Jean 3 et verset 16", "John 3 and verse 16" — was missed entirely: the
+// pattern required the keyword to follow the chapter number directly. The
+// conjunction is only accepted BETWEEN the number and a reference keyword,
+// so ordinary enumeration ("3 et 16 personnes") can never half-match; the
+// keyword is still what anchors the reference reading.
+const SPOKEN_REFERENCE_PATTERN = new RegExp(
+  String.raw`(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(\d{1,3})(?:[\s,]+(?:et|and)[\s,]+|[\s,]+)(?:chapitre|chapter|versets?|verses?|le\s+versets?|the\s+verses?)[\s,]+(\d{1,3})(?!${RANGE_TAIL}\d)(?![\p{L}\d])`,
+  "giu"
+)
 
 // CORRECTIF (found investigating a verse-range navigation question,
 // 2026-09-23): the pattern above only covers "BOOK NUMBER KEYWORD NUMBER"
@@ -111,8 +129,17 @@ const SPOKEN_REFERENCE_PATTERN =
 // output was wrong on its own terms, the same reasoning as the CORRECTIF
 // above.
 
-const SPOKEN_REFERENCE_DOUBLE_KEYWORD_PATTERN =
-  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)(?:[\s,]+(?:au|à|a|dans\s+le|in|at))?[\s,]+(?:chapitre|chapter)[\s,]+(\d{1,3})[\s,]+(?:le\s+|the\s+)?(?:verset|verse)[\s,]+(\d{1,3})(?![\p{L}\d])/giu
+// CORRECTIF (found by dry-running the pipeline, 2026-11-15, the same gap as
+// SPOKEN_REFERENCE_PATTERN above): "First Samuel chapter sixteen and verse
+// seven" normalized to "1 Samuel chapter 16 and verse 7" — and then matched
+// nothing, because this pattern also required the verse keyword to follow the
+// chapter number directly. The same optional conjunction slot fixes it; the
+// "au/à/a/dans le/in/at" link in front of "chapter" is untouched (it sits
+// BEFORE the keyword, not between the two numbers).
+const SPOKEN_REFERENCE_DOUBLE_KEYWORD_PATTERN = new RegExp(
+  String.raw`(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)(?:[\s,]+(?:au|à|a|dans\s+le|in|at))?[\s,]+(?:chapitre|chapter)[\s,]+(\d{1,3})(?:[\s,]+(?:et|and)[\s,]+|[\s,]+)(?:le\s+|the\s+)?(?:versets?|verses?)[\s,]+(\d{1,3})(?!${RANGE_TAIL}\d)(?![\p{L}\d])`,
+  "giu"
+)
 
 // The written/dictated compact forms ASR actually produces for a pause
 // between chapter and verse: "Jean 3.16", "Romains 8, 28", and the bare
@@ -120,8 +147,21 @@ const SPOKEN_REFERENCE_DOUBLE_KEYWORD_PATTERN =
 // The trailing guard refuses a third number glued on ("3.16.2", "8, 28:3")
 // so a decimal or a time never half-matches. Book existence is, as always,
 // KnownValidVerseIndex's job.
-const COMPACT_REFERENCE_PATTERN =
-  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(\d{1,3})(?:\s*[.,]\s*|\s+)(\d{1,3})(?![\p{L}\d]|\s*[.,:]\s*\d)/gu
+const COMPACT_REFERENCE_PATTERN = new RegExp(
+  String.raw`(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(\d{1,3})(?:\s*[.,]\s*|\s+)(\d{1,3})(?!${RANGE_TAIL}\d)(?![\p{L}\d]|\s*[.,:]\s*\d)`,
+  "gu"
+)
+
+// The two pattern sets collect() iterates, hoisted to module level so a
+// detect() call no longer re-allocates its array (the detector instance is
+// shared and long-lived; every transcript, partials included, paid for a
+// fresh array). Same membership as the inline list it replaces.
+const EXPLICIT_PATTERNS: readonly RegExp[] = [
+  REFERENCE_PATTERN,
+  SPOKEN_REFERENCE_PATTERN,
+  SPOKEN_REFERENCE_DOUBLE_KEYWORD_PATTERN,
+]
+const DETECT_PATTERNS: readonly RegExp[] = [...EXPLICIT_PATTERNS, COMPACT_REFERENCE_PATTERN]
 
 // Deliberately small and conservative: only the short function words most
 // likely to coincidentally precede a "N:M"-shaped pattern in ordinary
@@ -134,34 +174,134 @@ const COMPACT_REFERENCE_PATTERN =
 // name (it directly precedes a number too) — a spurious extra candidate,
 // harmless once filtered here (no real book is named "chapitre"/"verset"),
 // alongside the correct one the new pattern above produces.
-const STOPWORDS = new Set([
+export const STOPWORDS = new Set([
   "at", "is", "in", "on", "to", "the", "a", "an", "and", "or", "but", "of",
   "it", "was", "were", "be", "by", "with", "for", "as", "that", "this",
   "le", "la", "les", "un", "une", "des", "de", "du", "et", "ou", "mais",
   "est", "sont", "etait", "dans", "sur", "pour", "par", "avec", "que",
   "qui", "ce", "cette",
-  "chapitre", "chapter", "verset", "verse",
+  "chapitre", "chapter", "verset", "verse", "versets", "verses",
 ])
 
-export class RegexDetector implements VerseDetector {
-  detect(rawText: string): VerseReference[] {
-    const references: VerseReference[] = []
-    const text = normalizeSpokenReferences(rawText, isCatalogBookWord)
+/**
+ * Typographic forms an ASR (or its smart-formatting) can emit around a
+ * reference, folded to the plain "Jean 3:16" the patterns expect: zero-width
+ * characters and a BOM are dropped, the full-width colon becomes ":", and the
+ * French typographic space around a colon between digits ("Jean 3 : 16",
+ * with a normal, no-break or narrow no-break space) is closed up. Pure text
+ * folding; it adds no book knowledge and no reference the speaker did not say.
+ */
+export function normalizeAsrTypography(text: string): string {
+  return text
+    .replace(/[​-‍⁠﻿]/g, "")
+    .replace(/：/g, ":")
+    .replace(/(\d)\s*:\s*(\d)/g, "$1:$2")
+}
 
-    for (const pattern of [
-      REFERENCE_PATTERN,
-      SPOKEN_REFERENCE_PATTERN,
-      SPOKEN_REFERENCE_DOUBLE_KEYWORD_PATTERN,
-      COMPACT_REFERENCE_PATTERN,
-    ]) {
+// A bare "word N M" (no colon, no "verset"/"chapitre") followed by a unit, a month or a time word is
+// ordinary speech about quantities and dates ("Marc 12 14 personnes", "Jean 3 16 septembre",
+// "Job 1 5 times"), not a reference. Only applied to the compact form: an explicit colon or keyword
+// is a deliberate reference whatever follows it.
+const COMPACT_FORM_TRAILING_NON_REFERENCE_WORDS = new Set([
+  "personne", "personnes", "people", "persons", "person", "ans", "an", "annees", "annee", "years", "year",
+  "fois", "times", "minutes", "minute", "min", "heures", "heure", "hours", "hour", "h", "jours", "jour", "days", "day",
+  "mois", "months", "month", "semaines", "semaine", "weeks", "week", "secondes", "seconds",
+  "euros", "euro", "dollars", "dollar", "francs", "pourcent", "percent", "fcfa", "xof",
+  "janvier", "fevrier", "mars", "avril", "mai", "juin", "juillet", "aout", "septembre", "octobre", "novembre", "decembre",
+  "january", "february", "march", "april", "june", "july", "august", "september", "october", "november", "december",
+  "membres", "members", "freres", "soeurs", "enfants", "children", "kilos", "km", "metres", "meters",
+  // Prose that follows a bare "Jean 3 16" in ordinary speech ("Jean 3 16 dit ..."): not a reference.
+  // The explicit "Jean 3:16" / "Jean 3 verset 16" forms are never affected.
+  "dit", "disait", "dis", "disent", "says", "said", "say", "nous", "vous", "ils", "elles", "they",
+])
+
+export function compactFormFollowedByNonReferenceWord(text: string, matchEnd: number): boolean {
+  const next = /^[\s,.]*(%|\p{L}+)/u.exec(text.slice(matchEnd))
+  if (!next) return false
+  const word = next[1] as string
+  return word === "%" || COMPACT_FORM_TRAILING_NON_REFERENCE_WORDS.has(stripAccents(word).toLowerCase())
+}
+
+// Book aliases that are also everyday words with numbers after them ("un grand
+// nombre 12 14 personnes"): accepted only with "verset"/"chapitre" or a colon.
+export const COMPACT_FORM_EXCLUDED_WORDS = new Set(["nombre"])
+
+/** Words an operator approved as mis-hearings of a book name (see learned-aliases.ts). Read at detect time, so approvals apply live. */
+export interface LearnedAliasLookup {
+  get(word: string): string | undefined
+}
+
+export type RegexDetectorOptions = { readonly learnedAliases?: LearnedAliasLookup }
+
+export class RegexDetector implements VerseDetector {
+  private readonly learnedAliases: LearnedAliasLookup | undefined
+  // Innovation pass (section 145): the range capability rides on the SAME
+  // instance (asVerseRangeDetector looks it up structurally), sharing this
+  // detector's learned aliases and normalization.
+  private readonly rangeDetector: VerseRangeDetector
+
+  constructor(options: RegexDetectorOptions = {}) {
+    this.learnedAliases = options.learnedAliases
+    this.rangeDetector = new VerseRangeDetector(options)
+  }
+
+  detect(rawText: string): VerseReference[] {
+    return this.collect(rawText, true)
+  }
+
+  /** Only the explicit forms (colon, "verset"/"chapitre" keyword): never the bare compact "Name N M" form. */
+  detectExplicit(rawText: string): VerseReference[] {
+    return this.collect(rawText, false)
+  }
+
+  /**
+   * Innovation pass (ARCHITECTURE.md section 145): spoken/written verse RANGES
+   * ("verset 5 à 7", "verses 16 to 18", "3:16-18"). A range tail suppresses the
+   * single-reference match (see RANGE_TAIL), so a range utterance resolves
+   * exactly once — here, not as a truncated single. Results are candidates:
+   * detectValidatedRanges applies the hallucination guard downstream.
+   */
+  detectRanges(rawText: string): readonly DetectedVerseRange[] {
+    if (!/\d/.test(normalizeAsrTypography(rawText))) return []
+    return this.rangeDetector.detectRanges(rawText)
+  }
+
+  private collect(rawText: string, includeCompact: boolean): VerseReference[] {
+    const references: VerseReference[] = []
+    const text = normalizeSpokenReferences(normalizeAsrTypography(rawText), isCatalogBookWord)
+
+    // Every pattern below requires two digit groups, and the spoken-form
+    // normalizer has already rewritten number words into digits — so a
+    // normalized text with no digit anywhere cannot match, and the three or
+    // four full-text scans (plus their per-match filtering) are skipped for
+    // the digit-free partials that make up most of a live transcript stream.
+    // The check must stay AFTER normalizeSpokenReferences: number words
+    // ("Psaume cent dix-neuf") only become digits there, so a
+    // pre-normalization check would drop real references. Measured
+    // (detection-path.bench.ts): ~23 -> ~18 us on digit-free partials — the
+    // spoken-form normalization above this line dominates the remaining cost;
+    // what this saves is the pattern scans and per-match filtering.
+    if (!/\d/.test(text)) return []
+
+    for (const pattern of includeCompact ? DETECT_PATTERNS : EXPLICIT_PATTERNS) {
       for (const match of text.matchAll(pattern)) {
         const rawBook = match[1]
         const rawChapter = match[2]
         const rawVerse = match[3]
         if (!rawBook || !rawChapter || !rawVerse) continue
 
-        const book = normalizeBookName(rawBook)
+        let book = normalizeBookName(rawBook)
         if (STOPWORDS.has(book)) continue
+        // An operator-approved mishearing, in EXPLICIT forms only (a colon, or "verset"/"chapitre"): a learned
+        // word may also be an everyday word, so it never matches the bare "word N M" form.
+        if (!CATALOG_IDS.has(book) && this.learnedAliases && pattern !== COMPACT_REFERENCE_PATTERN) {
+          const learned = this.learnedAliases.get(stripAccents(rawBook).toLowerCase())
+          if (learned !== undefined) book = learned
+        }
+        // Bare "word N M" with an ordinary-word book ("un grand nombre 12 14 personnes")
+        // is not a reference; those words need an explicit keyword or colon.
+        if (pattern === COMPACT_REFERENCE_PATTERN && COMPACT_FORM_EXCLUDED_WORDS.has(stripAccents(rawBook).toLowerCase())) continue
+        if (pattern === COMPACT_REFERENCE_PATTERN && compactFormFollowedByNonReferenceWord(text, (match.index ?? 0) + match[0].length)) continue
 
         references.push({
           book,
@@ -182,6 +322,18 @@ export class RegexDetector implements VerseDetector {
     }
     return unique
   }
+}
+
+/**
+ * AUDIT TS-08: keys ("book chapter:verse", the suggestionKey() shape) of references that appear in the text ONLY as the bare compact
+ * "Name N M" form ("il y avait Jean 5 6 qui", "Daniel 3 4"). That form collides with ordinary speech
+ * (first-name books followed by two numbers), so the pipeline never auto-shows it: the operator confirms.
+ */
+export function compactOnlyReferenceKeys(text: string): ReadonlySet<string> {
+  const detector = new RegexDetector()
+  const key = (r: VerseReference): string => `${r.book} ${r.chapter}:${r.verse}`
+  const explicit = new Set(detector.detectExplicit(text).map(key))
+  return new Set(detector.detect(text).map(key).filter((k) => !explicit.has(k)))
 }
 
 /**
@@ -213,7 +365,7 @@ export function stripAccents(text: string): string {
  * "Romains 8:28") would never resolve at all, since normalizeBookName()
  * previously only trimmed/lowercased without translating.
  */
-export const FRENCH_BOOK_ALIASES: Readonly<Record<string, string>> = {
+export const FRENCH_BOOK_ALIASES: Readonly<Record<string, string>> = nullProto({
   genese: "genesis",
   exode: "exodus",
   levitique: "leviticus",
@@ -315,7 +467,7 @@ export const FRENCH_BOOK_ALIASES: Readonly<Record<string, string>> = {
   "3 jean": "3 john",
   jude: "jude",
   apocalypse: "revelation",
-}
+})
 
 /**
  * ARCHITECTURE.md section 105: a second, deliberately separate tier from
@@ -347,7 +499,7 @@ export const FRENCH_BOOK_ALIASES: Readonly<Record<string, string>> = {
  * several — can make a three-word title match; that needs a regex change,
  * not an alias.
  */
-export const PHONETIC_BOOK_ALIASES: Readonly<Record<string, string>> = {
+export const PHONETIC_BOOK_ALIASES: Readonly<Record<string, string>> = nullProto({
   // Genesis — English vowel-shift mishearing.
   genisis: "genesis",
   // Exodus — English vowel-shift mishearing.
@@ -371,12 +523,29 @@ export const PHONETIC_BOOK_ALIASES: Readonly<Record<string, string>> = {
   "2 chronicle": "2 chronicles",
   // Ezra — French trailing-consonant-drop mishearing ("Esdras" -> "Esdra").
   esdra: "ezra",
+  // Samuel — common vowel-order spelling error; numbered to keep the two
+  // catalog entries distinct.
+  "1 samual": "1 samuel",
+  "2 samual": "2 samuel",
   // Nehemiah — French "H"-drop mishearing (same pattern as Habakkuk's
   // "abacuc"/"abaku"), plus a dropped-final-vowel and an English
   // dropped-"H" mishearing.
   neemie: "nehemiah",
   nehemi: "nehemiah",
   nehemia: "nehemiah",
+  // Habakkuk — alternate spellings; English sometimes writes one k, while
+  // French ASR may use "ou" for the final /u/ sound.
+  habakuk: "habakkuk",
+  habacuk: "habakkuk",
+  abakuk: "habakkuk",
+  habacouc: "habakkuk",
+  abacouc: "habakkuk",
+  // Numbers — Observed live (2026-10-12): "dans nombre un, le verset 2" heard
+  // twice for "Nombres 1:2" (the ASR dropped the plural -s). "nombre" is also
+  // an ordinary French word, so this is the same accepted-risk shape as
+  // "Jean"/"Marc": it only matches inside the "BOOK N:M" pattern, and the
+  // known-valid index still decides whether the reference exists.
+  nombre: "numbers",
   // Esther — French "H"-drop mishearing. No English alias added: "Easter"
   // is a real, unrelated English word one "H"-drop away from "Esther",
   // and the collision is worth avoiding even at this pattern's low risk.
@@ -393,6 +562,9 @@ export const PHONETIC_BOOK_ALIASES: Readonly<Record<string, string>> = {
   // Ecclesiastes — French single-c and dropped-final-e mishearings.
   eclesiaste: "ecclesiastes",
   eclesiastes: "ecclesiastes",
+  // Ecclesiastes — common phonetic spellings of the unstressed middle syllable.
+  ecclesiasties: "ecclesiastes",
+  ecclesiastis: "ecclesiastes",
   // Isaiah — English dropped-"H" mishearing (mirrors "Ésaïe"/"Isaïe"
   // already being two full French names for this book).
   isaia: "isaiah",
@@ -401,10 +573,29 @@ export const PHONETIC_BOOK_ALIASES: Readonly<Record<string, string>> = {
   // "Amos"/"Jean"/"Marc" above — gated by the surrounding "N:M" pattern).
   jeremia: "jeremiah",
   jeremy: "jeremiah",
+  jeremias: "jeremiah",
+  // Ezekiel — common English spelling variant.
+  ezekial: "ezekiel",
   // Lamentations — Grammatical singular (same spelling in both languages).
   lamentation: "lamentations",
   // Zephaniah — French "ph"/"f" are pronounced identically ("Sophonie" -> "Sofonie").
   sofonie: "zephaniah",
+  // Common alternate spellings and ASR omission of a silent final h.
+  zephania: "zephaniah",
+  // Zechariah — established English spelling variants.
+  zachariah: "zechariah",
+  zacharia: "zechariah",
+  zecharia: "zechariah",
+  // Obadiah/Malachi — final-h and vowel spellings frequently vary in transcription.
+  obadia: "obadiah",
+  obediah: "obadiah",
+  // Hosea/Nahum — established transliteration variants.
+  hoshea: "hosea",
+  nahoum: "nahum",
+  malachai: "malachi",
+  malachias: "malachi",
+  // Zechariah — established English spelling variant.
+  zacharias: "zechariah",
   // Haggai — French single-g mishearing ("Aggée" -> "Agée").
   agee: "haggai",
   // Matthew — "Mathieu" (one "t") is the standard spelling of the common
@@ -412,6 +603,7 @@ export const PHONETIC_BOOK_ALIASES: Readonly<Record<string, string>> = {
   // Gospel's own "Matthieu" — same accepted-risk shape as "Jean"/"Marc"
   // above. Also the common English misspelling "Mathew".
   mathieu: "matthew",
+  matieu: "matthew",
   mathew: "matthew",
   // 1/2 Corinthians, Ephesians, Philippians, Colossians — Grammatical
   // singular, both languages, the same reasoning as Proverbs/Chronicles
@@ -421,6 +613,8 @@ export const PHONETIC_BOOK_ALIASES: Readonly<Record<string, string>> = {
   "2 corinthien": "2 corinthians",
   "1 corinthian": "1 corinthians",
   "2 corinthian": "2 corinthians",
+  "1 corintian": "1 corinthians",
+  "2 corintian": "2 corinthians",
   // Observed live (2026-10-05, French Deepgram): "Corentin", "Corretien",
   // "Corretine" for "Corinthiens". Numbered only, like every volume above: a
   // bare "Corentin 5" is ambiguous between the two epistles and stays unresolved.
@@ -442,6 +636,9 @@ export const PHONETIC_BOOK_ALIASES: Readonly<Record<string, string>> = {
   philippian: "philippians",
   colossien: "colossians",
   colossian: "colossians",
+  // Galatians — singular forms occur in both English and French speech.
+  galatian: "galatians",
+  galatien: "galatians",
   // 1/2 Thessalonians — Observed live (2026-09-29): "saloniciens" for
   // "Thessaloniciens" (the leading "Thes" dropped entirely), plus the
   // same singular-mishearing reasoning as the group above.
@@ -451,16 +648,28 @@ export const PHONETIC_BOOK_ALIASES: Readonly<Record<string, string>> = {
   "2 thessalonicien": "2 thessalonians",
   "1 thessalonian": "1 thessalonians",
   "2 thessalonian": "2 thessalonians",
+  "1 thessalonien": "1 thessalonians",
+  "2 thessalonien": "2 thessalonians",
   // 1/2 Timothy — French dropped-final-vowel mishearing ("Timothée" -> "Timothe").
   "1 timothe": "1 timothy",
   "2 timothe": "2 timothy",
+  "1 timotee": "1 timothy",
+  "2 timotee": "2 timothy",
+  "1 timoty": "1 timothy",
+  "2 timoty": "2 timothy",
   // Philemon — Observed live (2026-09-29): "Phélemone" for "Philémon".
   phelemone: "philemon",
+  // Observed in a final live transcript: "Phelemon" and the partial variant
+  // "Philimon" for the same book name.
+  phelemon: "philemon",
+  philimon: "philemon",
+  // Filemon is a common phonetic spelling of the French pronunciation.
+  filemon: "philemon",
   // Revelation — Grammatical: "Revelations" (with a final "s") is a very
   // common everyday English mis-pluralization of this book's actual,
   // singular title.
   revelations: "revelation",
-}
+})
 
 /**
  * Normalizes captured book text to a stable lookup key: trimmed, internal

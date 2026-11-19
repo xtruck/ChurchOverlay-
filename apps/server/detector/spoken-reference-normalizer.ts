@@ -1,3 +1,5 @@
+import { nullProto } from "../../../packages/shared/type-guards"
+
 /**
  * Rewrites the ways people actually *say* a Bible reference into the
  * compact written shape the detectors' patterns expect, before any pattern
@@ -66,18 +68,18 @@ const MULTI_WORD_BOOKS: ReadonlyArray<readonly [RegExp, string]> = [
   [/\bapocalypse\s+de\s+(?:saint\s+|st\.?\s+)?jean\b/giu, "Apocalypse"],
 ]
 
-const UNITS: Readonly<Record<string, number>> = {
+const UNITS: Readonly<Record<string, number>> = nullProto({
   zero: 0, un: 1, une: 1, deux: 2, trois: 3, quatre: 4, cinq: 5, six: 6, sept: 7, huit: 8, neuf: 9,
   dix: 10, onze: 11, douze: 12, treize: 13, quatorze: 14, quinze: 15, seize: 16,
   one: 1, two: 2, three: 3, four: 4, five: 5, seven: 7, eight: 8, nine: 9,
   ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16,
   seventeen: 17, eighteen: 18, nineteen: 19,
-}
-const TENS: Readonly<Record<string, number>> = {
+})
+const TENS: Readonly<Record<string, number>> = nullProto({
   vingt: 20, trente: 30, quarante: 40, cinquante: 50, soixante: 60,
   septante: 70, octante: 80, huitante: 80, nonante: 90,
   twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90,
-}
+})
 const HUNDRED = new Set(["cent", "cents", "hundred"])
 
 /** Tokens after which a following run of number words is read as a number. */
@@ -224,7 +226,7 @@ function rewriteOrdinals(text: string): string {
  * other meaning (Samuel, Rois, Chroniques, Corinthiens, Thessaloniciens,
  * Timothée) "un/une/one" is read as volume 1; Jean and Pierre stay excluded.
  */
-const CARDINAL_VOLUMES: Readonly<Record<string, string>> = {
+const CARDINAL_VOLUMES: Readonly<Record<string, string>> = nullProto({
   deux: "2",
   two: "2",
   trois: "3",
@@ -232,7 +234,7 @@ const CARDINAL_VOLUMES: Readonly<Record<string, string>> = {
   un: "1",
   une: "1",
   one: "1",
-}
+})
 
 /** Books that only exist in numbered volumes, so "un <book>" can only mean volume 1. */
 const VOLUME_ONLY_BOOKS =

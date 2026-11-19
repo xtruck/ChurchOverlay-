@@ -12,6 +12,9 @@
 // sent correctly via Sec-WebSocket-Protocol, below, exactly as required).
 (function () {
   const params = new URLSearchParams(window.location.search)
+  const natureBackgroundVideo = document.getElementById("nature-background-video")
+  const natureBackgroundRequested = params.get("background") === "nature"
+  const isGalleryPreview = new URLSearchParams(window.location.hash.slice(1)).get("token") === "gallery"
   // The token is in the URL fragment (#token=..., never sent to a server); ?token= is the older form.
   const token = new URLSearchParams(window.location.hash.slice(1)).get("token") || params.get("token")
   const wsPort = params.get("wsPort") || window.location.port
@@ -124,10 +127,6 @@
     "3 john": "3 Jean", jude: "Jude", revelation: "Apocalypse",
   }
 
-  function formatReference(ref) {
-    return capitalize(ref.book) + " " + ref.chapter + ":" + ref.verse
-  }
-
   // French-only display used to show the ENGLISH book name ("John 3:16")
   // under a French verse. The verse's own translation id says which
   // language the congregation is reading — Louis Segond 1910 is "ls1910".
@@ -135,55 +134,159 @@
   // domain) added alongside the existing Louis Segond aliases — both name
   // a French-language translation, so both should render French book names.
   const FRENCH_TRANSLATIONS = new Set(["ls1910", "lsg", "segond", "darby"])
-  function formatVerseReference(verse) {
-    const ref = verse.reference
-    if (verse.secondary) return formatBilingualReference(ref)
-    if (FRENCH_TRANSLATIONS.has(String(verse.translation || "").toLowerCase())) {
-      return (FRENCH_BOOK_NAMES[ref.book] || capitalize(ref.book)) + " " + ref.chapter + ":" + ref.verse
-    }
-    return formatReference(ref)
+  function languageOf(translation) {
+    return FRENCH_TRANSLATIONS.has(String(translation || "").toLowerCase()) ? "fr" : "en"
+  }
+
+  // Innovation pass (ARCHITECTURE.md section 145): a detected verse RANGE shows as one
+  // joined verse whose reference is the range's START; `verseEnd` on the payload turns
+  // the reference line into "Book C:V-E" ("Jean 3:16-18"). Additive: a payload without
+  // verseEnd renders exactly as before.
+  function referenceText(ref, language, verseEnd) {
+    const name = language === "fr" ? FRENCH_BOOK_NAMES[ref.book] || capitalize(ref.book) : capitalize(ref.book)
+    return name + " " + ref.chapter + ":" + ref.verse + (typeof verseEnd === "number" && verseEnd > ref.verse ? "-" + verseEnd : "")
   }
 
   // ARCHITECTURE.md section 72: a viewer confirmed both languages must be
-  // visible in bilingual mode, not just the verse text — the reference
-  // line was showing only the English book name even while the verse
-  // itself displayed in French, which read as a mismatch/bug ("I say
-  // Jean, it shows John"). verse.secondary only exists in bilingual mode
-  // (LocalizedVerseSource), so its presence is exactly the right signal —
-  // French first, matching the primary/secondary text hierarchy below.
-  function formatBilingualReference(ref) {
-    const frenchName = FRENCH_BOOK_NAMES[ref.book]
-    const frenchRef = (frenchName || capitalize(ref.book)) + " " + ref.chapter + ":" + ref.verse
-    return frenchRef + " · " + formatReference(ref)
+  // visible in bilingual mode, not just the verse text — "I say Jean, it shows
+  // John" read as a bug. The reference line is therefore built from one part
+  // per language, in the same order as the verse blocks (the primary language
+  // first, French in practice), each part tagged with its own language so it
+  // follows the same typographic rule as the verse text: English italic,
+  // French upright. Two identical parts (two French translations) show once.
+  function referenceParts(verse, primaryLanguage) {
+    const parts = [{ text: referenceText(verse.reference, primaryLanguage, verse.verseEnd), language: primaryLanguage }]
+    if (verse.secondary) {
+      const language = languageOf(verse.secondary.translation)
+      const text = referenceText(verse.reference, language, verse.verseEnd)
+      if (text !== parts[0].text) parts.push({ text, language })
+    }
+    return parts
   }
 
-  // Auto-shrink to fit: a long verse (a wordy translation, or a small OBS
-  // Browser Source size) must never run off-screen or get visually cut
-  // off — the CSS clamp() on #verse-text's font-size is viewport-width
-  // aware, but not text-length aware, so it alone can't guarantee this.
-  // Steps the font size down until the card fits within a safe fraction
-  // of the viewport, or hits a legibility floor (never shrinks forever).
+  // The reference line is written with text nodes and spans only (never innerHTML).
+  function renderReference(parts) {
+    refEl.textContent = ""
+    parts.forEach((part, i) => {
+      if (i > 0) refEl.appendChild(document.createTextNode(" \u00b7 "))
+      const span = document.createElement("span")
+      span.className = "vc-ref-part"
+      span.lang = part.language
+      span.dataset.language = part.language
+      span.textContent = part.text
+      refEl.appendChild(span)
+    })
+  }
+
+  // Auto-fit: the verse must fill the frame as widely as it can (it is read from
+  // the back of a church) without ever running off it or being clipped, for one
+  // short verse and for a long multi-verse passage alike. measureFit() picks the
+  // LARGEST font size at which the whole card (primary text, secondary text and
+  // reference, plus the design's own padding and chrome) fits a target box that
+  // is a fraction of the frame (VerseMotion.fitLimits: ~95% x 92% fullscreen,
+  // full-width x 50% lower-third). It is a binary search over the size, probing
+  // the live layout in one synchronous pass: no paint happens between probes,
+  // so nothing flickers, and ~9 probes replace the old pixel-by-pixel descent.
+  // It re-runs on text change (present()), resize, a layout or style change, and
+  // after web fonts load (their metrics differ from the fallback face).
   //
-  // Bilingual mode (ARCHITECTURE.md section 63.4) extends this to measure
-  // the COMBINED card height across both text blocks, not just the
-  // primary one — #verse-secondary-text's own font size is stepped down
-  // in proportion to the primary's, rather than left fixed, since a long
-  // secondary (English) translation can just as easily overflow on its
-  // own.
+  // Bilingual mode (ARCHITECTURE.md section 63.4): both blocks use the SAME
+  // font size (SECONDARY_FONT_RATIO = 1; italic, not size, tells the languages
+  // apart) and are measured together as one card.
   //
-  // ARCHITECTURE.md section 82 / 133: the caps and available area depend on
-  // the layout (fullscreen is read from across a room, so its cap is much
-  // larger) and, since section 133, on the card design too (the cinema
-  // letterbox takes frame height, poster/bold want bigger type). They come
-  // from the pure VerseMotion.fitLimits(), which is unit tested.
+  // ARCHITECTURE.md section 82 / 133: the box and the size range depend on the
+  // layout and the card design (the cinema letterbox takes frame height).
+  // They come from the pure VerseMotion.fitLimits() and largestFit(), which
+  // are unit tested.
   const Motion = window.VerseMotion
-  const SECONDARY_FONT_RATIO = 0.55 // matches the visual hierarchy already set in CSS's own clamp() sizing
+  // The second language is the same size as the first (italic tells them apart):
+  // a smaller English block was unreadable from the back of the room.
+  const SECONDARY_FONT_RATIO = 1
   const MIN_SECONDARY_FONT_PX = 10
+
+  // Section 147: the background comes from THREE places, most specific wins:
+  // the design gallery's override, the operator's `overlay:style` choice, and
+  // the legacy ?background=nature URL parameter (kept so existing OBS browser
+  // sources keep working). One resolver drives BOTH the nature video and the
+  // CSS scene layers below it. The list mirrors the contract's closed
+  // OVERLAY_BACKGROUNDS enum (duplicated here — no build step, same precedent
+  // as CARD_DESIGNS).
+  const BACKGROUNDS = ["none", "nature", "pentecost-fire", "winepress", "glory-rays", "living-water", "heavenly-clouds"]
+  let styleBackground = "none"
+  let galleryBackground = null // any valid id while the design gallery previews one
+  function effectiveBackground() {
+    if (galleryBackground) return galleryBackground
+    if (styleBackground !== "none") return styleBackground
+    if (natureBackgroundRequested) return "nature"
+    return "none"
+  }
+
+  function syncBackgrounds() {
+    const root = document.documentElement
+    const bg = effectiveBackground()
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    // Scenes: exactly one data-scene attribute, only ever a closed-list id.
+    if (bg !== "none" && bg !== "nature") root.setAttribute("data-scene", bg)
+    else root.removeAttribute("data-scene")
+    root.classList.toggle("nature-background", bg === "nature")
+    root.classList.toggle("nature-background-fallback", bg === "nature" && reducedMotion)
+    root.classList.remove("nature-video-ready")
+    if (bg !== "nature" || reducedMotion) {
+      natureBackgroundVideo.pause()
+      natureBackgroundVideo.removeAttribute("src")
+      delete natureBackgroundVideo.dataset.localSource
+      natureBackgroundVideo.load()
+      return
+    }
+    if (natureBackgroundVideo.dataset.localSource === "loaded") return
+    const source = typeof window.__galleryNatureVideoSrc === "string"
+      ? window.__galleryNatureVideoSrc
+      : "backgrounds/nature-loop.mp4"
+    const url = new URL(source, document.baseURI)
+    const sameProtocol = url.protocol === window.location.protocol
+    if (!sameProtocol || (url.protocol !== "file:" && url.origin !== window.location.origin)) {
+      root.classList.add("nature-background-fallback")
+      return
+    }
+    natureBackgroundVideo.dataset.localSource = "loaded"
+    natureBackgroundVideo.src = url.href
+    natureBackgroundVideo.load()
+    const markReady = () => {
+      if (effectiveBackground() === "nature") {
+        root.classList.add("nature-video-ready")
+        root.classList.remove("nature-background-fallback")
+      }
+    }
+    natureBackgroundVideo.addEventListener("playing", markReady, { once: true })
+    natureBackgroundVideo.addEventListener("error", () => {
+      root.classList.remove("nature-video-ready")
+      root.classList.add("nature-background-fallback")
+    }, { once: true })
+    const playback = natureBackgroundVideo.play()
+    if (playback && typeof playback.catch === "function") {
+      playback.catch(() => root.classList.add("nature-background-fallback"))
+    }
+  }
+  if (isGalleryPreview) {
+    // The design gallery previews any single background over its sample verse.
+    window.__setGalleryBackground = (id) => {
+      galleryBackground = typeof id === "string" && BACKGROUNDS.includes(id) && id !== "none" ? id : null
+      syncBackgrounds()
+    }
+    // Older gallery builds only knew the nature toggle.
+    window.__setGalleryNatureBackground = (enabled) => {
+      window.__setGalleryBackground(enabled === true ? "nature" : null)
+    }
+  }
+  const natureMotionPreference = window.matchMedia("(prefers-reduced-motion: reduce)")
+  if (natureMotionPreference.addEventListener) natureMotionPreference.addEventListener("change", syncBackgrounds)
+  syncBackgrounds()
 
   function clearVerseSizing() {
     textEl.style.fontSize = ""
     secondaryTextEl.style.fontSize = ""
     verseCardEl.style.removeProperty("--fit-scale")
+    delete verseCardEl.dataset.fitLimited
   }
 
   function setFontSize(fontSize) {
@@ -196,28 +299,59 @@
   }
 
   // The measuring half of the auto-fit. Runs only while no reveal animation is
-  // in flight: transformed words would inflate the card's scroll size.
+  // in flight: transformed words would inflate the card's scroll size. Measure
+  // text, not the card itself: decorative pseudo-elements (for example the
+  // halo's outer glow) may intentionally extend beyond the full-width band.
+  function contentScrollWidth() {
+    return Math.max(
+      textEl.scrollWidth,
+      secondaryTextEl.classList.contains("visible") ? secondaryTextEl.scrollWidth : 0,
+      refEl.scrollWidth,
+    )
+  }
+
+  // Height the card needs for its content: the bottom of the last in-flow
+  // child plus the card's own bottom padding and border. Not card.scrollHeight:
+  // a design's decorative glow (an absolutely positioned ::before that extends
+  // past the card, clipped by its overflow: hidden) inflates scrollHeight and
+  // made those designs pick needlessly small type.
+  const FIT_CHILDREN = [textEl, secondaryTextEl, document.getElementById("verse-ornament"), document.getElementById("verse-ref-row")]
+  function cardContentHeight() {
+    let bottom = 0
+    for (const el of FIT_CHILDREN) {
+      if (el && el.offsetParent) bottom = Math.max(bottom, el.offsetTop + el.offsetHeight)
+    }
+    const cs = getComputedStyle(verseCardEl)
+    return bottom + parseFloat(cs.paddingBottom) + parseFloat(cs.borderBottomWidth)
+  }
+
   function measureFit() {
-    const limits = Motion.fitLimits(verseEl.classList.contains("fullscreen"), currentCard)
+    const limits = Motion.fitLimits(verseEl.classList.contains("fullscreen"), currentCard, { height: window.innerHeight })
     const maxWidth = window.innerWidth * limits.maxWidthFraction
     const maxHeight = window.innerHeight * limits.maxHeightFraction
     clearVerseSizing()
-    let fontSize = limits.maxFontPx
-    setFontSize(fontSize)
-    while ((verseCardEl.scrollWidth > maxWidth || verseCardEl.scrollHeight > maxHeight) && fontSize > limits.minFontPx) {
-      fontSize -= 1
-      setFontSize(fontSize)
+    const fits = (px) => {
+      setFontSize(px)
+      return contentScrollWidth() <= maxWidth + 0.5 && cardContentHeight() <= maxHeight + 0.5
     }
+    let fontSize = Motion.largestFit(limits.minFontPx, limits.maxFontPx, fits)
+    // Wrapping is not perfectly monotone in the size (balanced lines, the
+    // design's own paddings): confirm the pick and step down a few pixels if a
+    // quirk of the search left it just over the box. Bounded.
+    for (let guard = 0; guard < 48 && fontSize > limits.minFontPx && !fits(fontSize); guard++) fontSize -= 1
+    setFontSize(fontSize)
 
-    // Extremely long bilingual passages can still exceed the viewport at the
+    // Extremely long bilingual passages can still exceed the box at the
     // legibility floor. Scale the complete card as a last resort rather than
     // clipping or allowing it to escape the screen.
-    const overflowWidth = verseCardEl.scrollWidth / maxWidth
-    const overflowHeight = verseCardEl.scrollHeight / maxHeight
+    const overflowWidth = contentScrollWidth() / maxWidth
+    const overflowHeight = cardContentHeight() / maxHeight
     const scale = Math.min(1, 1 / Math.max(overflowWidth, overflowHeight))
-    if (scale < 1) verseCardEl.style.setProperty("--fit-scale", String(scale))
+    if (fontSize <= limits.minFontPx) verseCardEl.dataset.fitLimited = "true"
+    else delete verseCardEl.dataset.fitLimited
+    // Sub-pixel rounding noise (a 0.9996 ratio) is not an overflow: it would only blur the type.
+    if (scale < 0.995) verseCardEl.style.setProperty("--fit-scale", String(scale))
   }
-
   let refitAfterSettle = false
   function fitVerseText() {
     if (!verseEl.classList.contains("visible")) return
@@ -260,10 +394,10 @@
 
   // Verse text is written ONLY through textContent / text nodes, one span per
   // reveal unit (AGENTS.md section 20, SECURITY.md: never innerHTML).
-  function renderWords(el, text) {
+  function renderWords(el, text, withDropCap) {
     el.textContent = ""
     const units = Motion.splitRevealUnits(text)
-    const cap = units.length ? Motion.splitDropCap(units[0]) : null
+    const cap = withDropCap && units.length ? Motion.splitDropCap(units[0]) : null
     const frag = document.createDocumentFragment()
     if (cap) {
       // Decorative copy of the initial for the manuscript design (hidden by
@@ -294,17 +428,29 @@
   }
 
   function renderVerseContent(verse) {
-    // The page is declared English; say so when the verse is French (screen readers, hyphenation).
-    textEl.lang = FRENCH_TRANSLATIONS.has(String(verse.translation || "").toLowerCase()) ? "fr" : "en"
-    wordEls = renderWords(textEl, String(verse.text))
-    refEl.textContent = formatVerseReference(verse)
+    // The page is declared English; say so when the verse is French (screen
+    // readers, hyphenation). The language drives the typography too: CSS keys
+    // the English italic off data-language, never off primary/secondary.
+    // A bilingual payload whose primary carries no translation id is the
+    // French-primary pair (section 63.4).
+    const primaryLanguage = verse.secondary && !verse.translation ? "fr" : languageOf(verse.translation)
+    textEl.lang = primaryLanguage
+    textEl.dataset.language = primaryLanguage
+    verseEl.classList.toggle("bilingual", Boolean(verse.secondary))
+    wordEls = renderWords(textEl, String(verse.text), true)
+    renderReference(referenceParts(verse, primaryLanguage))
 
     if (verse.secondary) {
-      secondaryTextEl.lang = "en"
-      secondaryTextEl.textContent = verse.secondary.text
+      const secondaryLanguage = languageOf(verse.secondary.translation)
+      secondaryTextEl.lang = secondaryLanguage
+      secondaryTextEl.dataset.language = secondaryLanguage
+      // Same word-by-word reveal as the primary block, continuing after it.
+      wordEls = wordEls.concat(renderWords(secondaryTextEl, String(verse.secondary.text), false))
       secondaryTextEl.classList.add("visible")
     } else {
       secondaryTextEl.classList.remove("visible")
+      secondaryTextEl.removeAttribute("data-language")
+      secondaryTextEl.removeAttribute("lang")
       secondaryTextEl.textContent = ""
     }
   }
@@ -431,8 +577,8 @@
   // branding:update is still received for older servers but no longer drives
   // anything visual: organization name and accent now live in the style.
   // Every non-classic design (classic is the class-less default look).
-  // Section 133 added cinema, manuscript, stained, poster, split and bold.
-  const CARD_DESIGNS = ["banner", "minimal", "elegant", "glass", "ribbon", "cinema", "manuscript", "stained", "poster", "split", "bold"]
+  // Section 133 added the cinematic set; its follow-up adds halo, signal and folio.
+  const CARD_DESIGNS = ["banner", "minimal", "elegant", "glass", "ribbon", "cinema", "manuscript", "stained", "poster", "split", "bold", "halo", "signal", "folio"]
   const CARD_CLASSES = CARD_DESIGNS.map((d) => "tpl-" + d)
   const BRAND_FONTS = {
     serif: '"Instrument Serif", Georgia, "Times New Roman", serif',
@@ -472,6 +618,11 @@
     if (!c || ![c.backdrop, c.card, c.text, c.textSecondary, c.accent, c.border].every((v) => typeof v === "string" && HEX.test(v))) return
     lastStyleRevision = style.revision
 
+    // Section 147: the operator's background choice (closed-list validated;
+    // anything else keeps the plain palette gradient).
+    styleBackground = BACKGROUNDS.includes(style.background) ? style.background : "none"
+    syncBackgrounds()
+
     setVar("--accent", c.accent)
     setVar("--accent-rgb", rgbTriple(c.accent))
     setVar("--ov-card-rgb", rgbTriple(c.card))
@@ -483,7 +634,7 @@
     setVar("--ov-backdrop-2", darken(c.backdrop))
     // Dark text sits on a light card: the heavy black halo made it look smudged,
     // so it gets a faint light edge instead. Light text keeps the legibility halo.
-    setVar("--ov-shadow", isDark(c.text) ? "0 1px 1px rgba(255, 255, 255, 0.35)" : "0 2px 10px rgba(0, 0, 0, 0.85)")
+    setVar("--ov-shadow", isDark(c.text) ? "0 0.015em 0.02em rgba(255, 255, 255, 0.35)" : "0 0.03em 0.1em rgba(0, 0, 0, 0.85), 0 0 0.4em rgba(0, 0, 0, 0.4)")
 
     setVar("--ov-text2-rgb", rgbTriple(c.textSecondary))
     setVar("--ov-border-rgb", rgbTriple(c.border))
@@ -567,12 +718,24 @@
     present(DESIGN_SAMPLE, kind === "resync" ? "enter" : kind)
   }
 
-  let resizeTimer = 0
-  window.addEventListener("resize", () => {
-    window.clearTimeout(resizeTimer)
-    resizeTimer = window.setTimeout(() => fitVerseText(), 80)
-  })
-  if (document.fonts?.ready) document.fonts.ready.then(() => fitVerseText())
+  // One refit per frame however many resize events arrive (an OBS source drag,
+  // a dashboard preview being resized): fitVerseText() itself defers while a
+  // reveal animation is in flight and refits when it settles.
+  let refitFrame = 0
+  function scheduleRefit() {
+    if (refitFrame) return
+    refitFrame = requestAnimationFrame(() => {
+      refitFrame = 0
+      fitVerseText()
+    })
+  }
+  window.addEventListener("resize", scheduleRefit)
+  if (document.fonts) {
+    // The first verse can arrive before the web fonts do: refit once they have
+    // loaded, since their metrics differ from the fallback face the first fit used.
+    if (document.fonts.ready) document.fonts.ready.then(scheduleRefit)
+    if (document.fonts.addEventListener) document.fonts.addEventListener("loadingdone", scheduleRefit)
+  }
 
   // Media Library (ARCHITECTURE.md section 60) had server/dashboard support
   // fully built but no audience-facing display at all until this. Image/
@@ -809,6 +972,17 @@
     canvasLayerEl.innerHTML = ""
   }
 
+  function clearAllContent() {
+    clearVerse()
+    clearMedia()
+    clearPoster()
+    clearAnnouncement()
+    clearDefinition()
+    clearOutline()
+    clearCanvas()
+  }
+  const disconnectFailsafe = Motion.createDisconnectFailsafe(clearAllContent)
+
   function connect() {
     if (!token) {
       setStatus("no viewer token in URL (add ?token=...)", false, true)
@@ -828,18 +1002,7 @@
     const ws = new WebSocket("ws://" + window.location.hostname + ":" + wsPort, [token])
 
     ws.addEventListener("open", () => {
-      // While this socket was down the operator may have cleared the screen,
-      // and a clear sent to nobody is lost. The server's connect-time resync
-      // re-sends verse/media/poster only if one is active, and never sends a
-      // clear — so without this, a verse cleared during a Wi-Fi blip stays on
-      // the stream. Reset exactly the channels the server resyncs; the open
-      // event fires before any message of this connection, so a still-active
-      // item is simply shown again a moment later.
-      if (!designPreview) {
-        clearVerse()
-        clearMedia()
-        clearPoster()
-      }
+      disconnectFailsafe.cancel()
       lastStyleRevision = -1
       reconnectAttempts = 0
       // Section 133: a verse re-sent right after this (connect-time resync,
@@ -848,6 +1011,7 @@
       setStatus("connected", true)
     })
     ws.addEventListener("close", () => {
+      if (!designPreview) disconnectFailsafe.start()
       const delay = nextReconnectDelay()
       setStatus("disconnected — retrying in " + Math.round(delay / 1000) + "s…")
       setTimeout(connect, delay)
@@ -862,7 +1026,12 @@
       }
       // The design preview shows only its placeholder, never live content.
       if (designPreview && (message.type === "verse:show" || message.type === "verse:clear")) return
-      if (message.type === "verse:show") {
+      // A payload without a reference is malformed (remote.js and the
+      // dashboard guard the same way): referenceText() would throw on
+      // ref.book of undefined INSIDE this listener, killing the rest of
+      // the message switch (media, announcements, outline) with it.
+      // Ignore it and stay on the last good verse.
+      if (message.type === "verse:show" && message.payload && message.payload.reference) {
         showVerse(message.payload)
       } else if (message.type === "verse:clear") {
         clearVerse()
@@ -913,13 +1082,6 @@
       clearOutline()
       clearCanvas()
     }
-  })
-
-  // Re-fit on resize (the overlay preview window is resizable; a fixed
-  // OBS Browser Source size won't fire this, which is fine — it only
-  // needs to fit once, at whatever size it was given).
-  window.addEventListener("resize", () => {
-    if (verseEl.classList.contains("visible")) fitVerseText()
   })
 
   if (designPreview) showDesignSample()

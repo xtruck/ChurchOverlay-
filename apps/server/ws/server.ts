@@ -1,16 +1,84 @@
-import { WebSocketServer, type WebSocket } from "ws"
-import type { Server as HttpServer } from "node:http"
+import { WebSocketServer, type VerifyClientCallbackAsync, type WebSocket } from "ws"
+import type { Server as HttpServer, IncomingMessage, OutgoingHttpHeaders } from "node:http"
 import type { AddressInfo } from "node:net"
 import type { AudioFrame, WsMessage, WsRole } from "../../../packages/contracts"
 import { decodeAudioFrame } from "../../../packages/shared/audio-frame-codec"
 import { validateWsMessage } from "./action-registry"
-import { createHash, timingSafeEqual } from "node:crypto"
+import { HandshakeRateLimiter, offeredRole, type HandshakeRateLimitOptions } from "./handshake-rate-limiter"
+import { normalizeRemoteAddress } from "../../../packages/shared/ip-utils"
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto"
+
+/**
+ * Per-role OUTBOUND allow-list (AUDIT S-01). A viewer-token client (overlay, stage, live page, an
+ * OBS browser source) may only ever receive the events those pages render. Everything else
+ * (raw microphone transcripts, pending verses, near-misses, translations, mic health, rundown,
+ * sermon notes, lookup-failure notices, ...) is operator-only. Enforced here, at the single send
+ * point, so a future caller that mistakenly uses broadcast() still cannot leak it to a viewer.
+ * Derived from what apps/overlay, apps/stage and apps/live actually handle.
+ */
+export const VIEWER_OUTBOUND_EVENTS: ReadonlySet<string> = new Set([
+  "verse:show",
+  "verse:clear",
+  "media:show",
+  "media:clear",
+  "announcement:show",
+  "announcement:clear",
+  "definition:show",
+  "definition:clear",
+  "canvas:show",
+  "canvas:clear",
+  "poster:show",
+  "poster:clear",
+  "layout:update",
+  "branding:update",
+  "overlay:style",
+  "outline:show",
+  "outline:clear",
+  "timer:state",
+  "stage:alert",
+  "stage:clear-alert",
+  "status:update",
+])
 
 /** Constant-time token comparison (hashing first makes the lengths equal), as the HTTP API already does. */
 function tokenEquals(offered: string, expected: string): boolean {
   const a = createHash("sha256").update(offered).digest()
   const b = createHash("sha256").update(expected).digest()
   return timingSafeEqual(a, b)
+}
+
+/** Per-connection round-trip latency state. Internal to the server: the
+ * timestamp of the last latency ping (null when none is in flight) stays
+ * inside this process and is never exposed through a snapshot. */
+type ClientLatencyState = {
+  /** Latest round-trip duration in milliseconds, null while the client has not answered a ping yet. */
+  lastMs: number | null
+  /** Sliding-window samples of round-trip duration, oldest first. */
+  samples: number[]
+  /** Number of samples that caused the window to drop the oldest when full. */
+  drops: number
+  /** Sliding window capacity for this client's latency samples. */
+  capacity: number
+  /** Send time of the in-flight latency ping, null when none is in flight. */
+  sentAt: number | null
+}
+
+/**
+ * Plain-data latency snapshot for ONE connected client, returned by
+ * ChurchOverlayWsServer#getClientLatency. Contains no socket references, so
+ * it is safe to hand across the Electron IPC boundary to the dashboard.
+ */
+export type WsClientLatencySnapshot = {
+  /** The connection's negotiated role, for labeling the dashboard panel. */
+  readonly role: WsRole
+  /** Latest round-trip duration in milliseconds, null while unanswered. */
+  readonly lastMs: number | null
+  /** Sliding-window samples of round-trip duration, oldest first. */
+  readonly samples: readonly number[]
+  /** Number of samples that caused the window to drop the oldest when full. */
+  readonly drops: number
+  /** Sliding window capacity for this client's latency samples. */
+  readonly capacity: number
 }
 
 export type ServerTokens = {
@@ -89,6 +157,31 @@ export type ChurchOverlayWsServerOptions = {
    * Defaults to 100. `0` disables the limit.
    */
   readonly maxCommandsPerSecond?: number
+
+  /**
+   * S-03: per-client-IP limiting of the WS handshake (attempts per
+   * minute, self-inflicted ban on flooding). Loopback is exempt. Pass
+   * `maxAttemptsPerMinute: 0` to disable. Defaults to the
+   * DEFAULT_HANDSHAKE_RATE_LIMIT thresholds.
+   */
+  readonly handshakeRateLimit?: HandshakeRateLimitOptions
+
+  /**
+   * S-03: connection slots held back for operators, so saturating the
+   * server with viewer connections (overlay pages, a flood of phones)
+   * can never lock out the one client that controls the service. When
+   * the cap is reached, an ARRIVING OPERATOR evicts the oldest viewer
+   * instead of being refused. Defaults to 1. `0` restores the old
+   * first-come behavior.
+   */
+  readonly reservedOperatorSlots?: number
+
+  /**
+   * How many round-trip samples to keep per connected client for latency history. Defaults to 60 (one second of samples at a 10 Hz poll). Bounded by AGENTS.md section 36.
+   */
+  readonly wsLatencyCapacity?: number
+  /** How often to sample each client's round-trip latency (a ping is sent and the pong arrival minus ping send time is measured). Defaults to 10 Hz. `0` disables client-side latency sampling (the server-side heartbeat still runs, but per-client measurements stop). */
+  readonly wsLatencySampleIntervalMs?: number
 }
 
 const DEFAULT_HOST = "127.0.0.1"
@@ -96,6 +189,17 @@ const DEFAULT_HEARTBEAT_INTERVAL_MS = 30_000
 const DEFAULT_MAX_BUFFERED_BYTES = 4 * 1024 * 1024
 const DEFAULT_MAX_CONNECTIONS = 64
 const DEFAULT_MAX_COMMANDS_PER_SECOND = 100
+const DEFAULT_RESERVED_OPERATOR_SLOTS = 1
+const DEFAULT_WS_LATENCY_SAMPLE_INTERVAL_MS = 100
+const DEFAULT_WS_LATENCY_CAPACITY = 60
+
+/**
+ * Random payload attached to every latency ping. `ws` clients echo a ping's
+ * payload back verbatim in their pong, which is how the pong handler tells
+ * a latency pong apart from the heartbeat's payload-less ping (and from any
+ * unsolicited pong a rogue client might send).
+ */
+const PING_PONG_TOKEN = randomBytes(8)
 
 /**
  * Hard cap on a single inbound WebSocket message. `ws` defaults to 100 MiB,
@@ -132,7 +236,7 @@ const MAX_MESSAGE_BYTES = 1024 * 1024
  */
 export class ChurchOverlayWsServer {
   private readonly wss: WebSocketServer
-  private readonly tokens: ServerTokens
+  private tokens: ServerTokens
   private readonly onCommand: ChurchOverlayWsServerOptions["onCommand"]
   private readonly onAudioFrame: ChurchOverlayWsServerOptions["onAudioFrame"]
   private readonly onRejected: ChurchOverlayWsServerOptions["onRejected"]
@@ -140,11 +244,39 @@ export class ChurchOverlayWsServer {
   private readonly clientRoles = new WeakMap<WebSocket, WsRole>()
   /** Clients that have shown a sign of life (pong or any message) since the last heartbeat sweep. */
   private readonly aliveClients = new WeakSet<WebSocket>()
+  /** Deferred timeout checks let already-queued pong/message events run before a client is dropped. */
+  private readonly pendingHeartbeatChecks = new WeakSet<WebSocket>()
   private readonly maxBufferedBytes: number
   private readonly maxConnections: number
   private readonly maxCommandsPerSecond: number
+  /** S-03: per-address handshake limiter and the slots held back for operators. */
+  private readonly handshakeLimiter: HandshakeRateLimiter
+  private readonly reservedOperatorSlots: number
+  /**
+   * Connection-order bookkeeping for the operator-eviction rule (S-03):
+   * arrival timestamp per admitted client, so an arriving operator can
+   * evict the OLDEST viewer when the cap is reached. A Map (not a
+   * WeakMap) because it must be iterated; entries are deleted in the
+   * socket's close handler, so it can never outlive its connection or
+   * grow past maxConnections (AGENTS.md section 36).
+   */
+  private readonly connectedAt = new Map<WebSocket, number>()
   /** Per-connection one-second command window. */
   private readonly commandWindows = new WeakMap<WebSocket, { start: number; count: number }>()
+  /**
+   * Per-connection round-trip latency history: the time between a latency
+   * ping we sent and the pong that echoed its payload back. A Map (not a
+   * WeakMap) because the public snapshot must iterate it; entries are
+   * deleted in the socket's close handler, so it can never outlive its
+   * connection or grow past maxConnections (AGENTS.md section 36).
+   */
+  private readonly clientLatency = new Map<WebSocket, ClientLatencyState>()
+  /** Sliding-window capacity for each client's latency samples. */
+  private readonly clientLatencyCapacity: number
+  /** The interval used to sample per-client round-trip latency. `0` = paused. */
+  private readonly wsLatencySampleIntervalMs: number
+  /** Repeating timer sending latency pings; cleared in close(). */
+  private wsLatencyTimer: ReturnType<typeof setInterval> | undefined
   private heartbeatTimer: ReturnType<typeof setInterval> | undefined
 
   /** Resolves once the server is actually listening. */
@@ -159,18 +291,28 @@ export class ChurchOverlayWsServer {
     this.maxBufferedBytes = options.maxBufferedBytes ?? DEFAULT_MAX_BUFFERED_BYTES
     this.maxConnections = options.maxConnections ?? DEFAULT_MAX_CONNECTIONS
     this.maxCommandsPerSecond = options.maxCommandsPerSecond ?? DEFAULT_MAX_COMMANDS_PER_SECOND
+    this.handshakeLimiter = new HandshakeRateLimiter(options.handshakeRateLimit ?? {})
+    this.reservedOperatorSlots = Math.max(0, options.reservedOperatorSlots ?? DEFAULT_RESERVED_OPERATOR_SLOTS)
+    this.clientLatencyCapacity = options.wsLatencyCapacity ?? DEFAULT_WS_LATENCY_CAPACITY
+    this.wsLatencySampleIntervalMs = options.wsLatencySampleIntervalMs ?? DEFAULT_WS_LATENCY_SAMPLE_INTERVAL_MS
 
     this.wss = options.server
       ? new WebSocketServer({
           server: options.server,
           maxPayload: MAX_MESSAGE_BYTES,
           handleProtocols: (protocols) => this.resolveProtocol(protocols),
+          // VerifyClientCallbackAsync is documented as deprecated by ws, but
+          // it is the only hook that answers an unwanted UPGRADE with a real
+          // HTTP status (429/503) instead of leaving the socket hanging —
+          // exactly what a rate limiter owes the caller (S-03).
+          verifyClient: ((info, callback) => this.verifyHandshake(info.req, callback)) as VerifyClientCallbackAsync,
         })
       : new WebSocketServer({
           host: options.host ?? DEFAULT_HOST,
           port: options.port,
           maxPayload: MAX_MESSAGE_BYTES,
           handleProtocols: (protocols) => this.resolveProtocol(protocols),
+          verifyClient: ((info, callback) => this.verifyHandshake(info.req, callback)) as VerifyClientCallbackAsync,
         })
 
     this.ready =
@@ -195,6 +337,128 @@ export class ChurchOverlayWsServer {
       // The heartbeat must never be the thing keeping the process alive.
       this.heartbeatTimer.unref()
     }
+
+    const sampleIntervalMs = options.wsLatencySampleIntervalMs ?? DEFAULT_WS_LATENCY_SAMPLE_INTERVAL_MS
+    if (sampleIntervalMs > 0) {
+      this.wsLatencyTimer = setInterval(() => this.sampleClientLatency(), sampleIntervalMs)
+      this.wsLatencyTimer.unref()
+    }
+  }
+
+  /**
+   * Live token replacement (S-04: rotation/révocation sans redémarrer le
+   * serveur). Chaque jeton qui CHANGE révoque immédiatement les sessions
+   * déjà authentifiées avec l'ancien : les clients de ce rôle sont
+   * terminés (et rapportés via onRejected, jamais silencieusement), ils
+   * se reconnectent alors avec le nouveau jeton. Un jeton inchangé ne
+   * touche pas ses sessions existantes — la rotation d'un seul rôle ne
+   * déconnecte jamais l'autre.
+   *
+   * La comparaison est faite en clair côté serveur uniquement (les deux
+   * valeurs sont déjà en mémoire ici) ; aucune valeur ne sort de la
+   * classe, ni dans les rapports onRejected ni dans les snapshots.
+   */
+  setTokens(tokens: ServerTokens): void {
+    const operatorChanged = !tokenEquals(tokens.operatorToken, this.tokens.operatorToken)
+    const viewerChanged = !tokenEquals(tokens.viewerToken, this.tokens.viewerToken)
+    this.tokens = { operatorToken: tokens.operatorToken, viewerToken: tokens.viewerToken }
+
+    if (operatorChanged) this.terminateRole("operator", "operator token rotated: session revoked")
+    if (viewerChanged) this.terminateRole("viewer", "viewer token rotated: session revoked")
+  }
+
+  /** The tokens the server currently accepts (plain values — operator-side only, never logged). */
+  getTokens(): ServerTokens {
+    return this.tokens
+  }
+
+  private terminateRole(role: WsRole, reason: string): void {
+    for (const client of this.wss.clients) {
+      if (client.readyState !== client.OPEN) continue
+      if (this.clientRoles.get(client) !== role) continue
+      this.onRejected?.(reason, role)
+      client.terminate()
+    }
+  }
+
+  /** Currently OPEN connections — a socket being torn down (rotated token,
+   * evicted viewer) is CLOSED immediately by terminate() and must not count
+   * toward capacity, or the freshly admitted replacement would be refused
+   * by the backstop below. */
+  private openClientCount(): number {
+    let open = 0
+    for (const client of this.wss.clients) {
+      if (client.readyState === client.OPEN) open += 1
+    }
+    return open
+  }
+
+  /** The longest-connected OPEN viewer, for the S-03 operator-eviction rule. */
+  private oldestOpenViewer(): WebSocket | null {
+    let oldest: WebSocket | null = null
+    let oldestAt = Infinity
+    for (const client of this.wss.clients) {
+      if (client.readyState !== client.OPEN) continue
+      if (this.clientRoles.get(client) !== "viewer") continue
+      const at = this.connectedAt.get(client) ?? Infinity
+      if (at < oldestAt) {
+        oldestAt = at
+        oldest = client
+      }
+    }
+    return oldest
+  }
+
+  /**
+   * S-03 gate, BEFORE the token handshake completes: per-address rate
+   * limiting of the handshake itself, then role-aware capacity — viewer
+   * connections stop at (maxConnections - reservedOperatorSlots) so a
+   * flood of viewers can never lock out the operator, and an operator
+   * arriving at the cap evicts the OLDEST viewer instead of being
+   * refused. Unregistered tokens are not admitted here: they consume one
+   * rate-limit attempt and are then rejected by the existing
+   * handleProtocols/handleConnection path, unchanged.
+   */
+  private verifyHandshake(
+    req: IncomingMessage,
+    callback: (res: boolean, code?: number, message?: string, headers?: OutgoingHttpHeaders) => void
+  ): void {
+    const remote = req.socket?.remoteAddress
+    const outcome = this.handshakeLimiter.attempt(remote)
+    if (!outcome.allowed) {
+      // The address is reported for the operator's diagnosis; the offered
+      // tokens never are (they are attacker-controlled values).
+      this.onRejected?.(`${outcome.reason} (${normalizeRemoteAddress(remote)})`, null)
+      callback(false, 429, "Too Many Requests", { "Retry-After": String(outcome.retryAfterSeconds) })
+      return
+    }
+
+    const role = offeredRole(req.headers["sec-websocket-protocol"], this.tokens, tokenEquals)
+    if (role === "viewer") {
+      const ceiling = this.maxConnections - this.reservedOperatorSlots
+      if (this.openClientCount() >= ceiling) {
+        this.onRejected?.(
+          this.reservedOperatorSlots > 0
+            ? "connection refused: viewer slots are full (operator slots reserved)"
+            : `connection refused: more than ${this.maxConnections} clients connected`,
+          "viewer"
+        )
+        callback(false, 503, "Service Unavailable")
+        return
+      }
+    } else if (role === "operator" && this.openClientCount() >= this.maxConnections) {
+      const evicted = this.reservedOperatorSlots > 0 ? this.oldestOpenViewer() : null
+      if (evicted) {
+        this.onRejected?.("viewer evicted for an arriving operator", "viewer")
+        evicted.terminate()
+      } else {
+        this.onRejected?.(`connection refused: more than ${this.maxConnections} clients connected`, null)
+        callback(false, 503, "Service Unavailable")
+        return
+      }
+    }
+
+    callback(true)
   }
 
   /** The actual bound port — useful when constructed with port: 0. */
@@ -210,7 +474,6 @@ export class ChurchOverlayWsServer {
   broadcast(message: WsMessage): void {
     this.broadcastWhere(message, () => true)
   }
-
   /**
    * Sends an event to operator-role clients only (ARCHITECTURE.md section 125):
    * content meant for the person running the service, never for the overlay,
@@ -221,10 +484,21 @@ export class ChurchOverlayWsServer {
   }
 
   private broadcastWhere(message: WsMessage, wants: (role: WsRole | undefined) => boolean): void {
-    const payload = JSON.stringify(message)
+    // Encoded ONCE per broadcast, not once per client: ws UTF-8-encodes every
+    // string payload at send() time, so a string here cost one encode per
+    // connected client. The buffer is sent with binary:false, which keeps it
+    // a TEXT frame on the wire (verified against the ws library: clients
+    // receive a string, so the browser pages' JSON.parse(event.data) and
+    // every ws client test are unaffected) — the frame type, not the payload
+    // type, is what decides how the data is delivered.
+    const payload = Buffer.from(JSON.stringify(message), "utf8")
+    const viewerMayReceive = VIEWER_OUTBOUND_EVENTS.has(message.type)
     for (const client of this.wss.clients) {
       if (client.readyState !== client.OPEN) continue
-      if (!wants(this.clientRoles.get(client))) continue
+      const clientRole = this.clientRoles.get(client)
+      if (!wants(clientRole)) continue
+      // S-01: a viewer never receives an event outside the allow-list, whoever asked for the broadcast.
+      if (clientRole !== "operator" && !viewerMayReceive) continue
 
       // A client that stopped reading (stalled network, suspended tab) makes
       // ws queue every further send in memory. Past the bound, drop the
@@ -239,7 +513,7 @@ export class ChurchOverlayWsServer {
       }
 
       try {
-        client.send(payload)
+        client.send(payload, { binary: false })
       } catch (err) {
         this.onRejected?.(
           `broadcast send failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -254,6 +528,10 @@ export class ChurchOverlayWsServer {
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer)
       this.heartbeatTimer = undefined
+    }
+    if (this.wsLatencyTimer) {
+      clearInterval(this.wsLatencyTimer)
+      this.wsLatencyTimer = undefined
     }
     return new Promise((resolve, reject) => {
       // wss.close() only stops accepting NEW connections and then waits for
@@ -293,13 +571,90 @@ export class ChurchOverlayWsServer {
       if (role === undefined) continue
 
       if (!this.aliveClients.has(client)) {
-        this.onRejected?.("connection timed out: no pong since the previous heartbeat", role)
-        client.terminate()
+        if (this.pendingHeartbeatChecks.has(client)) continue
+        this.pendingHeartbeatChecks.add(client)
+        setImmediate(() => {
+          this.pendingHeartbeatChecks.delete(client)
+          if (this.clientRoles.get(client) === undefined || client.readyState !== client.OPEN) return
+          if (this.aliveClients.has(client)) return
+          this.onRejected?.("connection timed out: no pong since the previous heartbeat", role)
+          client.terminate()
+        })
         continue
       }
 
       this.aliveClients.delete(client)
       if (client.readyState === client.OPEN) client.ping()
+    }
+  }
+
+  /**
+   * Plain-data snapshot of every admitted client's round-trip latency
+   * window, oldest sample first (most recent last). A client that has not
+   * answered a latency ping yet reports lastMs = null. No socket
+   * references leave this class, so the result is safe to cross the
+   * Electron IPC boundary to the dashboard (AGENTS.md section 28); the
+   * entries are dropped when their connection closes, so the array can
+   * never grow past maxConnections (AGENTS.md section 36).
+   */
+  getClientLatency(): WsClientLatencySnapshot[] {
+    const snapshots: WsClientLatencySnapshot[] = []
+    for (const [socket, latency] of this.clientLatency) {
+      const role = this.clientRoles.get(socket)
+      if (role === undefined) continue
+      snapshots.push({
+        role,
+        lastMs: latency.lastMs,
+        samples: [...latency.samples],
+        drops: latency.drops,
+        capacity: latency.capacity,
+      })
+    }
+    return snapshots
+  }
+
+  private sampleClientLatency(): void {
+    // Ping every open, admitted client with a token payload. `ws` echoes a
+    // ping's payload back verbatim in the pong, which is how the pong
+    // handler distinguishes this measurement ping from the heartbeat's
+    // payload-less ping. Only the send time is recorded here; the
+    // round-trip time is computed when the matching pong arrives.
+    const now = Date.now()
+    for (const client of this.wss.clients) {
+      const latency = this.clientLatency.get(client)
+      if (latency === undefined) continue
+      if (client.readyState !== client.OPEN) continue
+      latency.sentAt = now
+      client.ping(PING_PONG_TOKEN)
+    }
+  }
+
+  /**
+   * Record one ping/pong exchange. Any pong counts as a sign of life for
+   * the heartbeat (exactly as before latency tracking existed); only a
+   * pong echoing our token is also recorded as a measurement, using the
+   * per-client send time, so a late or unsolicited pong can never be
+   * recorded as a fresh round trip.
+   */
+  private recordClientLatency(socket: WebSocket, pong: Buffer): void {
+    this.aliveClients.add(socket)
+    const latency = this.clientLatency.get(socket)
+    if (latency === undefined) return
+    if (latency.sentAt === null) return
+    if (pong.length !== PING_PONG_TOKEN.length) return
+    for (let i = 0; i < pong.length; i++) {
+      if (pong[i] !== PING_PONG_TOKEN[i]) return
+    }
+    const rtt = Date.now() - latency.sentAt
+    latency.sentAt = null
+    // Cap the recorded latency so a one-off stall doesn't dominate the
+    // window the operator sees; 2 s is a long time for a loopback or LAN
+    // client.
+    latency.lastMs = rtt > 2000 ? 2000 : rtt
+    latency.samples.push(latency.lastMs)
+    while (latency.samples.length > latency.capacity) {
+      latency.samples.shift()
+      latency.drops++
     }
   }
 
@@ -324,7 +679,11 @@ export class ChurchOverlayWsServer {
       return
     }
 
-    if (this.wss.clients.size > this.maxConnections) {
+    let openClients = 0
+    for (const client of this.wss.clients) {
+      if (client.readyState === client.OPEN) openClients += 1
+    }
+    if (openClients > this.maxConnections) {
       this.onRejected?.(`connection refused: more than ${this.maxConnections} clients connected`, null)
       socket.terminate()
       return
@@ -333,19 +692,39 @@ export class ChurchOverlayWsServer {
     const role: WsRole = isOperator ? "operator" : "viewer"
     this.clientRoles.set(socket, role)
     this.aliveClients.add(socket)
+    // S-03: arrival order for the operator-eviction rule; deleted on close.
+    this.connectedAt.set(socket, Date.now())
 
-    socket.on("pong", () => this.aliveClients.add(socket))
+    // Initialize round-trip latency tracking for this connection.
+    const latency: ClientLatencyState = {
+      lastMs: null,
+      samples: [],
+      drops: 0,
+      capacity: this.clientLatencyCapacity,
+      sentAt: null,
+    }
+    this.clientLatency.set(socket, latency)
+
+    socket.on("pong", (pong: Buffer) => this.recordClientLatency(socket, pong))
     socket.on("message", (data, isBinary) => {
       // Any inbound traffic proves the connection is alive, so a busy
       // operator streaming audio can never be dropped for a late pong.
       this.aliveClients.add(socket)
       this.handleMessage(socket, role, data, isBinary)
     })
-    socket.on("close", () => this.clientRoles.delete(socket))
+    socket.on("close", () => {
+      this.clientRoles.delete(socket)
+      // Bounded per-connection state: a finished connection must not keep
+      // its latency window reachable through the snapshot Map
+      // (AGENTS.md section 36). Same bound for the arrival-order bookkeeping.
+      this.clientLatency.delete(socket)
+      this.connectedAt.delete(socket)
+    })
 
     if (role === "viewer") {
       this.guarded("onViewerConnected", role, () =>
         this.onViewerConnected?.((message) => {
+          if (!VIEWER_OUTBOUND_EVENTS.has(message.type)) return // S-01: same allow-list as broadcast()
           if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message))
         })
       )

@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { get as httpGet, request as httpRequest } from "node:http"
-import { StaticServer, parseRangeHeader, type MediaFileResolver } from "./static-server"
+import { StaticServer, parseRangeHeader, type MediaFileResolver, type StaticServerOptions } from "./static-server"
 
 /** Named per AGENTS.md section 45 — a test double, not the real MediaLibrary. */
 class FakeMediaFileResolver implements MediaFileResolver {
@@ -16,7 +16,8 @@ class FakeMediaFileResolver implements MediaFileResolver {
 
 async function withServer(
   files: Record<string, string>,
-  fn: (baseUrl: string) => Promise<void>
+  fn: (baseUrl: string) => Promise<void>,
+  options: Partial<StaticServerOptions> = {}
 ): Promise<void> {
   const rootDir = await mkdtemp(join(tmpdir(), "churchoverlay-static-test-"))
   try {
@@ -26,7 +27,7 @@ async function withServer(
       await writeFile(fullPath, content, "utf8")
     }
 
-    const server = new StaticServer({ port: 0, rootDir })
+    const server = new StaticServer({ port: 0, rootDir, ...options })
     await server.ready
     try {
       await fn(`http://127.0.0.1:${server.port}`)
@@ -401,4 +402,39 @@ test("StaticServer: /brand/logo is 404 when no logo is set or the stored file va
   await withLogoServer(() => join(tmpdir(), "churchoverlay-no-such-logo.png"), async (baseUrl) => {
     assert.equal((await rawRequest(baseUrl, { path: "/brand/logo" })).status, 404)
   })
+})
+
+// --- P1-4 (S-08): anti-framing -------------------------------------------
+
+test("StaticServer: frameDeny adds X-Frame-Options and frame-ancestors to HTML responses", async () => {
+  await withServer({ "index.html": "<h1>remote</h1>" }, async (baseUrl) => {
+    const response = await fetch(baseUrl + "/")
+    assert.equal(response.status, 200)
+    assert.equal(response.headers.get("x-frame-options"), "DENY")
+    assert.equal(response.headers.get("content-security-policy"), "frame-ancestors 'none'")
+  }, { frameDeny: true })
+})
+
+test("StaticServer: without frameDeny the overlay page stays framable (dashboard Live view embeds it)", async () => {
+  await withServer({ "index.html": "<h1>overlay</h1>" }, async (baseUrl) => {
+    const response = await fetch(baseUrl + "/")
+    assert.equal(response.status, 200)
+    assert.equal(response.headers.get("x-frame-options"), null)
+    assert.equal(response.headers.get("content-security-policy"), null)
+  })
+})
+
+test("StaticServer: frameDeny never marks non-HTML responses as non-embeddable documents", async () => {
+  await withServer(
+    { "index.html": "<h1>remote</h1>", "app.js": "console.log('hi')", "style.css": "body{}" },
+    async (baseUrl) => {
+      for (const path of ["/app.js", "/style.css"]) {
+        const response = await fetch(baseUrl + path)
+        assert.equal(response.status, 200)
+        assert.equal(response.headers.get("x-frame-options"), null, path)
+        assert.equal(response.headers.get("content-security-policy"), null, path)
+      }
+    },
+    { frameDeny: true }
+  )
 })

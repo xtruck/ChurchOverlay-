@@ -1,8 +1,9 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, powerMonitor, safeStorage, shell } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, powerMonitor, safeStorage, shell } from "electron"
+import { validateCustomBibleApiUrl } from "./custom-bible-url"
 import { randomBytes } from "node:crypto"
-import { networkInterfaces } from "node:os"
+import { cpus, networkInterfaces } from "node:os"
 import { join } from "node:path"
-import { stat, writeFile } from "node:fs/promises"
+import { mkdir, stat, writeFile } from "node:fs/promises"
 import { startAppCore, type AppCoreHandle } from "../../server/core/app-core"
 import type { SessionEntry } from "../../server/core/session-recorder"
 import { buildServiceHealthReport } from "../../server/core/service-health"
@@ -15,17 +16,20 @@ import { GetBibleVerseSource } from "../../server/verse/get-bible-verse-source"
 import { LocalizedVerseSource } from "../../server/verse/localized-verse-source"
 import { loadOfflineBibleData, OfflineVerseSource, type OfflineBibleData } from "../../server/verse/offline-verse-source"
 import { QuoteMatcher, type QuoteMatch } from "../../server/detector/quote-matcher"
+import { createLazyBibleWordSearch } from "../../server/verse/bible-word-search"
 import { OfflineFallbackVerseSource } from "../../server/verse/offline-fallback-verse-source"
 import { GroqProvider } from "../../server/asr/groq-provider"
 import { DeepgramProvider } from "../../server/asr/deepgram-provider"
 import { CallBudget } from "../../server/ai/claude-client"
 import { AI_PROVIDERS, aiProviderReady, createTextCompleter, selectedAiProvider, type AiProvider } from "../../server/ai/ai-provider"
+import type { GuardedTextCompleter } from "../../server/ai/guarded-text-completer"
+import { normalizeAnthropicKeyInput, normalizeGroqKeyInput } from "../../server/ai/ai-key"
 import { ServiceExtrasGenerator, buildServiceNotesMarkdown, type ServiceExtras } from "../../server/ai/service-extras"
 import { isAiFeature, type AiFeature, type AiFeatureFlags } from "../../server/ai/ai-features"
 import { FailoverAsrProvider } from "../../server/asr/failover-provider"
 import { ASR_STRATEGIES, asrChain, deepgramLanguageFor, planAsr, type AsrProviderId, type AsrStrategy } from "../../server/asr/asr-strategy"
 import { LocalWhisperProvider } from "../../server/asr/local-whisper-provider"
-import { WhisperServerProcess, watchSystemResume } from "../../server/asr/local-whisper-server"
+import { WhisperServerProcess, localEngineThreads, watchSystemResume } from "../../server/asr/local-whisper-server"
 import { LocalAsrInstaller, LOCAL_MODELS, type LocalAsrInstallState, type LocalModelId } from "./local-asr-installer"
 import { FasterWhisperInstaller, type FasterWhisperInstallState } from "./faster-whisper-installer"
 import { SermonNotesGenerator } from "../../server/ai/sermon-notes-generator"
@@ -43,15 +47,28 @@ import {
   type UiLanguage,
 } from "./config-store"
 import type { DisplayMode, MediaCueKind, VerseConfirmationMode, VerseLayout, VerseSource } from "../../../packages/contracts"
+import { SerialQueue } from "./serial-queue"
 import { checkDroppedPath, inferMediaKind, deriveTitleFromFilename } from "./media-import"
 import { isAllowedNavigation, isExternalHttpsUrl } from "./navigation-guard"
 import { Logger, scrubSecrets } from "../../../packages/shared/logger"
+import { createLogSink, LogRing, RotatingLogFile } from "./log-file"
+import {
+  awaitWithTimeout,
+  describeError,
+  installProcessGuards,
+  isBenignRendererExit,
+  isIgnorableLoadFailure,
+  NoticeBoard,
+  ReloadBudget,
+  startupDialogText,
+} from "./resilience"
 import { NDIOutput, type PaintSource } from "./ndi-output"
 import { createNdiWindow } from "./ndi-window"
 import { PALETTES } from "../../server/overlay/palettes"
 import { BRAND_NAME_SIZE, BRAND_SCALE, BRAND_TEXT_MAX } from "../../server/overlay/overlay-style"
-import { OVERLAY_BRAND_FONTS, OVERLAY_CARD_DESIGNS, OVERLAY_PALETTE_GROUPS, OVERLAY_TRANSITIONS } from "../../../packages/contracts/overlay-style"
+import { OVERLAY_BACKGROUNDS, OVERLAY_BRAND_FONTS, OVERLAY_CARD_DESIGNS, OVERLAY_PALETTE_GROUPS, OVERLAY_TRANSITIONS } from "../../../packages/contracts/overlay-style"
 import { OverlayStyleController } from "./overlay-style-controller"
+import { TranscriptionPolicy } from "../../server/asr/noise-mode"
 import { LogoRejectedError, type DecodedLogo } from "./brand-logo"
 import { getAudioProfileSettings, type AudioProfile } from "../../server/audio/audio-profile"
 import { SilenceGate } from "../../server/audio/silence-gate"
@@ -80,7 +97,35 @@ const REMOTE_HTTP_PORT = 8789
 // under dist/, not 3).
 const REPO_ROOT = join(__dirname, "..", "..", "..", "..")
 
-const logger = new Logger({ minLevel: "info" })
+// B1: every log line goes to stdout (as before), an in-memory ring (last 500
+// lines, included in the diagnostics export) and a bounded rotating file in
+// userData/logs. A failure to write the file is counted, never thrown.
+const LOG_DIR = join(app.getPath("userData"), "logs")
+const logRing = new LogRing()
+const logSink = (() => {
+  try {
+    return createLogSink(new RotatingLogFile({ dir: LOG_DIR }), logRing)
+  } catch {
+    // Cannot even build the file sink (should not happen): stdout + ring only.
+    return null
+  }
+})()
+// A closed stdout pipe raises an async 'error' event; unhandled it would reach
+// the uncaughtException handler below on every log line.
+process.stdout?.on?.("error", () => {})
+const logger = new Logger({
+  minLevel: "info",
+  write:
+    logSink?.write ??
+    ((line: string) => {
+      try {
+        console.log(line)
+      } catch {
+        // stdout unavailable: the ring below still keeps the line.
+      }
+      logRing.push(line)
+    }),
+})
 
 let appCoreHandle: AppCoreHandle | null = null
 let staticServer: StaticServer | null = null
@@ -92,6 +137,8 @@ let mediaLibrary: MediaLibrary | null = null
 let sessionHistoryStore: SessionHistoryStore | null = null
 let localizedVerseSource: LocalizedVerseSource | null = null
 let asrProvider: GroqProvider | DeepgramProvider | LocalWhisperProvider | FailoverAsrProvider | null = null
+// One strictness switch (normal | noisy | tongues) shared by every ASR provider and AppCore; seeded from the saved config at each service start.
+const transcriptionPolicy = new TranscriptionPolicy()
 // The concrete providers behind asrProvider, kept so each gets the language
 // code its own API expects (Whisper auto-detects when given none; Deepgram
 // does not and would fall back to English).
@@ -99,6 +146,12 @@ let groqAsr: GroqProvider | null = null
 let deepgramAsr: DeepgramProvider | null = null
 let localAsr: LocalWhisperProvider | null = null
 let localWhisperServer: WhisperServerProcess | null = null
+// SF-22: set when the engine's automatic restarts are exhausted; the dashboard must stop advertising the backup.
+let localEngineAbandoned = false
+function markLocalEngineAbandoned(info: { attempts: number }): void {
+  localEngineAbandoned = true
+  logger.error({ component: "main", event: "local-whisper.backup-lost", metadata: { attempts: info.attempts } })
+}
 let localAsrInstaller: LocalAsrInstaller | null = null
 let fasterWhisperInstaller: FasterWhisperInstaller | null = null
 
@@ -116,6 +169,8 @@ let currentVerseConfirmationMode: VerseConfirmationMode = "auto"
 let currentEnableSermonNotes = false
 // ARCHITECTURE.md sections 123-125: live state of the optional AI features (default OFF).
 let currentAiFeatures: AiFeatureFlags = { transcriptCleanup: false, semanticDetection: false, sermonCopilot: false }
+// The running AI completer (undefined while no provider/key is ready): used by the operator's "test connection".
+let currentAiCompleter: GuardedTextCompleter | undefined
 const AI_CONFIG_KEY = {
   transcriptCleanup: "aiTranscriptCleanup",
   semanticDetection: "aiSemanticDetection",
@@ -178,6 +233,39 @@ let pendingMediaImport: { filePath: string; kind: MediaCueKind } | null = null
 
 function generateToken(): string {
   return randomBytes(24).toString("hex")
+}
+
+/**
+ * S-04: which token(s) a rotate-token IPC call rotates. "both" is the
+ * full revocation path (every WS client everywhere must re-authenticate).
+ */
+type TokenKind = "operator" | "viewer" | "both"
+
+function isTokenKind(value: unknown): value is TokenKind {
+  return value === "operator" || value === "viewer" || value === "both"
+}
+
+/**
+ * Rebuilds the two token-bearing URLs from the LIVE tokens without
+ * restarting any server (S-04 rotation). Both builders are the exact
+ * startServicesNow ones, so the dashboard never shows a stale link after
+ * a rotation. remoteUrl stays null on loopback-only installs.
+ */
+function rebuildTokenUrls(): { overlayUrl: string | null; remoteUrl: string | null } {
+  if (!appCoreHandle || !staticServer || !currentTokens) return { overlayUrl: null, remoteUrl: null }
+  const overlayUrl =
+    `http://127.0.0.1:${staticServer.port}/index.html` +
+    `?wsPort=${appCoreHandle.wsServer.port}#token=${currentTokens.viewerToken}`
+  let remoteUrl: string | null = null
+  if (currentAllowPhoneRemote && remoteStaticServer) {
+    const lanIp = getLanIpAddress()
+    if (lanIp) {
+      remoteUrl =
+        `http://${lanIp}:${remoteStaticServer.port}/index.html` +
+        `?wsPort=${appCoreHandle.wsServer.port}#token=${currentTokens.operatorToken}`
+    }
+  }
+  return { overlayUrl, remoteUrl }
 }
 
 /**
@@ -306,9 +394,7 @@ function getConfigStore(): ConfigStore {
  * — called either at launch (if a key was already saved from a previous
  * run) or once the operator finishes the setup screen for the first time.
  */
-async function startServices(
-  config: AppConfig
-): Promise<{
+type StartedServices = {
   port: number
   token: string
   remoteUrl: string | null
@@ -319,7 +405,22 @@ async function startServices(
   accentColor?: string
   frenchTranslation: string
   overlayTemplate: string
-}> {
+}
+
+/**
+ * startServices/shutdown run one at a time (audit TS-07): two overlapping settings changes used to
+ * run two start-ups concurrently, double-shut-down and fight over port 8787. Code already INSIDE a
+ * lifecycle step must call startServicesNow/shutdownNow, never these (it would wait on itself).
+ */
+const serviceLifecycle = new SerialQueue()
+function startServices(config: AppConfig): Promise<StartedServices> {
+  return serviceLifecycle.run(() => startServicesNow(config))
+}
+function shutdown(): Promise<void> {
+  return serviceLifecycle.run(() => shutdownNow())
+}
+
+async function startServicesNow(config: AppConfig): Promise<StartedServices> {
   if (appCoreHandle && activeConfig && sameServiceConfig(activeConfig, config) && currentTokens && currentOverlayUrl) {
     return {
       port: appCoreHandle.wsServer.port,
@@ -337,7 +438,7 @@ async function startServices(
   // Setup can be submitted again after a partial startup failure. Tear down
   // any previous listeners first so a retry never inherits 8787/8788.
   if (appCoreHandle || staticServer || remoteStaticServer || ndiOutput) {
-    await shutdown()
+    await shutdownNow()
   }
   currentTokens = { operatorToken: config.operatorToken, viewerToken: config.viewerToken }
   // ARCHITECTURE.md section 77: a live-API outage (the venue's own
@@ -369,7 +470,7 @@ async function startServices(
   const frenchTranslation = config.frenchTranslation ?? "ls1910"
   const frenchSource = await buildFrenchSource(frenchTranslation)
   localizedVerseSource = new LocalizedVerseSource(
-    new FreeApiSource(),
+    new FreeApiSource(undefined, storedCustomBibleUrl(config.customBibleApiUrl)),
     frenchSource,
     config.displayMode,
     logger,
@@ -383,6 +484,7 @@ async function startServices(
   // default (section 24) exactly as before this feature existed.
   const wsHost = config.allowPhoneRemote ? "0.0.0.0" : undefined
 
+  transcriptionPolicy.set(config.noiseMode ?? "normal")
   const plan = planAsr({
     groqApiKey: config.groqApiKey,
     deepgramApiKey: config.deepgramApiKey,
@@ -394,22 +496,30 @@ async function startServices(
         logger,
         chunkDurationMs: getAudioProfileSettings(config.audioProfile).chunkDurationMs,
         language: whisperLanguageFor(config.displayMode),
+        policy: transcriptionPolicy,
       })
     : null
   deepgramAsr = config.deepgramApiKey
     ? new DeepgramProvider({
         apiKey: config.deepgramApiKey,
         language: deepgramLanguageFor(config.displayMode),
+        logger,
+        policy: transcriptionPolicy,
       })
     : null
   // Offline last resort, only when the operator enabled it AND the engine
   // is actually installed — never a surprise download at service start.
   const localModel: LocalModelId = config.localAsrModel ?? "base"
   const localEngine: LocalEngine = config.localAsrEngine ?? "whisper.cpp"
+  // Section 139. When the engine carries every sentence it is limited to half the
+  // logical cores so OBS, NDI and the dashboard keep the rest (measured, section 139).
+  const offlineFirst = config.asrStrategy === "offline-first"
+  const localThreads = localEngineThreads(cpus().length)
   const localStatus = config.localAsrEnabled ? await getLocalEngineStatus(localEngine, localModel) : null
   await localWhisperServer?.stop()
   localWhisperServer = null
   localAsr = null
+  localEngineAbandoned = false
   if (localStatus?.state === "ready") {
     localWhisperServer =
       "pythonPath" in localStatus
@@ -420,16 +530,30 @@ async function startServices(
             // First start imports numpy/ctranslate2 and runs a warm-up inference; antivirus scans make it slower.
             readyTimeoutMs: 180_000,
             logger,
+            threads: localThreads,
+            onRestartAbandoned: markLocalEngineAbandoned,
           })
-        : new WhisperServerProcess({ serverPath: localStatus.serverPath, modelPath: localStatus.modelPath, logger })
-    localAsr = new LocalWhisperProvider({ server: localWhisperServer, language: whisperLanguageFor(config.displayMode), logger })
+        : new WhisperServerProcess({ serverPath: localStatus.serverPath, modelPath: localStatus.modelPath, logger, threads: localThreads, onRestartAbandoned: markLocalEngineAbandoned })
+    localAsr = new LocalWhisperProvider({ server: localWhisperServer, language: whisperLanguageFor(config.displayMode), logger, policy: transcriptionPolicy })
     // Warm up now, in the background: loading the model takes seconds, and
     // the moment the internet drops is exactly when there are none to spare.
     localWhisperServer.ensureStarted().catch((err) => {
       logger.error({ component: "main", event: "local-whisper.warmup-failed", error: err instanceof Error ? err.message : String(err) })
     })
   }
-  const chain = asrChain(plan, localAsr !== null)
+  // Section 139: offline-first is opt-in and only takes effect while the local
+  // engine is ready. When it is selected but not ready the chain stays cloud-first,
+  // and that is reported (log here, note in the dashboard), never silent (AGENTS.md 46).
+  if (offlineFirst && localAsr === null) {
+    logger.warn({
+      component: "main",
+      event: "asr.offline-first-unavailable",
+      metadata: { reason: localStatus?.state ?? "local engine not enabled" },
+    })
+  }
+  const chain = asrChain(plan, localAsr !== null, offlineFirst)
+  // SF-19: nothing can take over after Deepgram when it is the last link: let it reopen its own socket.
+  deepgramAsr?.setReconnectOnClose(chain[chain.length - 1] === "deepgram")
   const providers: Record<AsrProviderId, GroqProvider | DeepgramProvider | LocalWhisperProvider | null> = {
     groq: groqAsr,
     deepgram: deepgramAsr,
@@ -446,12 +570,14 @@ async function startServices(
       // A streaming socket either works or it doesn't: fail over on any
       // error. A batch provider only after sustained 429s or sustained
       // network errors (GroqProvider signals both the same way).
-      trigger: id === "deepgram" ? "primary-error" : "sustained-rate-limit",
+      // The local engine is only ever a primary in offline-first mode (it is the
+      // last link otherwise); like a streaming socket it either works or it doesn't.
+      trigger: id === "deepgram" || id === "local" ? "primary-error" : "sustained-rate-limit",
       secondaryLabel: labels[chain[i + 1] as AsrProviderId],
       // Streaming primary only: come back to Deepgram on our own after a
       // hiccup (ARCHITECTURE.md section 115). Groq's sustained-429 failover
       // stays operator-controlled (section 86).
-      ...(id === "deepgram"
+      ...(id === "deepgram" || id === "local"
         ? {
             autoReturn: {
               onAttempt: (result) =>
@@ -475,8 +601,31 @@ async function startServices(
     source: localizedVerseSource,
     logger,
     ...(quoteSource ? { quoteMatcher: lazyQuoteMatcher(quoteSource) } : {}),
-    silenceGate: new SilenceGate({ threshold: getAudioProfileSettings(config.audioProfile).silenceThreshold }),
+    ...(quoteSource
+      ? {
+          bibleWordSearch: createLazyBibleWordSearch(
+            quoteSource,
+            (info) => logger.info({ component: "main", event: "bible-word-search.ready", durationMs: info.durationMs, metadata: { verses: info.verses } }),
+            (err) => logger.error({ component: "main", event: "bible-word-search.failed", error: err instanceof Error ? err.message : String(err) })
+          ),
+        }
+      : {}),
+    // robust: speech-band level + adaptive noise floor, so a loud service does not flood the cloud ASR with room noise.
+    silenceGate: new SilenceGate({ threshold: getAudioProfileSettings(config.audioProfile).silenceThreshold, robust: true }),
     adaptiveGain: new AdaptiveGain({ enabled: config.autoGain ?? true }),
+    transcriptionPolicy,
+    onNoiseModeChanged: (mode) => {
+      if (activeConfig) activeConfig = { ...activeConfig, noiseMode: mode }
+      getConfigStore()
+        .update((existing) => ({ ...existing, noiseMode: mode }))
+        .catch((err) => {
+          logger.error({
+            component: "main",
+            event: "noise-mode-persist-failed",
+            error: err instanceof Error ? err.message : String(err),
+          })
+        })
+    },
     onAutoGainChanged: (enabled) => {
       if (activeConfig) activeConfig = { ...activeConfig, autoGain: enabled }
       getConfigStore()
@@ -508,7 +657,11 @@ async function startServices(
     ...(config.groqApiKey ? { sermonNotesGenerator: new SermonNotesGenerator({ apiKey: config.groqApiKey }) } : {}),
     // ARCHITECTURE.md section 128: the AI helpers run on the provider the operator chose
     // (Anthropic, or the free Groq text models) and stay off (undefined) when that provider has no key.
-    claudeClient: createTextCompleter(config),
+    claudeClient: (currentAiCompleter = createTextCompleter(config, undefined, {
+      // Observable bounded failure (AGENTS.md sections 37, 38): the helpers pause instead of failing on every transcript.
+      onStateChange: (state, error) =>
+        logger.warn({ component: "ai", event: `ai.circuit-${state}`, ...(error !== undefined ? { error } : {}) }),
+    })),
     sermonNotesEnabled: config.enableSermonNotes,
     aiFeatures: aiFeaturesFromConfig(config),
     // ARCHITECTURE.md section 65.4: a voice-triggered display-mode switch
@@ -516,6 +669,7 @@ async function startServices(
     // so it survives a restart identically to a dashboard-toggled one.
     onDisplayModeChanged: (mode) => {
       setAsrLanguage(mode)
+      if (activeConfig) activeConfig = { ...activeConfig, displayMode: mode }
       getConfigStore()
         .update((existing) => ({ ...existing, displayMode: mode }))
         .catch((err) => {
@@ -565,6 +719,12 @@ async function startServices(
       host: "0.0.0.0",
       port: REMOTE_HTTP_PORT,
       rootDir: join(REPO_ROOT, "apps", "remote", "public"),
+      // P1-4 (S-08): the phone remote is a CONTROL page exposed to the whole
+      // LAN — exactly the clickjacking target the overlay is not. The overlay
+      // instance below stays framable on purpose: the dashboard's Live view
+      // embeds it from a file:// null origin (frame-ancestors cannot express
+      // that), and OBS loads it top-level.
+      frameDeny: true,
     })
     await remoteStaticServer.ready
     const lanIp = getLanIpAddress()
@@ -678,6 +838,9 @@ function createDashboardWindow(): void {
     // grid this size was originally tuned for.
     width: 1440,
     height: 900,
+    // Belt and braces with Menu.setApplicationMenu(null) in whenReady: even if a menu is restored for
+    // debugging, it stays hidden until Alt is pressed.
+    autoHideMenuBar: true,
     // Window/taskbar icon on Windows and Linux (macOS takes the Dock icon
     // from the packaged .icns). Without it, `npm start` shows Electron's own.
     icon: join(REPO_ROOT, "assets", "icons", "icon.png"),
@@ -688,15 +851,141 @@ function createDashboardWindow(): void {
       contextIsolation: true,
       sandbox: true,
       preload: join(__dirname, "..", "preload", "index.js"),
+      // The dashboard captures the microphone and runs the reconnect/watchdog
+      // timers: a minimised or occluded window must not throttle them (SF-15).
+      backgroundThrottling: false,
     },
   })
 
-  dashboardWindow.loadFile(join(REPO_ROOT, "apps", "desktop", "renderer", "index.html"))
+  loadDashboard(dashboardWindow)
+  watchDashboardHealth(dashboardWindow)
 
   dashboardWindow.on("closed", () => {
     dashboardWindow = null
   })
 }
+
+// ---- B1: failure reporting and dashboard recovery -------------------------
+
+let startupComplete = false
+let startupDialogShown = false
+
+/** Non-blocking operator notices. Live ones are sent to a loaded dashboard; a fresh load reads the history. */
+const mainNotices = new NoticeBoard((notice) => {
+  const win = dashboardWindow
+  if (!win || win.isDestroyed()) return false
+  const contents = win.webContents
+  if (contents.isDestroyed() || contents.isLoading()) return false
+  contents.send("main-notice", notice)
+  return true
+})
+
+/** Fatal startup failure: the operator sees nothing else yet, so a native dialog is the only honest channel. */
+function failStartup(key: "safeStorageUnavailable" | "startupFailed", detail = ""): void {
+  if (startupDialogShown) return
+  startupDialogShown = true
+  const text = startupDialogText(key, app.getLocale(), detail)
+  try {
+    dialog.showErrorBox(text.title, text.body)
+  } catch (err) {
+    logger.error({ component: "main", event: "startup.dialog-failed", error: String(err) })
+  }
+  logSink?.file.flushSync()
+  app.quit()
+}
+
+installProcessGuards({
+  proc: process,
+  logger,
+  notify: (notice) => {
+    mainNotices.push(notice)
+  },
+  // Fatal only while the operator has no window yet; afterwards an exception is a notice, never a quit.
+  isStarting: () => !startupComplete && dashboardWindow === null,
+  onFatalStartup: (error) => failStartup("startupFailed", describeError(error).message),
+  flushLogs: () => logSink?.file.flushSync(),
+})
+
+function loadDashboard(win: BrowserWindow): void {
+  win.loadFile(join(REPO_ROOT, "apps", "desktop", "renderer", "index.html")).catch(() => {
+    // did-fail-load (watched below) already logged this and decides about a retry.
+  })
+}
+
+const dashboardReloadBudget = new ReloadBudget()
+
+function recoverDashboard(win: BrowserWindow, reason: string, resumeMic: boolean): void {
+  const decision = dashboardReloadBudget.next()
+  if (!decision.allowed) {
+    logger.error({ component: "main", event: "dashboard.recovery-exhausted", error: reason, metadata: { attempts: decision.attempts } })
+    mainNotices.push({ level: "fatal", code: "renderer-unrecoverable", detail: reason })
+    const text = startupDialogText("dashboardUnrecoverable", app.getLocale(), reason)
+    // Non-blocking: the server and overlay must keep running while the operator reads this.
+    void dialog.showMessageBox({ type: "error", title: text.title, message: text.title, detail: text.body }).catch(() => {})
+    return
+  }
+  logger.warn({
+    component: "main",
+    event: "dashboard.reload-scheduled",
+    error: reason,
+    metadata: { attempt: decision.attempt, delayMs: decision.delayMs },
+  })
+  setTimeout(() => {
+    if (win.isDestroyed() || dashboardWindow !== win) return
+    mainNotices.push({ level: "warn", code: "renderer-recovered", detail: reason, ...(resumeMic ? { resumeMic: true } : {}) })
+    loadDashboard(win)
+  }, decision.delayMs)
+}
+
+function watchDashboardHealth(win: BrowserWindow): void {
+  const contents = win.webContents
+  let unresponsiveSince: number | null = null
+  contents.on("render-process-gone", (_event, details) => {
+    if (isBenignRendererExit(details.reason)) return
+    logger.error({
+      component: "main",
+      event: "dashboard.render-process-gone",
+      error: details.reason,
+      metadata: { exitCode: details.exitCode },
+    })
+    // The renderer owned the microphone: it is gone until the page is back and capture restarts.
+    recoverDashboard(win, `render-process-gone: ${details.reason}`, true)
+  })
+  contents.on("did-fail-load", (_event, errorCode, errorDescription, _url, isMainFrame) => {
+    if (isIgnorableLoadFailure(errorCode, isMainFrame)) return
+    logger.error({ component: "main", event: "dashboard.did-fail-load", error: errorDescription, metadata: { errorCode } })
+    recoverDashboard(win, `did-fail-load: ${errorDescription} (${errorCode})`, false)
+  })
+  win.on("unresponsive", () => {
+    unresponsiveSince = Date.now()
+    logger.warn({ component: "main", event: "dashboard.unresponsive" })
+  })
+  win.on("responsive", () => {
+    const seconds = unresponsiveSince === null ? 0 : Math.round((Date.now() - unresponsiveSince) / 1000)
+    unresponsiveSince = null
+    logger.info({ component: "main", event: "dashboard.responsive", durationMs: seconds * 1000 })
+    // Short stalls stay in the log; a long one is worth telling the operator about.
+    if (seconds >= 5) mainNotices.push({ level: "warn", code: "renderer-unresponsive", detail: String(seconds) })
+  })
+}
+
+ipcMain.handle("get-main-notices", () => mainNotices.snapshot())
+
+ipcMain.handle("open-logs-folder", async () => {
+  try {
+    await mkdir(LOG_DIR, { recursive: true })
+    const failure = await shell.openPath(LOG_DIR)
+    if (failure) {
+      logger.warn({ component: "main", event: "logs.open-failed", error: failure })
+      return { ok: false as const, path: LOG_DIR, error: scrubSecrets(failure) }
+    }
+    return { ok: true as const, path: LOG_DIR }
+  } catch (err) {
+    const message = scrubSecrets(err instanceof Error ? err.message : String(err))
+    logger.warn({ component: "main", event: "logs.open-failed", error: message })
+    return { ok: false as const, path: LOG_DIR, error: message }
+  }
+})
 
 /**
  * The dashboard renderer calls this once on load to decide whether to
@@ -742,6 +1031,16 @@ ipcMain.handle("get-startup-status", async () => {
       remoteUrl: currentRemoteUrl,
       overlayUrl: currentOverlayUrl,
       allowPhoneRemote: currentAllowPhoneRemote,
+      // S-04: the dashboard's first-enable warning and token-age display
+      // both read from the config, not from module state. One load, not three.
+      ...(await getConfigStore()
+        .load()
+        .then((c) => ({
+          remoteWarningAcked: c?.allowPhoneRemoteWarningAck === true,
+          ...(c?.operatorTokenGeneratedAt ? { operatorTokenGeneratedAt: c.operatorTokenGeneratedAt } : {}),
+          ...(c?.viewerTokenGeneratedAt ? { viewerTokenGeneratedAt: c.viewerTokenGeneratedAt } : {}),
+        }))
+        .catch(() => ({ remoteWarningAcked: false }))),
       verseConfirmationMode: currentVerseConfirmationMode,
       enableSermonNotes: currentEnableSermonNotes,
       aiFeatures: currentAiFeatures,
@@ -752,9 +1051,17 @@ ipcMain.handle("get-startup-status", async () => {
       organizationName,
       accentColor,
       asr: currentAsrStatus(),
+      configRecovered: getConfigStore().getRecovery(),
     }
   }
-  return { ready: false, uiLanguage, ndi: { state: "disabled" as const }, organizationName, accentColor }
+  return {
+    ready: false,
+    uiLanguage,
+    ndi: { state: "disabled" as const },
+    organizationName,
+    accentColor,
+    configRecovered: getConfigStore().getRecovery(),
+  }
 })
 
 
@@ -789,7 +1096,7 @@ function currentAsrStatus(): {
     localEnabled: activeConfig?.localAsrEnabled ?? false,
     localModel: activeConfig?.localAsrModel ?? "base",
     localEngine: activeConfig?.localAsrEngine ?? "whisper.cpp",
-    localActive: localAsr !== null,
+    localActive: localAsr !== null && !localEngineAbandoned,
   }
 }
 
@@ -889,6 +1196,56 @@ ipcMain.handle("set-ai-provider", async (_event, payload: unknown) => {
   return currentAsrStatus()
 })
 
+/**
+ * Add, replace or remove (empty string) the Anthropic key after setup. Before this existed the key
+ * could only be typed on the first-run setup screen, so a church that skipped the optional field
+ * had no way to turn the AI features on. Shape-validated (ai-key.ts), stored encrypted by the
+ * ConfigStore like every key, and never logged or echoed back. Saving a key is an explicit choice of
+ * Anthropic as the AI service; removing it leaves the provider choice alone (the helpers then say
+ * "no key" instead of silently switching). Services restart, like set-ai-provider.
+ */
+ipcMain.handle("set-ai-key", async (_event, payload: unknown) => {
+  const remove = typeof payload === "string" && payload.trim() === ""
+  const parsed = remove ? null : normalizeAnthropicKeyInput(payload)
+  if (parsed && !parsed.ok) return { ok: false as const, error: parsed.error }
+  const updated = await getConfigStore().update((existing) => {
+    const { anthropicApiKey: _previous, ...rest } = existing
+    return parsed && parsed.ok ? { ...rest, anthropicApiKey: parsed.key, aiProvider: "anthropic" as const } : rest
+  })
+  if (!updated) throw new Error("Services are not configured yet.")
+  await startServices(updated)
+  logger.info({ component: "main", event: remove ? "ai.key-removed" : "ai.key-saved" })
+  return { ok: true as const, status: currentAsrStatus() }
+})
+
+/**
+ * Replace the Groq key after setup (it is both the transcription key and the free AI service's
+ * key). Replace-only: an empty value is refused, so this can never leave the app without a way to
+ * transcribe. Same rules as set-ai-key: shape-validated, stored encrypted, never logged or echoed.
+ * Restarts the services.
+ */
+ipcMain.handle("set-groq-key", async (_event, payload: unknown) => {
+  const parsed = normalizeGroqKeyInput(payload)
+  if (!parsed.ok) return { ok: false as const, error: parsed.error }
+  const updated = await getConfigStore().update((existing) => ({ ...existing, groqApiKey: parsed.key }))
+  if (!updated) throw new Error("Services are not configured yet.")
+  await startServices(updated)
+  logger.info({ component: "main", event: "ai.groq-key-saved" })
+  return { ok: true as const, status: currentAsrStatus() }
+})
+
+/**
+ * Operator-triggered "Test connection" for the selected AI service: one tiny request (never
+ * automatic, never carrying transcript text). Returns a fixed result code, never the provider's
+ * error text.
+ */
+ipcMain.handle("test-ai-connection", async () => {
+  if (!currentAiCompleter) return { ok: false as const, reason: "no-key" as const }
+  const result = await currentAiCompleter.testConnection()
+  logger.info({ component: "main", event: "ai.connection-test", metadata: { ok: result.ok, ...(result.ok ? {} : { reason: result.reason }) } })
+  return result
+})
+
 /** ARCHITECTURE.md section 63.2: the live dashboard toggle, via IPC — an operator configuration action, not something that needs to round-trip through the WS server. */
 ipcMain.handle("set-display-mode", async (_event, payload: unknown) => {
   const mode = DISPLAY_MODES.includes(payload as DisplayMode) ? (payload as DisplayMode) : null
@@ -900,6 +1257,7 @@ ipcMain.handle("set-display-mode", async (_event, payload: unknown) => {
   }
   localizedVerseSource.setMode(mode)
   setAsrLanguage(mode)
+  if (activeConfig) activeConfig = { ...activeConfig, displayMode: mode }
 
   await persistConfig((existing) => ({ ...existing, displayMode: mode }))
   return { displayMode: mode }
@@ -1007,6 +1365,46 @@ ipcMain.handle("set-french-translation", async (_event, payload: unknown) => {
   return { frenchTranslation: translation }
 })
 
+/** A custom URL saved by an older version is re-validated; an unsafe one is ignored, not used. */
+function storedCustomBibleUrl(stored: string | undefined): string | undefined {
+  if (!stored) return undefined
+  const checked = validateCustomBibleApiUrl(stored)
+  return checked.ok ? checked.url : undefined
+}
+
+/** Custom Bible API endpoint for English verse lookups. */
+ipcMain.handle("get-custom-bible-api-url", () => {
+  return activeConfig?.customBibleApiUrl ?? ""
+})
+
+ipcMain.handle("set-custom-bible-api-url", async (_event, payload: unknown) => {
+  const input = typeof payload === "string" ? payload.trim() : ""
+  let customBibleApiUrl: string | undefined
+  if (input !== "") {
+    const checked = validateCustomBibleApiUrl(input)
+    if (!checked.ok) throw new Error(checked.reason)
+    customBibleApiUrl = checked.url
+  }
+  if (activeConfig) {
+    activeConfig = { ...activeConfig, customBibleApiUrl }
+  }
+  await persistConfig((existing) => {
+    const copy = { ...existing }
+    if (customBibleApiUrl) {
+      copy.customBibleApiUrl = customBibleApiUrl
+    } else {
+      delete copy.customBibleApiUrl
+    }
+    return copy
+  })
+  if (localizedVerseSource) {
+    // In place, never a new LocalizedVerseSource: AppCore holds the instance it was given at startup,
+    // so a replacement would be an orphan (URL unused, display-mode/translation toggles silently dead).
+    localizedVerseSource.setEnglishSource(new FreeApiSource(undefined, customBibleApiUrl), customBibleApiUrl ?? "")
+  }
+  return { customBibleApiUrl: customBibleApiUrl ?? null }
+})
+
 /**
  * ARCHITECTURE.md section 108 (superseded by section 110.4): the verse card
  * design now applies LIVE through the overlay style path, so the restart and
@@ -1031,6 +1429,7 @@ ipcMain.handle("get-overlay-style-meta", () => ({
   groups: OVERLAY_PALETTE_GROUPS,
   cards: OVERLAY_CARD_DESIGNS,
   transitions: OVERLAY_TRANSITIONS,
+  backgrounds: OVERLAY_BACKGROUNDS,
   fonts: OVERLAY_BRAND_FONTS,
   limits: { textMax: BRAND_TEXT_MAX, size: BRAND_NAME_SIZE, scale: BRAND_SCALE },
 }))
@@ -1106,7 +1505,15 @@ ipcMain.handle("set-allow-phone-remote", async (_event, payload: unknown) => {
   const store = getConfigStore()
   const existing = await store.load().catch(() => null)
   if (!existing) throw new Error("Services are not started yet.")
-  const config: AppConfig = { ...existing, allowPhoneRemote: payload }
+  // S-04: enabling the exposure IS the operator acknowledging the
+  // trusted-network warning (the dashboard shows it before this call;
+  // complete-setup's checkbox carries the same warning). Persisted so the
+  // full warning text is never repeated at every later activation.
+  const config: AppConfig = {
+    ...existing,
+    allowPhoneRemote: payload,
+    ...(payload ? { allowPhoneRemoteWarningAck: true } : {}),
+  }
   await store.save(config)
   try {
     return await startServices(config)
@@ -1116,6 +1523,77 @@ ipcMain.handle("set-allow-phone-remote", async (_event, payload: unknown) => {
     // earlier ones (e.g. the old WS server) still bound.
     await shutdown()
     throw error
+  }
+})
+
+// S-04: the dashboard's explicit first-enable warning calls this so the
+// "trusted network" acknowledgment outlives the session. Harmless when
+// the ack already exists.
+ipcMain.handle("acknowledge-remote-network-warning", async () => {
+  await persistConfig((existing) => ({ ...existing, allowPhoneRemoteWarningAck: true }))
+  return { acknowledged: true }
+})
+
+/**
+ * S-04: rotate and revoke the WS tokens from the dashboard, without a
+ * service restart. Persisted first (ConfigStore.update, on the save
+ * queue), then swapped into the RUNNING server — every session
+ * authenticated with the rotated token is terminated by setTokens and
+ * reported via the server's own onRejected path, and the token-bearing
+ * URLs (OBS overlay link, phone remote link) are rebuilt from the new
+ * values. Returns the same shape the dashboard's status handlers render,
+ * so the UI refreshes from one response.
+ */
+ipcMain.handle("rotate-token", async (_event, payload: unknown) => {
+  const kind = typeof payload === "object" && payload !== null ? (payload as Record<string, unknown>).kind : payload
+  if (!isTokenKind(kind)) throw new Error("Invalid token kind.")
+  if (!appCoreHandle || !currentTokens) throw new Error("Services are not started yet.")
+
+  const rotatedAt = new Date().toISOString()
+  const saved = await getConfigStore().update((existing) => ({
+    ...existing,
+    ...(kind === "operator" || kind === "both" ? { operatorToken: generateToken(), operatorTokenGeneratedAt: rotatedAt } : {}),
+    ...(kind === "viewer" || kind === "both" ? { viewerToken: generateToken(), viewerTokenGeneratedAt: rotatedAt } : {}),
+  }))
+  if (!saved) throw new Error("Services are not started yet.")
+
+  // Swap the LIVE tokens and revoke every session holding the old ones.
+  // The old object must be replaced, not mutated: setTokens() keeps the
+  // server's reference and the revocation report in one place.
+  const nextTokens = { operatorToken: saved.operatorToken, viewerToken: saved.viewerToken }
+  appCoreHandle.wsServer.setTokens(nextTokens)
+  currentTokens = nextTokens
+
+  const { overlayUrl, remoteUrl } = rebuildTokenUrls()
+  currentOverlayUrl = overlayUrl ?? currentOverlayUrl
+  currentRemoteUrl = remoteUrl
+  // The NDI output embeds the overlay URL (viewer token): a rotated viewer
+  // token would otherwise leave that page reconnecting forever with the
+  // dead token until a full app restart.
+  if (overlayUrl && ndiWindow && (kind === "viewer" || kind === "both")) {
+    await ndiWindow.loadURL(overlayUrl).catch((err: unknown) => {
+      logger.warn({
+        component: "main",
+        event: "ndi.reload-after-rotation-failed",
+        error: err instanceof Error ? err.message : String(err),
+      })
+    })
+  }
+
+  logger.info({
+    component: "main",
+    event: "tokens.rotated",
+    metadata: { kind },
+  })
+
+  return {
+    port: appCoreHandle.wsServer.port,
+    token: currentTokens.operatorToken,
+    overlayUrl: currentOverlayUrl,
+    remoteUrl: currentRemoteUrl,
+    allowPhoneRemote: currentAllowPhoneRemote,
+    operatorTokenGeneratedAt: saved.operatorTokenGeneratedAt,
+    viewerTokenGeneratedAt: saved.viewerTokenGeneratedAt,
   }
 })
 
@@ -1184,6 +1662,11 @@ ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
       : {}),
     microphoneId: existing?.microphoneId ?? null,
     operatorToken: existing?.operatorToken ?? generateToken(),
+    // S-04: the age the dashboard shows comes from these timestamps; a
+    // token carried over from a previous install keeps its original date.
+    ...(existing?.operatorToken === undefined && existing?.operatorTokenGeneratedAt === undefined
+      ? { operatorTokenGeneratedAt: new Date().toISOString() }
+      : existing?.operatorTokenGeneratedAt ? { operatorTokenGeneratedAt: existing.operatorTokenGeneratedAt } : {}),
     // ARCHITECTURE.md section 65.3: not a setup-screen control (unlike
     // displayMode/uiLanguage) — "auto" is the confirmed default for every
     // fresh install; changeable afterward via the live dashboard toggle
@@ -1199,6 +1682,8 @@ ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
     ...(existing?.aiTranscriptCleanup === undefined ? {} : { aiTranscriptCleanup: existing.aiTranscriptCleanup }),
     ...(existing?.aiSemanticDetection === undefined ? {} : { aiSemanticDetection: existing.aiSemanticDetection }),
     ...(existing?.aiSermonCopilot === undefined ? {} : { aiSermonCopilot: existing.aiSermonCopilot }),
+    // Re-running setup must not silently reset the operator's explicit AI service choice.
+    ...(existing?.aiProvider === undefined ? {} : { aiProvider: existing.aiProvider }),
     // ARCHITECTURE.md section 82: not a setup-screen control (same
     // reasoning as verseConfirmationMode above) — "fullscreen" is the
     // confirmed default for every fresh install; changeable afterward
@@ -1214,9 +1699,16 @@ ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
     // toggle (set-overlay-template).
     overlayTemplate: existing?.overlayTemplate ?? "classic",
     viewerToken: existing?.viewerToken ?? generateToken(),
+    ...(existing?.viewerToken === undefined && existing?.viewerTokenGeneratedAt === undefined
+      ? { viewerTokenGeneratedAt: new Date().toISOString() }
+      : existing?.viewerTokenGeneratedAt ? { viewerTokenGeneratedAt: existing.viewerTokenGeneratedAt } : {}),
     displayMode,
     uiLanguage,
     allowPhoneRemote,
+    // The setup screen's checkbox itself spells out the network exposure
+    // (S-04): enabling here records that acknowledgment, same as the
+    // dashboard toggle does.
+    ...(allowPhoneRemote ? { allowPhoneRemoteWarningAck: true } : {}),
     audioProfile: existing?.audioProfile ?? audioProfile,
     ndiEnabled: existing?.ndiEnabled ?? false,
     ...(organizationName || existing?.organizationName
@@ -1517,6 +2009,16 @@ ipcMain.handle("get-pipeline-latency", () => {
 })
 
 /**
+ * The set of connected WebSocket clients and their per-client round-trip
+ * latency history, read by the dashboard's network diagnostics panel over
+ * Electron IPC. Same "main process only, renderer reads only" boundary as
+ * get-pipeline-latency.
+ */
+ipcMain.handle("get-ws-client-latency", () => {
+  return appCoreHandle?.getWsClientLatency() ?? []
+})
+
+/**
  * ARCHITECTURE.md section 130: sermon-prep import. The renderer sends only
  * the pasted text; parsing, bounding and known-valid validation happen in
  * AppCore. The result is references only — showing one is an ordinary
@@ -1641,7 +2143,7 @@ ipcMain.handle("export-rehearsal", async () => {
 
 ipcMain.handle("export-diagnostics", async () => {
   if (!dashboardWindow) throw new Error("dashboard window is not available")
-  if (!appCoreHandle) throw new Error("services are not started yet")
+  // Exportable even when the services never started: that is exactly when the log is needed.
   const result = await dialog.showOpenDialog(dashboardWindow, {
     title: "Choose a folder to export diagnostics to",
     properties: ["openDirectory", "createDirectory"],
@@ -1649,7 +2151,18 @@ ipcMain.handle("export-diagnostics", async () => {
   if (result.canceled || result.filePaths.length === 0) return { canceled: true as const }
   const targetDir = result.filePaths[0] as string
   const path = join(targetDir, "churchoverlay-diagnostics.json")
-  await writeFile(path, JSON.stringify(appCoreHandle.getDiagnostics(), null, 2), "utf8")
+  const recentLines = logRing.lines()
+  const desktopLog = {
+    path: logSink?.file.path ?? null,
+    ...(logSink ? { file: logSink.file.stats(), consoleFailures: logSink.consoleFailures() } : {}),
+    recentLines: recentLines.length,
+  }
+  const diagnostics = appCoreHandle ? appCoreHandle.getDiagnostics() : { servicesStarted: false }
+  await writeFile(path, JSON.stringify({ ...diagnostics, desktopLog }, null, 2), "utf8")
+  // The in-memory ring (already secret-redacted) travels with the export.
+  await writeFile(join(targetDir, "churchoverlay-recent-log.jsonl"), recentLines.join("\n") + "\n", "utf8").catch((err) => {
+    logger.warn({ component: "main", event: "diagnostics.recent-log-failed", error: String(err) })
+  })
   logger.info({ component: "main", event: "diagnostics.exported", metadata: { targetDir } })
   return { canceled: false as const, path }
 })
@@ -1742,6 +2255,34 @@ ipcMain.handle("generate-service-extras", async (_event, sermonNotesText: unknow
   }
 })
 
+/** Export the current session transcript as Markdown for post-service review. */
+ipcMain.handle("export-session-transcript", async () => {
+  if (!appCoreHandle) {
+    throw new Error("services are not started yet")
+  }
+  const markdown = appCoreHandle.getSessionTranscriptMarkdown()
+  if (!dashboardWindow) {
+    throw new Error("dashboard window is not available")
+  }
+  const result = await dialog.showSaveDialog(dashboardWindow, {
+    title: "Export Session Transcript",
+    defaultPath: `church-overlay-transcript-${new Date().toISOString().split("T")[0]}.md`,
+    filters: [{ name: "Markdown", extensions: ["md"] }],
+  })
+  if (result.canceled || !result.filePath) {
+    return { canceled: true as const }
+  }
+  try {
+    await writeFile(result.filePath, markdown, "utf8")
+    logger.info({ component: "main", event: "transcript.exported", metadata: { path: result.filePath } })
+    return { canceled: false as const, path: result.filePath }
+  } catch (err) {
+    const message = scrubSecrets(err instanceof Error ? err.message : String(err))
+    logger.error({ component: "main", event: "transcript.export.failed", error: message })
+    return { canceled: false as const, error: message }
+  }
+})
+
 ipcMain.handle("export-service-extras", async () => {
   if (!dashboardWindow) {
     throw new Error("dashboard window is not available")
@@ -1782,9 +2323,14 @@ ipcMain.handle("export-service-extras", async () => {
   }
 })
 
-async function shutdown(): Promise<void> {
-  // The last overlay edit must reach disk before AppCore (and its state) goes away.
-  await overlayStyleController?.flush()
+async function shutdownNow(): Promise<void> {
+  // The last overlay edit should reach disk before AppCore (and its state) goes away, but a failed
+  // flush must never leave the core, the ports or the engine running: best effort, always continue.
+  try {
+    await overlayStyleController?.flush()
+  } catch (err) {
+    logger.error({ component: "main", event: "shutdown.overlay-style-flush-failed", error: err instanceof Error ? err.message : String(err) })
+  }
   // The offline engine is a separate OS process: always stopped here so it
   // can never outlive the app and squat a port (this project has been
   // bitten by zombie child processes before).
@@ -1837,7 +2383,30 @@ app.on("web-contents-created", (_event, contents) => {
   })
 })
 
+// One instance only: a second launch would fight the first over the config
+// file and the server ports. Hand control to the running window and exit.
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+if (!gotSingleInstanceLock) {
+  app.quit()
+} else {
+  app.on("second-instance", () => {
+    if (dashboardWindow) {
+      if (dashboardWindow.isMinimized()) dashboardWindow.restore()
+      dashboardWindow.focus()
+    }
+  })
+}
+
 app.whenReady().then(async () => {
+  if (!gotSingleInstanceLock) return // quitting: never start services or open a window
+  // The default File / Edit / View / Window bar is Electron's own, not part of the operator console: it
+  // eats screen space on a live-production machine and offers items (reload, close, devtools) that
+  // should not be one stray click away mid-service. Removed on Windows and Linux; macOS keeps its menu
+  // because Cmd+C / Cmd+V / Cmd+Q are wired through it there. CHURCHOVERLAY_SHOW_MENU=1 brings it back for debugging.
+  if (process.platform !== "darwin" && process.env.CHURCHOVERLAY_SHOW_MENU !== "1") {
+    Menu.setApplicationMenu(null)
+  }
+
   if (!safeStorage.isEncryptionAvailable()) {
     // ARCHITECTURE.md section 38: "The application must never write
     // plaintext secrets to disk." If the OS can't back safeStorage (no
@@ -1850,14 +2419,15 @@ app.whenReady().then(async () => {
       event: "startup.failed",
       error: "safeStorage encryption is not available on this system.",
     })
-    app.quit()
+    // Quitting silently looked like a crash on launch: tell the operator why and what to do (EN/FR).
+    failStartup("safeStorageUnavailable")
     return
   }
 
   configStore = new ConfigStore(join(app.getPath("userData"), "config.json"), {
     encrypt: (plaintext) => safeStorage.encryptString(plaintext),
     decrypt: (ciphertext) => safeStorage.decryptString(ciphertext),
-  })
+  }, logger)
   mediaLibrary = new MediaLibrary({ mediaDir: join(app.getPath("userData"), "media") })
   try {
     const report = await mediaLibrary.load()
@@ -1926,6 +2496,8 @@ app.whenReady().then(async () => {
       event: "startup.services-failed",
       error: err instanceof Error ? err.message : String(err),
     })
+    // Log-only used to leave the operator on a setup screen with no idea why: say it in the dashboard.
+    mainNotices.push({ level: "error", code: "services-failed", detail: describeError(err).message })
   }
 
   app.on("activate", () => {
@@ -1933,6 +2505,16 @@ app.whenReady().then(async () => {
       createDashboardWindow()
     }
   })
+  startupComplete = true
+}).catch((err: unknown) => {
+  // Anything thrown before the dashboard exists is fatal (nothing else would tell the operator);
+  // afterwards it is a notice, the app keeps running.
+  logger.error({ component: "main", event: "startup.failed", error: describeError(err).message, metadata: { stack: describeError(err).stack } })
+  if (dashboardWindow === null) {
+    failStartup("startupFailed", describeError(err).message)
+  } else {
+    mainNotices.push({ level: "error", code: "startup-failed", detail: describeError(err).message })
+  }
 })
 
 app.on("window-all-closed", async () => {
@@ -1940,6 +2522,22 @@ app.on("window-all-closed", async () => {
   if (process.platform !== "darwin") app.quit()
 })
 
-app.on("before-quit", () => {
-  shutdown().catch(() => {})
+// Quitting waits for shutdown() (overlay style flush, local engine, servers) but never for long:
+// a hung step must not keep the app open. The second before-quit (from app.quit() below) passes through.
+let quitShutdownStarted = false
+let quitShutdownDone = false
+app.on("before-quit", (event) => {
+  if (quitShutdownDone) return
+  event.preventDefault()
+  if (quitShutdownStarted) return
+  quitShutdownStarted = true
+  void (async () => {
+    const outcome = await awaitWithTimeout(shutdown(), 5000)
+    if (outcome !== "done") {
+      logger.error({ component: "main", event: "shutdown.incomplete", error: outcome })
+    }
+    await awaitWithTimeout(logSink?.file.flush() ?? Promise.resolve(), 1000)
+    quitShutdownDone = true
+    app.quit()
+  })()
 })

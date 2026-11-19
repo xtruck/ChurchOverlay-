@@ -1,4 +1,4 @@
-import type { Verse, VerseReference, VerseSource } from "../../../packages/contracts"
+import type { ChapterCapableSource, Verse, VerseReference, VerseSource } from "../../../packages/contracts"
 import type { Logger } from "../../../packages/shared/logger"
 import { VerseCache } from "./verse-cache"
 import { CircuitBreaker } from "./circuit-breaker"
@@ -19,6 +19,15 @@ const DEFAULT_TRANSLATION = "kjv"
 export function translationIdFor(source: VerseSource): string | undefined {
   const withId = source as VerseSource & { getTranslationId?: () => string }
   return withId.getTranslationId?.()
+}
+
+function answersRequest(verse: Verse, requested: VerseReference): boolean {
+  return (
+    verse.reference.book === requested.book &&
+    verse.reference.chapter === requested.chapter &&
+    verse.reference.verse === requested.verse &&
+    verse.text.trim().length > 0
+  )
 }
 
 /**
@@ -58,8 +67,26 @@ export async function resolveVerse(
   translation: string = DEFAULT_TRANSLATION,
   logger?: Logger
 ): Promise<Verse | null> {
+  return (await resolveVerseDetailed(reference, source, cache, circuitBreaker, translation, logger)).verse
+}
+
+/**
+ * Why a lookup produced no verse (AUDIT SF-03). "unavailable": the circuit is open or the source
+ * threw; "not-found": the source confirmed there is no such verse (or a recent confirmed miss is cached).
+ */
+export type VerseLookupFailure = "unavailable" | "not-found"
+
+/** resolveVerse() plus the reason it came back empty, so a caller can tell the operator. */
+export async function resolveVerseDetailed(
+  reference: VerseReference,
+  source: VerseSource,
+  cache: VerseCache,
+  circuitBreaker: CircuitBreaker,
+  translation: string = DEFAULT_TRANSLATION,
+  logger?: Logger
+): Promise<{ readonly verse: Verse | null; readonly failure: VerseLookupFailure | null }> {
   const cached = cache.getVerse(reference, translation)
-  if (cached) return cached
+  if (cached) return { verse: cached, failure: null }
 
   if (cache.isNegativelyCached(reference, translation)) {
     // ARCHITECTURE.md production audit (section 74): a hypothesis for an
@@ -77,7 +104,7 @@ export async function resolveVerse(
       event: "suppressed-negative-cache",
       metadata: { reference, translation, remainingMs: cache.negativeCacheRemainingMs(reference, translation) },
     })
-    return null
+    return { verse: null, failure: "not-found" }
   }
 
   if (!circuitBreaker.canProceed()) {
@@ -86,11 +113,59 @@ export async function resolveVerse(
       event: "circuit-open",
       metadata: { reference, translation },
     })
-    return null
+    return { verse: null, failure: "unavailable" }
   }
 
   try {
+    // Chapter-capable sources (GetBible, FreeApi, and the Localized/Offline
+    // wrappers around them) answer a chapter read with ONE request — the same
+    // cost as a single getVerse(), since these APIs only ever ship whole
+    // chapters anyway (verified per source: GetBibleVerseSource and
+    // FreeApiSource both discard all but one verse of the chapter body they
+    // already downloaded). So the miss path reads the chapter once, serves
+    // the requested verse from it, and warms every sibling into the bounded
+    // verse cache: a preacher reading consecutive verses of one chapter
+    // aloud — the dominant live pattern — pays ONE network round-trip instead
+    // of one full-chapter download PER VERSE. This is the same cache-warming
+    // rule resolveChapter() already applies for the Bible Browser (its doc
+    // comment: "a successful read warms the verse cache"), applied to the
+    // verse path. All responses are validated exactly like the getVerse()
+    // path below (AGENTS.md sections 13-15): a verse that does not belong,
+    // or has no text, is a faulty answer, never shown or cached.
+    const capable = source as Partial<ChapterCapableSource>
+    if (typeof capable.getChapter === "function") {
+      const chapterVerses = await capable.getChapter(reference.book, reference.chapter)
+      if (chapterVerses !== null) {
+        for (const verse of chapterVerses) {
+          if (!answersRequest(verse, verse.reference)) {
+            throw new Error("source returned a verse that does not match its own reference or has no text")
+          }
+        }
+      }
+      circuitBreaker.recordSuccess()
+      if (chapterVerses === null) {
+        cache.setNotFound(reference, translation)
+        return { verse: null, failure: "not-found" }
+      }
+      for (const verse of chapterVerses) cache.setVerse(verse.reference, translation, verse)
+      const requested = chapterVerses.find((verse) => verse.reference.verse === reference.verse)
+      if (requested) return { verse: requested, failure: null }
+      // A valid chapter the requested verse number is simply not in — the
+      // same confirmed-absent case getVerse() reports as null (versification
+      // differences, ARCHITECTURE.md section 63.1). The valid siblings stay
+      // warmed; only the requested reference is negatively cached.
+      cache.setNotFound(reference, translation)
+      return { verse: null, failure: "not-found" }
+    }
+
     const verse = await source.getVerse(reference)
+
+    // Response validation (AGENTS.md sections 13-15): a source answers for the
+    // reference it was asked for, with real text. Anything else is a faulty
+    // source, never displayed or cached; it counts as a failure, not as "not found".
+    if (verse && !answersRequest(verse, reference)) {
+      throw new Error("source returned a verse that does not match the requested reference or has no text")
+    }
     circuitBreaker.recordSuccess()
 
     if (verse) {
@@ -98,7 +173,7 @@ export async function resolveVerse(
     } else {
       cache.setNotFound(reference, translation)
     }
-    return verse
+    return { verse, failure: verse ? null : "not-found" }
   } catch (err) {
     circuitBreaker.recordFailure()
     logger?.error({
@@ -107,6 +182,6 @@ export async function resolveVerse(
       metadata: { reference, translation },
       error: err instanceof Error ? err.message : String(err),
     })
-    return null
+    return { verse: null, failure: "unavailable" }
   }
 }

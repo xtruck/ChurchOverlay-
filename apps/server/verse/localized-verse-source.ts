@@ -1,4 +1,4 @@
-import type { DisplayMode, Verse, VerseReference, VerseSource } from "../../../packages/contracts"
+import type { ChapterCapableSource, DisplayMode, Verse, VerseReference, VerseSource } from "../../../packages/contracts"
 import type { Logger } from "../../../packages/shared/logger"
 
 /**
@@ -14,12 +14,16 @@ import type { Logger } from "../../../packages/shared/logger"
  * an optional capability a specific implementation offers, never a change
  * to the shared interface every implementation must satisfy.
  */
-export class LocalizedVerseSource implements VerseSource {
+export class LocalizedVerseSource implements VerseSource, ChapterCapableSource {
   private mode: DisplayMode
   private french: VerseSource
+  private english: VerseSource
+  // Cache identity of the English source: "" for the built-in default (so the cache key stays
+  // the plain "english" it always was), otherwise a label the caller supplies (see setEnglishSource).
+  private englishSourceId = ""
 
   constructor(
-    private readonly english: VerseSource,
+    english: VerseSource,
     french: VerseSource,
     initialMode: DisplayMode,
     private readonly logger?: Logger,
@@ -33,6 +37,19 @@ export class LocalizedVerseSource implements VerseSource {
   ) {
     this.mode = initialMode
     this.french = french
+    this.english = english
+  }
+
+  /**
+   * Changes the English source IN PLACE, the twin of setFrenchSource(). AppCore holds this
+   * very instance for its whole life, so the owner must never replace the instance (that left
+   * AppCore on the old one and made later mode/translation switches hit an orphan);
+   * `sourceId` becomes part of getTranslationId() so verses cached from the previous
+   * endpoint are not served from the new one. Pass "" to go back to the default source.
+   */
+  setEnglishSource(source: VerseSource, sourceId: string = ""): void {
+    this.english = source
+    this.englishSourceId = sourceId
   }
 
   setMode(mode: DisplayMode): void {
@@ -80,9 +97,45 @@ export class LocalizedVerseSource implements VerseSource {
    * only ever had one translation (kjv), so its own branch is unaffected.
    */
   getTranslationId(): string {
-    if (this.mode === "english") return "english"
+    const english = this.englishSourceId ? `:${this.englishSourceId}` : ""
+    if (this.mode === "english") return `english${english}`
     if (this.mode === "french") return `french:${this.frenchTranslationId}`
-    return `bilingual:${this.frenchTranslationId}`
+    return `bilingual:${this.frenchTranslationId}${english}`
+  }
+
+  /**
+   * Bible Browser: chapter-level twin of getVerse(), same per-mode rules (bilingual: French
+   * primary, English attached as `secondary` per verse; a failure of the SECONDARY language
+   * alone degrades to French only). A wrapped source without getChapter() fails loudly rather
+   * than silently returning a partial chapter; resolveChapter() reports that as unavailable.
+   */
+  async getChapter(book: string, chapter: number): Promise<readonly Verse[] | null> {
+    const read = (source: VerseSource): Promise<readonly Verse[] | null> => {
+      const capable = source as Partial<ChapterCapableSource>
+      if (typeof capable.getChapter !== "function") return Promise.reject(new Error("LocalizedVerseSource: wrapped source cannot read chapters"))
+      return capable.getChapter(book, chapter)
+    }
+    if (this.mode === "english") return read(this.english)
+    if (this.mode === "french") return read(this.french)
+
+    const [frResult, enResult] = await Promise.allSettled([read(this.french), read(this.english)])
+    if (frResult.status === "rejected") throw frResult.reason
+    const fr = frResult.value
+    if (!fr) return null
+    if (enResult.status === "rejected") {
+      this.logger?.warn({
+        component: "localized-verse-source",
+        event: "secondary-language-chapter-failed",
+        metadata: { book, chapter },
+        error: enResult.reason instanceof Error ? enResult.reason.message : String(enResult.reason),
+      })
+      return fr
+    }
+    const englishByVerse = new Map((enResult.value ?? []).map((verse) => [verse.reference.verse, verse]))
+    return fr.map((verse) => {
+      const en = englishByVerse.get(verse.reference.verse)
+      return en ? { ...verse, secondary: { text: en.text, translation: en.translation, source: en.source } } : verse
+    })
   }
 
   async getVerse(reference: VerseReference): Promise<Verse | null> {

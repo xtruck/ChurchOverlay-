@@ -1,3 +1,5 @@
+import type { VerseReference } from "./verse"
+
 export type WsRole = "operator" | "viewer"
 
 /** Requests to the application. See ARCHITECTURE.md §30 — keep this set small. */
@@ -7,6 +9,9 @@ export type WsCommandType =
   | "verse:clear"
   | "verse:override"
   | "verse:preview"
+  | "verse:navigate"
+  | "bible:chapter"
+  | "bible:search"
   | "media:select"
   | "media:play"
   | "media:pause"
@@ -18,12 +23,14 @@ export type WsCommandType =
   | "scene:previous"
   | "scene:goto"
   | "verse:confirm-pending"
+  | "verse:dismiss-pending"
   | "poster:set"
   | "poster:clear"
   | "poster:set-duration"
   | "layout:set"
   | "asr:return-primary"
   | "mic:auto-gain"
+  | "asr:noise-mode"
   | "timer:start"
   | "timer:stop"
   | "timer:reset"
@@ -39,6 +46,9 @@ export type WsEventType =
   | "transcript:final"
   | "verse:show"
   | "verse:preview-result"
+  | "bible:chapter-result"
+  | "bible:search-result"
+  | "verse:navigate-result"
   | "verse:clear"
   | "media:show"
   | "media:clear"
@@ -55,11 +65,13 @@ export type WsEventType =
   | "poster:clear"
   | "layout:update"
   | "detector:near-miss"
+  | "verse:lookup-failed"
   | "translation:final"
   | "copilot:suggestions"
   | "branding:update"
   | "overlay:style"
   | "mic:health"
+  | "mic:start-failed"
   | "timer:state"
   | "stage:alert"
   | "outline:show"
@@ -93,6 +105,16 @@ export type AsrStatusPayload = {
    * Never alters a transcript: it is only shown to the operator.
    */
   readonly echoWarning?: { readonly reason: "media-loud" | "repeated-sentence"; readonly since: number } | null
+  /**
+   * State of the optional AI helpers (cleanup, translate, copilot, notes). Absent means
+   * "no change". "paused": the circuit breaker is open after repeated failures;
+   * "unavailable": a startup check found the model or key unusable. `reason` is a FIXED
+   * code, never the provider's error text, because status:update also reaches viewer pages.
+   */
+  readonly aiHelpers?: {
+    readonly state: "ok" | "paused" | "unavailable"
+    readonly reason?: "model-unavailable" | "auth" | "rate-limited" | "repeated-failures"
+  }
   readonly audioMetrics?: {
     readonly framesReceived: number
     readonly framesRejected: number
@@ -113,6 +135,27 @@ export type AsrStatusPayload = {
  */
 export type DetectorNearMissPayload = {
   readonly text: string
+  /**
+   * Operator-only "did you mean?": valid references close to a reference the
+   * detector heard but the known-valid index rejected (Isaiah 4:8 -> 4:6).
+   * Offered as buttons that send an ordinary verse:override; never shown on
+   * the overlay by themselves. Optional: absent means none.
+   */
+  readonly suggestions?: readonly VerseReference[]
+}
+
+/**
+ * AUDIT SF-03: operator-only notice that a verse the operator or the detector asked for could not
+ * be shown. "unavailable": the Bible source failed or its circuit is open; "not-found": the source
+ * answered that the verse does not exist (or a recent miss is cached); "invalid": the reference was
+ * rejected by the known-valid index (a typed override that cannot exist). Never sent to viewers.
+ */
+export type VerseLookupFailureReason = "unavailable" | "not-found" | "invalid" | "superseded"
+export type VerseLookupOrigin = "detected" | "override" | "navigate"
+export type VerseLookupFailedPayload = {
+  readonly reference: VerseReference
+  readonly reason: VerseLookupFailureReason
+  readonly origin: VerseLookupOrigin
 }
 
 /**
@@ -144,7 +187,8 @@ export type BrandingUpdatePayload = {
  * (0 = full scale); null until there is something to measure.
  */
 export type MicHealthPayload = {
-  readonly state: "warming-up" | "ok" | "listening" | "too-quiet" | "clipping" | "noisy" | "no-signal"
+  /** "no-audio" (SF-08): the server received NO audio frames at all for several seconds while the mic is meant to be on (device lost, capture crashed); "no-signal" is frames of digital silence. */
+  readonly state: "warming-up" | "ok" | "listening" | "too-quiet" | "clipping" | "noisy" | "no-signal" | "no-audio"
   readonly speechDbfs: number | null
   readonly noiseDbfs: number | null
   readonly snrDb: number | null
@@ -152,6 +196,34 @@ export type MicHealthPayload = {
   readonly clippingRatio: number
   readonly gainDb: number
   readonly autoGain: boolean
+  /** Operator noise/tongues strictness currently in effect (server/asr/noise-mode.ts). */
+  readonly noiseMode?: "normal" | "noisy" | "tongues"
+  /** Level a frame must reach to count as speech right now (PCM16 RMS), after noise-floor adaptation. */
+  readonly gateThreshold?: number
+  /** Tracked room noise floor (speech-band RMS). */
+  readonly noiseFloor?: number
+  /** Transcripts or segments dropped in the last minute, by layer. */
+  readonly dropsPerMinute?: {
+    readonly screen: number
+    readonly segment: number
+    readonly language: number
+    readonly offLanguage: number
+  }
+  /** Active warnings that tell a deaf app from a quiet room. */
+  readonly warnings?: readonly ("no-transcripts" | "gate-closed-loud" | "language-guard-bypassed")[]
+}
+
+/**
+ * mic:start-failed (SF-06) — operator-only: the server could not start transcription for a mic:start (ASR unreachable, start timed out).
+ * The server has reverted to "mic not running"; the dashboard must stop showing "listening". eason is scrubbed of credentials.
+ */
+export type MicStartFailedPayload = {
+  readonly reason: string
+}
+
+/** asr:noise-mode — operator picks how strictly noisy or speaking-in-tongues audio is filtered. */
+export type AsrNoiseModePayload = {
+  readonly mode: "normal" | "noisy" | "tongues"
 }
 
 /** mic:auto-gain — operator toggles the adaptive gain applied to audio sent to ASR. */

@@ -14,6 +14,9 @@
  * rule that needs it.
  */
 
+import type { NoiseMode } from "./noise-mode"
+import { hasReferenceHint } from "./transcript-screen"
+
 export type ScoredSegment = {
   readonly text: string
   readonly noSpeechProb?: number
@@ -28,6 +31,8 @@ export type SegmentThresholds = {
   readonly avgLogprobMax: number
   /** Drop when compression_ratio is above this, on its own. */
   readonly compressionRatioMax: number
+  /** Drop when avg_logprob is at or below this, on its own (very unsure decode: typical of noise and tongues). Absent = rule off. */
+  readonly avgLogprobFloor?: number
 }
 
 /**
@@ -42,8 +47,26 @@ export const DEFAULT_SEGMENT_THRESHOLDS: SegmentThresholds = Object.freeze({
   compressionRatioMax: 3.0,
 })
 
+/**
+ * Stricter sets for a loud room and for speaking in tongues. Whisper decodes
+ * glossolalia into fluent-looking invented words with a poor avg_logprob and
+ * an elevated no_speech_prob; these values are tighter than Whisper's own
+ * (0.6 / -1.0 / 2.4) only in "tongues". Not measured on real audio of the
+ * church (no recording available): the defaults are reasoned, and every drop
+ * is logged with its scores so they can be tuned from a real service.
+ */
+export const SEGMENT_THRESHOLDS_BY_MODE: Readonly<Record<NoiseMode, SegmentThresholds>> = Object.freeze({
+  normal: DEFAULT_SEGMENT_THRESHOLDS,
+  noisy: Object.freeze({ noSpeechProbMin: 0.65, avgLogprobMax: -0.9, compressionRatioMax: 2.6, avgLogprobFloor: -1.5 }),
+  tongues: Object.freeze({ noSpeechProbMin: 0.5, avgLogprobMax: -0.8, compressionRatioMax: 2.4, avgLogprobFloor: -1.2 }),
+})
+
+export function segmentThresholdsFor(mode: NoiseMode | undefined): SegmentThresholds {
+  return SEGMENT_THRESHOLDS_BY_MODE[mode ?? "normal"]
+}
+
 export type DroppedSegment = {
-  readonly reason: "no-speech" | "compression-ratio"
+  readonly reason: "no-speech" | "compression-ratio" | "low-confidence"
   readonly noSpeechProb?: number
   readonly avgLogprob?: number
   readonly compressionRatio?: number
@@ -88,19 +111,30 @@ function dropReason(segment: ScoredSegment, t: SegmentThresholds): DroppedSegmen
   ) {
     return "no-speech"
   }
+  if (t.avgLogprobFloor !== undefined && segment.avgLogprob !== undefined && segment.avgLogprob <= t.avgLogprobFloor) {
+    return "low-confidence"
+  }
   return null
 }
 
 export function filterSegments(
   segments: readonly ScoredSegment[],
   thresholds: SegmentThresholds = DEFAULT_SEGMENT_THRESHOLDS,
-): { readonly kept: ScoredSegment[]; readonly dropped: DroppedSegment[] } {
+): { readonly kept: ScoredSegment[]; readonly dropped: DroppedSegment[]; readonly rescued: number } {
   const kept: ScoredSegment[] = []
   const dropped: DroppedSegment[] = []
+  let rescued = 0
   for (const segment of segments) {
     const reason = dropReason(segment, thresholds)
     if (reason === null) {
       kept.push(segment)
+      continue
+    }
+    // A short "Jean 3 16" or "verset 12" decodes with a poor avg_logprob but is exactly what must never be lost: the
+    // solo-confidence rule spares segments that hold a digit, a Bible book word or a navigation word (counted in `rescued`).
+    if (reason === "low-confidence" && hasReferenceHint(segment.text)) {
+      kept.push(segment)
+      rescued += 1
       continue
     }
     dropped.push({
@@ -111,5 +145,5 @@ export function filterSegments(
       words: segment.text.trim().split(/\s+/).filter(Boolean).length,
     })
   }
-  return { kept, dropped }
+  return { kept, dropped, rescued }
 }

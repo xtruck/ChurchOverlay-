@@ -10,6 +10,7 @@ testing strategy changes.
 npm test                # unit + integration tests (no network, no secrets required)
 npm run test:live-groq  # real Groq API call — requires .env with GROQ_API_KEY
 npm run typecheck       # tsc --noEmit
+npm run lint            # ESLint (typescript-eslint recommended) over apps/, packages/, scripts/ TypeScript
 npm run dry-run         # manual end-to-end pipeline exercise, see below
 ```
 
@@ -87,6 +88,19 @@ Current status:
 | Successful failover is informational rather than a critical rate-limit error | `app-core.test.ts` |
 | Deterministic transcript post-processing preserves words while normalizing input | `asr/postprocess/postprocess.test.ts` |
 | Live French phonetic ASR spellings recover Jean, verset, and Ésaïe conservatively | `asr/transcription-corrector.test.ts` |
+| The spoken conjunction between the two numbers ("Jean 3 et verset 16", "First Samuel chapter sixteen and verse seven") is detected by the RegexDetector and produces exactly ONE navigation command (no chapter-jump race); enumeration without a keyword still matches nothing | `detector/regex-detector.test.ts`, `detector/navigation-command-detector.test.ts` |
+| A spoken or written verse RANGE ("versets 5 à 7", "verses 16 to 18", "Jean 3:16-18") is detected once (never also a truncated single), clamped to a contiguous existing stretch, capped at 12 verses, and resolves through the guarded path into ONE joined verse with bracketed numbers and `verseEnd` | `detector/verse-range-detector.test.ts`, `core/detect-and-validate.test.ts`, `verse/resolve-verse-range.test.ts`, `core/resolve-transcript-verses.test.ts` |
+| A manually TYPED range ("Jean 3:16-18", "jn 3 16 18") parses, previews as the joined verse, and shows through the SAME guarded path as a detected range (start known-valid, contiguous clamp, 12-verse cap); a reversed tail is rejected to the format hint and an equal tail is the plain single verse | `desktop/renderer/parse-reference.test.ts`, `ws/action-registry.test.ts`, `core/app-core.test.ts` |
+| The no-build-step copies cannot drift silently: FRENCH_TRANSLATIONS and FRENCH_BOOK_NAMES stay equal across dashboard/overlay/remote (darby included) and the five font directories stay byte-identical | `desktop/renderer/reference-parity.test.ts`, `desktop/renderer/fonts-parity.test.ts` |
+| The overlay background is a validated style field: closed enum (none/nature + 5 CSS scenes), repair-to-none, legacy settings load, strict payload carries the field; the dashboard picker is built from meta and never drops background on edit | `overlay/overlay-style.test.ts`, `overlay/background-scenes.test.ts` |
+| The animated scenes cannot drift or regress silently: overlay.js's BACKGROUNDS equals the contract, every scene has a display rule + markup (no orphan rules), en/fr names, reduced-motion freeze, gallery previews every scene, and every scene keyframe animates ONLY transform/opacity (OBS GPU contract) | `overlay/background-scenes.test.ts` |
+| References in different chapters of one transcript resolve CONCURRENTLY with input order preserved for results and lookup reports; the transcript gate runs once for singles and ranges | `core/resolve-transcript-verses.test.ts` |
+| A range-tailed utterance produces NO navigation command (plural keyword, RANGE_TAIL and space-separated second-number exclusions); the comma pause enumeration and every real command are untouched | `detector/navigation-command-detector.test.ts` |
+| Accented Bible terms normalize after apostrophes and prepositions ("l'évangile" → "l'Évangile"); compounds and plurals untouched | `asr/postprocess/postprocess.test.ts` |
+| A chapter-capable source's one chapter read serves the requested verse and warms its siblings; absent verse = confirmed not-found with siblings warmed; a failed or faulty chapter is a breaker failure, never cached | `verse/resolve-verse.test.ts` |
+| Concurrent identical chapter/verse requests share one HTTP request and one body parse, share failures, and are retried after settling (single-flight on GetBibleVerseSource and FreeApiSource) | `verse/get-bible-verse-source.test.ts`, `verse/free-api-source.test.ts` |
+| WebSocket broadcasts travel as TEXT frames after the single-encode Buffer change (`isBinary === false` on a real client connection) | `ws/server.test.ts` |
+| Detection-path micro-benchmark (detect, nav-detect, compact keys, corrector, bible terms) for before/after comparisons | `detector/detection-path.bench.ts` (manual, like the audio bench) |
 | Audio chunking remains bounded by duration and frame count | `audio/audio-chunker.test.ts` |
 | WER benchmark reports deterministic substitution/deletion/insertion counts | `asr/benchmark/wer.test.ts` |
 | default verse display auto-clears after the fixed 2:30 ceiling | `app-core.test.ts` |
@@ -167,6 +181,13 @@ All use fake completers; nothing here calls the real Anthropic API (see "Not aut
 | Client: key sent in a header and never leaked on error, timeout abort, per-minute call budget | `claude-helpers.test.ts` |
 | Reference repair, FR/EN translation, sermon notes: strict parsing, refusal of doubtful answers | `claude-helpers.test.ts` |
 | Free Groq text client: request shape, Authorization header, key scrubbed, malformed bodies, timeout | `groq-text-client.test.ts` |
+| AI helpers pause after repeated failures, probe after the cooldown, recover (no request while open) | `guarded-text-completer.test.ts` |
+| Real-service transcripts replayed through detector and known-valid index, no network (live log 2026-10-12) | `sermon-replay.test.ts` |
+| "Did you mean" candidates are valid, bounded and never guessed for an unknown book or chapter | `nearest-references.test.ts` |
+| Startup model check (ok / model-unavailable / auth / unknown, body never trusted) and the AI helpers' status with fixed reason codes | `groq-text-client.test.ts`, `guarded-text-completer.test.ts`, `action-registry.test.ts`, `app-core.test.ts` |
+| A sentence that announces another chapter never shows a verse of the chapter on screen (mutation-checked: fails without the fix) | `announced-context.test.ts`, `app-core.test.ts` |
+| Learned-alias groundwork: proposals, validation, bounded store, hostile file parsing, explicit-forms-only detection (not wired yet) | `learned-aliases.test.ts` |
+| Offline Python tools (log reader, error rates, alias miner, replay builder, report, bake-off, gate/VAD port, quote tuner); run with `python -m unittest discover -s tools/tests` | `tools/tests/test_tools.py` (see `tools/README.md`) |
 | AI service choice: Anthropic by default when its key exists, explicit Groq, no AI with only the transcription key, no silent fallback; stored in the config | `ai-provider.test.ts`, `config-store.test.ts` |
 | Transcript cleanup: correct-only prompt, 400-character input bound, implausible/multi-line/unchanged answers ignored, timeout, failure falls back to the raw text, three toggles all OFF by default | `transcript-cleaner.test.ts` |
 | Semantic proposal: only an explicit "high" confidence is accepted, bounded window, failure drops silently | `semantic-verse-proposer.test.ts` |

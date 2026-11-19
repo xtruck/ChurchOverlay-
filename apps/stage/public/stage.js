@@ -1,4 +1,54 @@
 (function () {
+  const STRINGS = {
+    en: {
+      title: "Stage Display",
+      clockLabel: "Time of day",
+      stage: "Stage",
+      timer: "Timer",
+      alertTitle: "Message from the desk",
+      scripture: "Scripture",
+      noVerse: "No verse displayed",
+      waiting: "Awaiting scripture detection from pulpit speech…",
+      overflowWarning: "Verse text exceeds the display — some text is clipped",
+      disconnected: "Disconnected",
+      connected: "Connected",
+      noToken: "No access link — copy the stage link from the app",
+      mic: "Mic",
+      wrapUp: "Wrap up",
+      overtime: "Overtime",
+      audio: { ok: "Good", error: "Error", throttled: "Throttled", "rate-limited": "Rate limited", failover: "Backup active" },
+    },
+    fr: {
+      title: "Affichage de scène",
+      clockLabel: "Heure",
+      stage: "Scène",
+      timer: "Minuteur",
+      alertTitle: "Message de la régie",
+      scripture: "Écriture",
+      noVerse: "Aucun verset affiché",
+      waiting: "En attente de la détection d’un verset depuis la chaire…",
+      overflowWarning: "Le texte dépasse l’écran — une partie est coupée",
+      disconnected: "Déconnecté",
+      connected: "Connecté",
+      noToken: "Lien d’accès manquant — copiez le lien de scène depuis l’application",
+      mic: "Micro",
+      wrapUp: "Conclure",
+      overtime: "Temps dépassé",
+      audio: { ok: "Bon", error: "Erreur", throttled: "Ralentissement", "rate-limited": "Limite atteinte", failover: "Secours actif" },
+    },
+  };
+  const lang = (navigator.language || "en").toLowerCase().startsWith("fr") ? "fr" : "en";
+  const t = (key) => key.split(".").reduce((value, part) => value && value[part], STRINGS[lang]) || key;
+  document.documentElement.lang = lang;
+  document.querySelectorAll("[data-t]").forEach((el) => { el.textContent = t(el.dataset.t); });
+  document.querySelectorAll("[data-t-label]").forEach((el) => { el.setAttribute("aria-label", t(el.dataset.tLabel)); });
+  document.title = "ChurchOverlay — " + t("title");
+  const timerLabel = document.querySelector(".timer-label");
+  if (timerLabel) {
+    timerLabel.dataset.warningLabel = t("wrapUp");
+    timerLabel.dataset.overtimeLabel = t("overtime");
+  }
+
   const params = new URLSearchParams(window.location.search);
   // The token is in the URL fragment (#token=..., never sent to a server); ?token= is the older form.
   const token = new URLSearchParams(window.location.hash.slice(1)).get("token") || params.get("token") || "";
@@ -21,6 +71,7 @@
   const verseCard = document.getElementById("stage-verse-card");
   const referenceEl = document.getElementById("stage-reference");
   const verseTextEl = document.getElementById("stage-verse-text");
+  const overflowWarning = document.getElementById("stage-overflow-warning");
   const wsDot = document.getElementById("ws-indicator");
   const wsText = document.getElementById("ws-status-text");
   const audioText = document.getElementById("audio-status-text");
@@ -47,12 +98,17 @@
   // verse:show carries reference as { book, chapter, verse } (packages/
   // contracts/verse.ts). Setting the object as textContent printed
   // "[object Object]"; format it. A plain string is still accepted.
-  function formatReference(ref) {
-    if (!ref) return "Scripture";
+  // Innovation pass (ARCHITECTURE.md section 145) + frontend pass (section
+  // 146): a detected range shown as ONE joined verse carries the additive
+  // `verseEnd`, and its reference line reads "Book C:V-E" — the same suffix
+  // the overlay, dashboard, remote and live view already render. Payloads
+  // without verseEnd render exactly as before.
+  function formatReference(ref, verseEnd) {
+    if (!ref) return t("scripture");
     if (typeof ref === "string") return ref;
-    if (typeof ref.book !== "string") return "Scripture";
+    if (typeof ref.book !== "string") return t("scripture");
     const book = ref.book.replace(/\b\w/g, (c) => c.toUpperCase());
-    return book + " " + ref.chapter + ":" + ref.verse;
+    return book + " " + ref.chapter + ":" + ref.verse + (typeof verseEnd === "number" && verseEnd > ref.verse ? "-" + verseEnd : "");
   }
 
   // The preacher cannot scroll a stage monitor: shrink the verse until it
@@ -61,14 +117,18 @@
   function fitVerseText() {
     if (!verseTextEl || !verseCard || verseCard.classList.contains("empty")) {
       if (verseTextEl) verseTextEl.style.fontSize = "";
+      if (overflowWarning) overflowWarning.hidden = true;
       return;
     }
     const box = verseTextEl.parentElement;
     verseTextEl.style.fontSize = "";
     let size = parseFloat(getComputedStyle(verseTextEl).fontSize) || 64;
     while (box && verseTextEl.scrollHeight > box.clientHeight + 1 && size > MIN_VERSE_PX) {
-      size -= 2;
+      size = Math.max(MIN_VERSE_PX, size - 2);
       verseTextEl.style.fontSize = size + "px";
+    }
+    if (overflowWarning) {
+      overflowWarning.hidden = Boolean(box && verseTextEl.scrollHeight > box.clientHeight + 1);
     }
   }
   let resizeTimer = 0;
@@ -91,17 +151,17 @@
     // reconnect loop behind a misleading DISCONNECTED indicator.
     if (!token) {
       if (wsDot) wsDot.className = "dot disconnected";
-      if (wsText) wsText.textContent = "NO TOKEN — COPY THE STAGE LINK FROM THE APP";
+      if (wsText) wsText.textContent = t("noToken");
       return;
     }
     const ws = new WebSocket(wsUrl, [token]);
     ws.onopen = () => {
       if (wsDot) wsDot.className = "dot connected";
-      if (wsText) wsText.textContent = "CONNECTED";
+      if (wsText) wsText.textContent = t("connected");
     };
     ws.onclose = () => {
       if (wsDot) wsDot.className = "dot disconnected";
-      if (wsText) wsText.textContent = "DISCONNECTED";
+      if (wsText) wsText.textContent = t("disconnected");
       setTimeout(connectWs, 2000);
     };
     ws.onmessage = (event) => {
@@ -119,15 +179,24 @@
 
     if (msg.type === "verse:show" && msg.payload) {
       if (verseCard) verseCard.className = "stage-verse-card";
-      if (referenceEl) referenceEl.textContent = formatReference(msg.payload.reference);
+      if (referenceEl) {
+        referenceEl.textContent = formatReference(msg.payload.reference, msg.payload.verseEnd);
+        referenceEl.lang = msg.payload.translation && ["ls1910", "lsg", "segond", "darby"].includes(String(msg.payload.translation).toLowerCase()) ? "fr" : "en";
+      }
       if (verseTextEl) verseTextEl.textContent = msg.payload.text || "";
+      if (verseTextEl) verseTextEl.lang = msg.payload.translation && ["ls1910", "lsg", "segond", "darby"].includes(String(msg.payload.translation).toLowerCase()) ? "fr" : "en";
       restartVerseAnimation();
       fitVerseText();
     } else if (msg.type === "verse:clear") {
       if (verseCard) verseCard.className = "stage-verse-card empty";
-      if (referenceEl) referenceEl.textContent = "No verse displayed";
-      if (verseTextEl)
-        verseTextEl.textContent = "Awaiting scripture detection from pulpit speech...";
+      if (referenceEl) {
+        referenceEl.textContent = t("noVerse");
+        referenceEl.lang = lang;
+      }
+      if (verseTextEl) {
+        verseTextEl.textContent = t("waiting");
+        verseTextEl.lang = lang;
+      }
       fitVerseText();
     } else if (msg.type === "timer:state" && msg.payload) {
       const p = msg.payload;
@@ -152,7 +221,7 @@
       if (alertBanner) alertBanner.className = "stage-alert-banner hidden";
     } else if (msg.type === "status:update" && msg.payload) {
       if (msg.payload.asrHealth && audioText) {
-        audioText.textContent = msg.payload.asrHealth.toUpperCase();
+        audioText.textContent = STRINGS[lang].audio[msg.payload.asrHealth] || msg.payload.asrHealth;
       }
     }
   }

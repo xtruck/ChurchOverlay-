@@ -81,7 +81,13 @@ export class HybridAsrProvider implements AsrProvider {
   setApiKey(apiKey: string): void {
     const trimmed = apiKey.trim()
     if (this.real && this.active) {
-      this.real.stop().catch(() => {})
+      this.real.stop().catch((error: unknown) => {
+        this.logger?.warn({
+          component: "asr",
+          event: "hybrid.stop-failed",
+          error: error instanceof Error ? error.message : String(error),
+        })
+      })
     }
     if (!trimmed) {
       this.real = null
@@ -130,6 +136,21 @@ export class HybridAsrProvider implements AsrProvider {
   async stop(): Promise<void> {
     this.active = false
     if (this.real) await this.real.stop()
+  }
+
+  // AppCore finds these optional methods by name (it checks `"x" in asr`), the
+  // same duck-typing FailoverAsrProvider already forwards. Without them the web
+  // build silently lost the end-of-utterance flush and the verse-aware prompt.
+  async onUtteranceEnd(): Promise<void> {
+    await this.real?.onUtteranceEnd()
+  }
+
+  setCurrentVerseRef(ref: string | null): void {
+    this.real?.setCurrentVerseRef(ref)
+  }
+
+  discardBufferedAudio(): void {
+    this.real?.discardBufferedAudio()
   }
 
   onTranscript(callback: (result: TranscriptResult) => void): void {

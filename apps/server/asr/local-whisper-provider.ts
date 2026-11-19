@@ -5,7 +5,14 @@ import { plannedBookTerms, plannedBookTermsBilingual } from "./biblical-vocabula
 import { LanguageLock, meanLogprob, normalizeLanguage, pickFrEn, type LockedLanguage } from "./language-lock"
 import { normalizeBookName } from "../detector/regex-detector"
 import { echoWords, isPromptEcho } from "./prompt-echo"
-import { filterSegments, parseScoredSegments } from "./segment-quality"
+import { filterSegments, parseScoredSegments, segmentThresholdsFor } from "./segment-quality"
+import type { TranscriptionPolicy } from "./noise-mode"
+import { isLikelyThirdLatinLanguage } from "./script-guard"
+
+/** After this many language drops in a row the guard lets text through until a clip passes. */
+const LOCAL_LANGUAGE_VALVE_AFTER = 5
+/** French is the church's primary language: the retry language when a clip's label is a third language and none is locked. */
+const PRIMARY_FALLBACK_LANGUAGE = "fr"
 
 /**
  * Offline transcription through a local whisper.cpp server — the last link
@@ -31,6 +38,8 @@ export type LocalWhisperEndpoint = {
 export type LocalWhisperProviderOptions = {
   readonly server: LocalWhisperEndpoint
   readonly language?: string
+  /** Operator noise/tongues strictness for the per-segment quality filter (noise-mode.ts). Absent = "normal". */
+  readonly policy?: TranscriptionPolicy
   readonly logger?: Logger
   readonly fetchImpl?: typeof fetch
   readonly now?: () => number
@@ -129,6 +138,8 @@ export class LocalWhisperProvider implements AsrProvider {
   private readonly timeoutFor: (audioMs: number) => number
   private language: string | undefined
   private readonly languageLock = new LanguageLock()
+  private readonly policy?: TranscriptionPolicy
+  private consecutiveLanguageDrops = 0
   private active = false
   private plannedBookIds: readonly string[] = []
   private currentBook: string | null = null
@@ -137,6 +148,8 @@ export class LocalWhisperProvider implements AsrProvider {
   private bufferedSamples = 0
   private queue: Int16Array[] = []
   private draining = false
+  /** True after an overload was reported, until the queue empties (one report per burst). */
+  private overloadReported = false
   private sequence = 0
   private correlationId = ""
   private transcriptCallback: ((result: TranscriptResult) => void) | null = null
@@ -145,6 +158,7 @@ export class LocalWhisperProvider implements AsrProvider {
   constructor(options: LocalWhisperProviderOptions) {
     this.server = options.server
     this.language = options.language
+    this.policy = options.policy
     this.logger = options.logger
     this.fetchImpl = options.fetchImpl ?? fetch
     this.now = options.now ?? Date.now
@@ -209,6 +223,7 @@ export class LocalWhisperProvider implements AsrProvider {
 
   async start(): Promise<void> {
     this.active = true
+    this.overloadReported = false
     this.sequence = 0
     this.correlationId = generateUlid(this.now())
     this.languageLock.reset()
@@ -267,11 +282,27 @@ export class LocalWhisperProvider implements AsrProvider {
     }
     this.discardBufferedAudio()
     this.queue.push(batch)
+    let dropped = 0
     while (this.queue.length > MAX_BACKLOG) {
       this.queue.shift()
+      dropped += 1
       this.logger?.warn({ component: "asr", event: "local-whisper.backlog-dropped" })
     }
+    if (dropped > 0) this.reportOverload()
     void this.drain()
+  }
+
+  /**
+   * Audio was skipped because the engine fell more than MAX_BACKLOG batches
+   * behind speech. A log line is not enough: as an offline-first primary this
+   * error is what moves transcription to the cloud (FailoverAsrProvider,
+   * "primary-error"), and as the last resort it tells the operator why words
+   * are missing. Reported once per burst, re-armed when the queue empties.
+   */
+  private reportOverload(): void {
+    if (this.overloadReported) return
+    this.overloadReported = true
+    this.errorCallback?.(new Error("Local transcription cannot keep up with speech on this computer; some audio was skipped."))
   }
 
   private async drain(): Promise<void> {
@@ -309,6 +340,8 @@ export class LocalWhisperProvider implements AsrProvider {
       }
     } finally {
       this.draining = false
+      // The engine caught up: a later overload is a new burst and is reported again.
+      if (this.queue.length === 0) this.overloadReported = false
     }
   }
 
@@ -340,6 +373,50 @@ export class LocalWhisperProvider implements AsrProvider {
           decoded = corrected.decoded
         }
         language = this.languageLock.language ?? language // a retry must not re-detect
+        if (!corrected && decoded.pick === null && decoded.language === null && decoded.rawLanguage !== null) {
+          // The engine decoded the detection clip in a language that is neither French nor English (Spanish, Hindi...).
+          // The label is a guess on a short noisy clip, so the TEXT decides (as in the Groq provider): only text that
+          // reads as Spanish/Portuguese is retried once with the locked language (or French) and dropped if still so.
+          if (isLikelyThirdLatinLanguage(decoded.text)) {
+            const retryLanguage = this.languageLock.language ?? PRIMARY_FALLBACK_LANGUAGE
+            const retryPrompt = this.promptFor(retryLanguage as LockedLanguage)
+            const retry = await this.transcribe(samples, retryPrompt, retryLanguage, false)
+            if (!isLikelyThirdLatinLanguage(retry.text)) {
+              decoded = retry
+              prompt = retryPrompt
+              this.closeLanguageValve()
+            } else if (this.consecutiveLanguageDrops >= LOCAL_LANGUAGE_VALVE_AFTER) {
+              this.policy?.ledger.setValve("local-language", true)
+              this.logger?.warn({
+                component: "asr",
+                event: "local-whisper.language-guard-bypassed",
+                correlationId: this.correlationId,
+                metadata: { consecutive: this.consecutiveLanguageDrops },
+              })
+            } else {
+              this.consecutiveLanguageDrops += 1
+              const note = this.policy?.ledger.record("language", "local")
+              if (note === undefined || note.log) {
+                this.logger?.info({
+                  component: "asr",
+                  event: "local-whisper.language-dropped",
+                  correlationId: this.correlationId,
+                  metadata: { detected: decoded.rawLanguage.slice(0, 24), retried: retryLanguage, suppressed: note?.suppressed ?? 1 },
+                })
+              }
+              return ""
+            }
+          } else {
+            this.logger?.info({
+              component: "asr",
+              event: "local-whisper.language-label-ignored",
+              correlationId: this.correlationId,
+              metadata: { detected: decoded.rawLanguage.slice(0, 24) },
+            })
+          }
+        } else if (decoded.language !== null) {
+          this.closeLanguageValve()
+        }
       }
       this.languageLock.noteClip(decoded.meanLogprob, detecting)
     }
@@ -395,18 +472,29 @@ export class LocalWhisperProvider implements AsrProvider {
    * text from the rest. No usable segments, or nothing dropped: the engine's
    * own `text`, unchanged.
    */
+  private closeLanguageValve(): void {
+    if (this.consecutiveLanguageDrops >= LOCAL_LANGUAGE_VALVE_AFTER) this.policy?.ledger.setValve("local-language", false)
+    this.consecutiveLanguageDrops = 0
+  }
+
   private dropUnlikelySegments(body: unknown, text: string): string {
     const segments = parseScoredSegments(body)
     if (!segments) return text
-    const { kept, dropped } = filterSegments(segments)
+    const { kept, dropped, rescued } = filterSegments(segments, segmentThresholdsFor(this.policy?.mode))
+    if (rescued > 0) {
+      this.logger?.info({ component: "asr", event: "local-whisper.segment-kept-reference", correlationId: this.correlationId, metadata: { rescued } })
+    }
     if (dropped.length === 0) return text
     for (const segment of dropped) {
+      const note = this.policy?.ledger.record("segment", segment.reason)
+      if (note !== undefined && !note.log) continue
       this.logger?.info({
         component: "asr",
         event: "local-whisper.segment-dropped",
         correlationId: this.correlationId,
         metadata: {
           reason: segment.reason,
+          mode: this.policy?.mode ?? "normal",
           words: segment.words,
           noSpeechProb: round(segment.noSpeechProb),
           avgLogprob: round(segment.avgLogprob),
@@ -443,6 +531,7 @@ export class LocalWhisperProvider implements AsrProvider {
       return {
         text: this.dropUnlikelySegments(body, body.text).replace(/\s+/g, " "),
         language: normalizeLanguage(body.language),
+        rawLanguage: typeof body.language === "string" && body.language.trim() !== "" ? body.language : null,
         pick: detecting ? pickFrEn(body.language_probabilities) : null,
         meanLogprob: meanLogprob((parseScoredSegments(body) ?? []).map((segment) => segment.avgLogprob)),
       }
@@ -463,6 +552,8 @@ type Decoded = {
   readonly text: string
   /** The language the engine decoded in, when it is French or English. */
   readonly language: LockedLanguage | null
+  /** The engine's own language string, whatever it is (null when absent): lets a third language be told from "not reported". */
+  readonly rawLanguage: string | null
   /** The better of fr/en by the engine's probabilities (detection clips only). */
   readonly pick: { readonly language: LockedLanguage; readonly margin: number } | null
   /** Mean avg_logprob over the reply's segments, before the quality filter; null when unscored. */

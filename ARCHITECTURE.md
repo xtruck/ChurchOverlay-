@@ -1,9 +1,10 @@
 # ChurchOverlay — Architecture Specification
 
 Version: 1.1
-Status: Architecture Baseline
-Scope: v1
-Last Updated: 2026-09-21
+Status: Architecture Baseline with approved Phase 2 amendments
+Scope: v1 baseline; approved Phase 2 decisions are recorded in later sections
+Baseline established: 2026-09-21
+Last Updated: 2026-10-12
 
 ## 1. Purpose
 
@@ -1506,9 +1507,10 @@ This document is the architectural baseline for v1.
 
 Recorded here per AGENTS.md section 43's requirement that a scope change be explained
 (why, what changes, what breaks, what tests are required) before it happens, not folded
-in silently. Sections 1-58 above remain the accurate v1 baseline — nothing in them is
-retracted by this section. This section governs what comes *after* v1, not a
-retroactive rewrite of it.
+in silently. Sections 1-58 above remain the historical v1 baseline; approved changes
+and later implementation decisions are recorded explicitly in this section and the
+feature notes that follow. This section governs Phase 2 and does not silently rewrite
+the original v1 baseline.
 
 ### 59.1 Why
 
@@ -1525,22 +1527,24 @@ Two decisions were made together, both confirmed explicitly rather than assumed:
    Groq API key), and no church-specific text or defaults left anywhere in UI copy or
    `package.json` metadata.
 2. **Feature scope.** Three items from section 3's out-of-scope list are approved to
-   move forward: media library & song lyrics, service rundown & scenes, and an AI
-   copilot. Each still requires its own dedicated architecture note before its code
-   starts (section 59.3) — this section approves the *scope change itself* and the
-   *build order*, not a full technical design for all three at once.
+   move forward: a media library, service rundown & scenes, and an AI copilot. Song
+   lyrics were initially considered with the media library but were later dropped
+   from Phase 2 (section 60). Each feature required its own dedicated architecture
+   note before its code started (section 59.3); the notes and subsequent approved
+   refinements are recorded below.
 
 ### 59.2 What changes
 
-- Sections 2-3's v1 scope lock is amended: media library, songs/lyrics, scenes,
+- Sections 2-3's v1 scope lock is amended: media library, scenes,
   rundown/service planning, and "AI agent" (now understood as a broader AI copilot, not
   only the `ReferenceInterpreter` idea in `ROADMAP.md`) are no longer permanently
-  out-of-scope — see the updated markers in section 3. Everything else on that list
-  (local/hybrid ASR, semantic detection, cameras, branding engine as a distinct
-  subsystem, MCP server, ProPresenter/Planning Center integration, automated OBS
-  control, remote/cloud sync, multi-user networking, mobile application, cloud backend,
-  dynamic plugin loading) remains locked out exactly as before. `AGENTS.md` section 4's
-  "Do NOT implement" list is amended the same way.
+  out-of-scope — see the updated markers in section 3. At the time of this original
+  approval, local/hybrid ASR and semantic detection remained out of scope; later,
+  explicitly bounded approvals for those capabilities are recorded in sections 95,
+  99, 113, 121, 124, and 139. Cameras, a general branding engine, MCP, third-party
+  presentation integrations, automatic OBS control, remote/cloud sync, multi-user
+  networking, mobile, a cloud backend, and dynamic plugin loading remain outside the
+  approved scope.
 - A visual refactor (internally "Phase 0") of the existing v1 screens — operator
   dashboard, overlay, and the first-run setup screen — is approved as a single full
   pass: same screens, actions, and data, restyled. This does not touch section 2's
@@ -1549,77 +1553,71 @@ Two decisions were made together, both confirmed explicitly rather than assumed:
   and carries no scope-change requirement on its own. Build order within that pass:
   dashboard first (highest surface area), then overlay, then the setup screen — a
   sequencing choice, not separate rounds of review.
-- Build order for the three approved features, chosen by risk and dependency: **media
-  library & song lyrics**, then **service rundown & scenes**, then **AI copilot**.
-  Media/lyrics is self-contained and never touches the verse pipeline, so it's the
+- Original build order for the three approved features, chosen by risk and dependency:
+  **media library**, then **service rundown & scenes**, then **AI copilot**. The media
+  feature is self-contained and never touches the verse pipeline, so it was the
   safest first real addition. Rundown/scenes builds on having media cues to sequence
   and forces state-machine design work (section 48's pattern: named states, defined
   transitions, invalid transitions handled safely) that the AI copilot will also need.
-  AI copilot goes last — `ROADMAP.md` already documents why its one concretely-evaluated
-  approach (Gemini Live as a `ReferenceInterpreter`) needs real session-management
-  engineering the current Groq batch model doesn't, and "AI copilot" has now been
-  confirmed to mean something broader than that one idea, which raises its own,
-  not-yet-answered design questions (section 59.4).
+  The AI copilot was originally sequenced last because its scope and design carried
+  more risk; later approved AI slices and their limits are documented in sections 121
+  and 123-126.
 - Resolved product decisions for the rundown feature, to remove ambiguity before its
-  architecture note is written: **live voice-detected verse display keeps running in
+  architecture note was written: **live voice-detected verse display keeps running in
   the background while a rundown is active** — starting a rundown does not suspend
-  automatic detection. The exact precedence between a live-detected verse and whatever
-  scene the rundown currently has on air is still open (section 59.4) and must be
-  settled in that feature's own architecture note, not guessed at here.
+  automatic detection. Precedence is now resolved in section 64 and summarized in
+  section 59.4.
 - Resolved product decision for the media library: v1 of that feature supports
   **images and video/audio backgrounds**, not images only. Video/audio pulls in real
   complexity images alone don't (playback control, a new WS event cadence for a
   running clip) — that complexity is now in scope for this feature, not deferred to a
   later one.
 
-### 59.3 What each feature needs before code (unchanged from the original plan)
+### 59.3 Required architecture notes (completed)
 
-Each of the three needs its own short architecture note — which module owns it, which
-interface it uses, which invariant it could affect, how it will be tested, confirmation
-it's the approved Phase 2 scope and not scope creep beyond it:
+Each feature required a short architecture note before implementation, covering module
+ownership, interfaces, affected invariants, tests, and approved scope. The notes are
+recorded in sections 60 and 64 for media and rundown, and sections 121 and 123-126 for
+the approved AI slices. The following summarizes those original design constraints;
+further expansion still requires a separate scope/design decision:
 
-- **Media library & song lyrics** — lowest risk. Needs a new `MediaCue`/`LyricsCue`
-  concept alongside `Verse`, a new WS event type (`media:show`, distinct from
+- **Media library** — the original note specified a `MediaCue` concept alongside
+  `Verse`, a new WS event type (`media:show`, distinct from
   `verse:show` — AGENTS.md section 19 keeps the action registry small and adds types
   only when a real feature needs them, which this now is), and secure file handling for
   operator-selected local images/video/audio: either a scoped Electron `dialog` picker
   or a dedicated IPC channel where the main process reads the file and the renderer
   never receives a raw filesystem path (AGENTS.md section 28's secrets/renderer-
-  isolation reasoning extended to arbitrary local files). Nothing existing breaks; this
-  is additive. Tests needed: a new source unit-tested the way `FreeApiSource` is, a
-  WS/action-registry test for `media:show`, and at least one deliberate
-  "malicious/traversal path" test — AGENTS.md section 15's "no arbitrary filesystem
-  paths from untrusted WS payloads" applies directly here.
-- **Service rundown & scenes** — medium risk. A real new stateful subsystem: a
+  isolation reasoning extended to arbitrary local files). The design was additive and
+  required tests for import/storage, `media:show` validation, and malicious/traversal
+  paths from untrusted payloads.
+- **Service rundown & scenes** — the original note called for a stateful subsystem,
+  implemented as a
   pre-planned sequence of scenes (verse mode, an announcement slide, a media cue,
   blank) the operator steps through, replacing today's single implicit state (verse
   showing or cleared) with an explicit state machine (named states, defined
   transitions, per section 48). New operator-only WS commands (`scene:next`,
   `scene:previous`, `scene:goto`, `rundown:load`), schema-validated the same way
-  `verse:override` is. Its architecture note must settle the precedence question left
-  open in section 59.4.
-- **AI copilot** — highest risk by a clear margin. `ROADMAP.md`'s existing
-  Gemini-Live-as-`ReferenceInterpreter` writeup is one candidate building block, not
-  the whole feature now that "AI copilot" has been confirmed to mean something
-  broader (section 59.4 has the open question). Whatever form it takes, any
-  AI-proposed Bible reference must still pass through the same hallucination-guard
-  pipeline `RegexDetector`'s output does today (section 15) — an AI-proposed reference
-  is never trusted directly, regardless of which AI approach is eventually chosen. This
-  item does not proceed to code before its own dedicated architecture review.
+  `verse:override` is. Its implemented precedence rules are specified in section 64
+  and summarized in section 59.4.
+- **AI copilot** — highest risk by a clear margin. The approved, implemented AI scope
+  is the optional, key-gated helpers in sections 121 and 123-126, not a general-purpose
+  agent. Any AI-proposed Bible reference remains an untrusted candidate and must pass
+  through the validation path in section 15; proposals remain suggestions rather than
+  directly controlling the overlay. Further AI capabilities require their own review.
 
-### 59.4 Open questions carried forward (not decided by this section)
+### 59.4 Decisions and remaining questions
 
-- **Rundown/live-detection precedence.** Confirmed: live detection keeps running
-  during a rundown. Not yet decided: when both a live-detected verse and the rundown's
-  current scene want the overlay at the same moment, which wins, and how does control
-  return afterward? This shapes the rundown state machine's actual transition table and
-  must be settled in that feature's architecture note before its code starts.
-- **AI copilot's actual shape.** Confirmed broader than the `ReferenceInterpreter`
-  idea alone. Not yet decided: sermon/topic assistance, auto-generated slide
-  suggestions, a chat-style assistant in the dashboard, the original reference-proposal
-  idea, or some combination — each has a materially different risk profile and none is
-  assumed here. This must be scoped concretely in that feature's own dedicated
-  architecture review, per section 59.3, before any code.
+- **Rundown/live-detection precedence — resolved in section 64.** Live detection,
+  manual override, and voice navigation take precedence over the current rundown scene.
+  The scene is paused and resumes when the interrupting verse is cleared; an explicit
+  rundown navigation action discards the pause and takes control. This is implemented
+  and specified by the rundown state machine in section 64.
+- **AI copilot — scoped in later approved notes.** The implemented scope is the
+  optional, key-gated, operator-only helpers and sermon suggestions described in
+  sections 121 and 123-126. They do not receive audio, bypass verse validation, or
+  directly control the overlay. A free-form chat agent or additional AI capabilities
+  are not approved by those notes and require a separate scope and architecture review.
 
 ## 60. Phase 2 Feature Note — Media Library
 
@@ -1628,9 +1626,9 @@ Song Lyrics." Lyrics/song-text-block support is dropped from Phase 2 entirely
 (confirmed explicitly) — this feature is Media Library only (images, video, audio).
 `ROADMAP.md` is updated to match.
 
-The dedicated architecture note section 59.3 requires before this feature's code
-starts, following AGENTS.md section 56's checklist. This is design only — nothing in
-this section is implemented yet.
+This section records the architecture note required by section 59.3 and the design
+constraints used for implementation. The media library is implemented; later
+hardening and implementation details are recorded in sections 74 and 112.
 
 ### 60.1 Which module owns this
 
@@ -2659,6 +2657,13 @@ result (still validated through `KnownValidVerseIndex.exists()` — invariant 17
 applies here exactly as it does to every other navigation-computed reference, no
 exception for a "simpler" case).
 
+When a bare "verse N" follows a separately finalized book-and-chapter announcement,
+the fresh announced chapter takes precedence over the last displayed position. The
+resolved verse is always sent as an operator-only pending suggestion, including in
+Auto mode; confirming it is the only way it reaches the overlay. A same-utterance,
+complete book/chapter/verse reference retains the existing detection-mode behavior.
+Partial transcripts never establish this context or trigger lookup.
+
 **Known, accepted limitation**: a book name mentioned much earlier in a long,
 rambling sentence (not immediately before "chapter"/"verse") could still be missed
 by the lookbehind and get treated as a continuation. This is the same class of
@@ -2705,7 +2710,9 @@ operator command (`verse:confirm-pending`) that then calls `broadcastVerse()` fo
 real. A new pending suggestion replaces (does not queue behind) any not-yet-confirmed
 one — the same "most recent wins" reasoning invariant 15-adjacent state already uses
 elsewhere, since an unconfirmed suggestion for a verse spoken two sentences ago is
-almost never still wanted once a newer one exists.
+almost never still wanted once a newer one exists. The dashboard can dismiss only
+the pending suggestion through the operator-only `verse:dismiss-pending` command;
+it does not use `verse:clear`, which would also clear the on-air verse.
 
 **Only affects detection.** Manual override, voice navigation, and rundown scene
 activation are all explicit operator-driven actions already — this mode has no
@@ -2864,12 +2871,14 @@ reference into the pre-existing quick-fire input already was.
 
 ### 65.7 AI sermon-notes copilot (strictly separate side channel)
 
-**Confirmed explicitly with the user**: uses Groq's chat-completion API (the same
+**Original scope decision**: this feature uses Groq's chat-completion API (the same
 provider/API-key relationship already established for ASR, not a second AI vendor)
 to periodically summarize the rolling final-transcript text into short bullet-point
-notes. This is the concrete scope decision section 59.4/61.5 left open for "AI
-copilot" — sermon/topic assistance, specifically, not the broader "chat-style
-assistant" or "reference-proposal" ideas also once floated; those remain unscoped.
+notes. It was the first narrowly approved "AI copilot" slice: sermon/topic assistance,
+not a general chat assistant. Later approvals added bounded reference repair,
+transcript cleanup, semantic verse suggestions, an operator-only sermon copilot, and
+post-service extras (sections 121 and 123-126). A free-form chat assistant and any
+capabilities beyond those documented slices remain unapproved.
 
 **The hard boundary, non-negotiable**: this side channel NEVER feeds into, informs,
 or is consulted by the verse-detection/hallucination-guard pipeline in either
@@ -4717,10 +4726,16 @@ protocol validation, failure behavior, and relevant tests exist in the repositor
   release gates before shipping packaged NDI support.
 - Rundown persistence across restart remains deferred; the current rundown is
   intentionally in-memory only.
-- The broader AI copilot remains unscoped. Sermon-note summarization is the only
-  approved AI side channel and is isolated from verse detection.
-- Additional translations, semantic detection, local/hybrid ASR, cloud sync,
-  mobile, and automatic OBS control remain outside the locked scope.
+- AI features remain optional, key-gated, bounded, and subject to the validation and
+  suggestion-only constraints in sections 121 and 123-126. Live-service prompt quality
+  and accuracy have not yet been measured.
+- Local/hybrid ASR and semantic verse suggestions are approved only in their documented
+  bounded forms (sections 95, 99, 113, 121, 124, and 139); their target-hardware
+  accuracy and latency still need evaluation before relying on them in production.
+- NDI packaging and redistribution remain release gates.
+- A general offline Bible database, vector search, cloud synchronization, mobile
+  application, automatic OBS control, and unrestricted/free-form AI chat remain outside
+  the approved scope.
 
 ### 83.4 Change discipline for the next feature
 
@@ -5190,10 +5205,18 @@ clear server state.
 **Why.** Real service recordings put the Groq batch round-trip at p50 215 ms but p90 ≈ 3.3 s (bimodal); the batch path waits for a whole chunk before anything is transcribed. Deepgram streaming returns finals within a few hundred ms of the speaker pausing.
 
 **What.**
-- `planAsr()` (`server/asr/asr-strategy.ts`, pure, unit-tested): with both keys the default is *streaming-first* (Deepgram primary, Groq secondary); *batch-first* keeps the previous behavior. Deepgram-only and Groq-only are first-class plans — the Deepgram-only setup the setup screen always accepted used to crash at startup because a `GroqProvider` was constructed unconditionally.
+
+- `planAsr()` (`server/asr/asr-strategy.ts`, pure, unit-tested): with both keys the default is *streaming-first* (Deepgram primary, Groq secondary); *batch-first* keeps the previous behavior. Deepgram-only and Groq-only are first-class plans — the Deepgram-*only* setup the setup screen always accepted used to crash at startup because a `GroqProvider` was constructed unconditionally.
 - `FailoverAsrProvider` gains a `trigger`: `"sustained-rate-limit"` (batch primary, unchanged) or `"primary-error"` (streaming primary: a dropped socket, failed connect or failed send switches, and the failed frame is re-routed). It forwards `onUtteranceEnd` to the live provider — wrapping Groq in a failover previously lost utterance-aligned flushing silently — and forwards failover events from nested chains.
 - `DeepgramProvider`: KeepAlive every 4 s of silence (Deepgram closes idle sockets after ~10 s, and SilenceGate stops forwarding during pauses), `Finalize` on SilenceGate utterance end, `endpointing=300`, and a short boosted biblical vocabulary (`keywords` / nova-3 `keyterm`) that deliberately excludes common names.
 - Bilingual display listens in French on Deepgram (`deepgramLanguageFor`) instead of Deepgram's English default.
+
+**Amendment (2026-11-13).** The static Deepgram vocabulary remains a bounded
+list rather than all 66 books, but now also biases toward several difficult,
+less-common Old Testament names (including Nehemiah, Ezekiel, Micah, Nahum and
+Zechariah, with their French forms). Common short names remain deliberately
+excluded to avoid encouraging their insertion into unrelated speech. Regression
+tests cover the French, English and bilingual URL parameters.
 
 **Invariant kept.** Partial transcripts still never trigger detection (§47 invariant 1). The latency gain comes from fast *finals*, not from acting on partials, which would display "Jean 3" before "verset 16" is spoken.
 
@@ -5222,6 +5245,7 @@ In the same utterance, a valid explicit reference now supersedes relative naviga
 ## 99. Offline whisper.cpp Backup (moved from ROADMAP "Deferred")
 
 **What.** The last link of the chain: Deepgram → Groq → local Whisper, only when the operator enabled it and it is installed.
+
 - `LocalAsrInstaller` downloads on demand into userData (never in the installer, never in asar): whisper.cpp **v1.8.0** Windows x64, SHA-256 verified before extraction, only `whisper-server.exe` + 4 DLLs written (minimal central-directory zip reader; files are chosen by exact name, so no zip-slip); model `base` (142 MB) or `small` (466 MB) verified against whisper.cpp's published SHA-1.
 - `WhisperServerProcess` keeps the model loaded, waits for `/health`, restarts with bounded backoff, and is always stopped in `shutdown()`.
 - `LocalWhisperProvider`: utterance-aligned WAV batches with per-request language and a biblical prompt, one request at a time, bounded backlog (drops the oldest rather than falling behind).
@@ -5261,6 +5285,7 @@ church says constantly, and one wrong-verse bug:
 - `"le chapitre d'après"` / `"le verset d'avant"`: no command at all.
 
 **What.**
+
 - `normalizeSpokenReferences()` (still the shared pre-pass for both detectors): a French/English
   preposition directly in front of the *verse* keyword is dropped (`"au verset 16"` →
   `"verset 16"`); positional ordinals are rewritten into the `"<keyword> <number>"` order every
@@ -5277,6 +5302,7 @@ church says constantly, and one wrong-verse bug:
   (U+2019, U+02BC, U+00B4, backtick) fold onto the straight one before phrase matching, so
   `"l’écran"` and `"l'écran"` are one phrase.
 - The in-app Voice Commands reference (section 78) lists the new phrases.
+
 
 **Deliberately not done, and why.**
 - The preposition is *not* stripped in front of `"chapitre"`. The chapter side is already accepted
@@ -5311,6 +5337,7 @@ phrasings, never over the text the app actually reads: the 31,170 bundled
 Louis Segond verses, which QuoteMatcher fingerprints word-for-word. Running
 `correctTranscription()` over every verse found **3,290 verses (10.6%)**
 rewritten — almost all of it damage, not repair:
+
 - Spoken numbers were rewritten into digits ("quatre-vingts" to "80"),
   so the verse's own 5-word runs no longer matched what a preacher reads.
 - Accents were stripped ("Ou es-tu?" for "Où es-tu?").
@@ -5319,6 +5346,7 @@ rewritten — almost all of it damage, not repair:
   annuler", "la somme" to "la psaume").
 
 **What.** Two rules now keep the corrector off ordinary and quoted speech:
+
 1. The corrector never rewrites spoken numbers and never strips accents.
    Rewriting a *spoken reference* into the compact written shape belongs to
    `normalizeSpokenReferences()` — the detector's own context-gated,
@@ -5357,6 +5385,7 @@ normalizer 0.03 ms, RegexDetector 0.04 ms, quote match 0.008 ms at p50). The
 variable part is the Bible lookup, so that is what the readout exposes.
 
 **What.**
+
 - `LatencyTracker` (`server/core/latency-tracker.ts`): the last 100 samples,
   nearest-rank p50/p95, max, last. Nulls when empty — never an invented
   number.
@@ -5483,6 +5512,37 @@ the two 2026-09-29 entries — leading vowel dropped like "Bakouk", trailing
 `PHONETIC_BOOK_ALIASES` the same way, with regression tests; the pattern
 this section describes — proactive coverage doesn't close off finding more
 live mishearings later — holds as expected.
+
+**Amendment (2026-11-13).** Added a small set of non-fuzzy spelling variants
+for difficult names, including Habakkuk, Zechariah, Zephaniah, Obadiah,
+Malachi, Philemon and Matthew. These are explicit alias-table entries, not
+automatic edit-distance guesses; each alias is tested through the same
+reference patterns and still has to pass `KnownValidVerseIndex`. The shared
+transcript screen and Deepgram language guard also recognize these aliases as
+book words. The ASR correction layer preserves them so a common personal name
+such as "Mathieu" is not rewritten before the detector can apply its explicit
+book alias. A live final transcript's "Phelemon chapter one verse two" near
+miss added `phelemon` (and the related ASR variant `philimon`) as explicit
+Philemon aliases and added the canonical French/English names to Deepgram's
+static vocabulary hints.
+
+**Cross-book follow-up (2026-11-13).** Added explicit spelling variants across
+both testaments, including numbered Samuel, Ecclesiastes, Ezekiel, Hosea,
+Obadiah, Nahum, Zechariah, Malachi, Galatians, Corinthians, Thessalonians and
+Timothy. The aliases are exercised as full references, and a catalog-wide test
+checks that every book still normalizes from its English name and has a French
+name. This remains a curated spelling-alias approach, not fuzzy matching.
+Deepgram's global hint list stays deliberately short; Groq's static prompt
+already includes all catalog book names.
+
+Voice navigation keeps its existing specific-phrase behavior (including
+"go to the next verse"). It additionally accepts a short, fixed set of
+whole-utterance alternatives such as "go to the next one", "go back one
+verse", French "avance d'un verset", and the live ASR near-miss forms "go to
+the next best"/"go to the nearest west". These alternatives must occupy the
+entire utterance, so they cannot trigger from matching prose. No fuzzy
+matching or new protocol is introduced; navigation still uses the current
+validated position and the existing verse-source path.
 
 ## 106. Viewer Authentication for the Stage Display and Live Companion Pages
 
@@ -6354,7 +6414,7 @@ accuracy were **not measured** (no local engine installed on the development mac
 
 **Why.** Sections 121-126 made every optional helper depend on an Anthropic key, so a church without one had no AI at all. Groq already holds the transcription key and exposes small text models on a free plan; a second adapter behind the same interface gives a free option without a new account.
 
-**Seam (unchanged).** Every helper depends only on `TextCompleter`. `GroqTextClient` (`server/ai/groq-text-client.ts`) implements it over Groq's OpenAI-compatible chat endpoint (default model `llama-3.1-8b-instant`, temperature 0, bounded timeout and tokens, errors through `scrubSecrets`). `createTextCompleter()` (`server/ai/ai-provider.ts`) picks the implementation.
+**Seam (unchanged).** Every helper depends only on `TextCompleter`. `GroqTextClient` (`server/ai/groq-text-client.ts`) implements it over Groq's OpenAI-compatible chat endpoint (default model `openai/gpt-oss-20b` — the earlier `llama-3.1-8b-instant` default answered 404 on developer keys and disabled every helper, live log 2026-10-12; temperature 0, bounded timeout and tokens, errors through `scrubSecrets`). `createTextCompleter()` (`server/ai/ai-provider.ts`) picks the implementation.
 
 **Selection rule (AGENTS.md section 46, no silent fallback).** `aiProvider` (`"anthropic"` or `"groq"`) is an explicit operator choice stored in the config and changed from the AI card of the dashboard (`set-ai-provider`, which restarts the services like `set-asr-strategy`). Absent means Anthropic when an Anthropic key exists (exactly the old behaviour), otherwise no AI until one is chosen. A chosen provider without its key yields no completer: the helpers stay inert and the dashboard says why. It never switches to the other provider on its own, errors included.
 
@@ -6455,6 +6515,10 @@ A warning stays up 8 s after its last trigger, then clears; stopping the mic cle
 
 Every colour comes from the palette's seven roles through the existing CSS variables (two more rgb triples, `--ov-text2-rgb` and `--ov-border-rgb`, are derived by `overlay.js` from the validated `#rrggbb` values); no design hardcodes a colour, and the clear-text palettes (card opacity 0) still remove every card surface, including the new designs' layers.
 
+**Follow-up designs (additive, same contract).** Three more closed-list designs, `halo`, `signal` and `folio`, are appended to `OVERLAY_CARD_DESIGNS`. `halo` is a centered, soft-focus spotlight with a high-contrast scrim; `signal` is a broad broadcast lower-third with a leading citation tag and a left-keyed accent edge; `folio` is a framed archival page with ragged-right serif text and a compact mono reference. Each has a design-specific CSS entrance layer but uses the shared `verse-motion.js` state machine, finite per-design reveal profile, existing text nodes and palette variables. They do not add messages, settings fields, providers, or dependencies. All have fullscreen and narrow-frame layouts; clear-text palettes remove their card surfaces and decoration; reduced motion disables the design animations under the shared media query.
+
+**App icon refresh (same application assets).** The detailed `assets/icons/logo.svg` and reduced-detail `logo-small.svg` are the editable source marks. The existing `assets/icons/make-icons.py` generator remains the source-to-raster pipeline: 512 px PNG (BrowserWindow/Linux), Windows ICO at 16/24/32/48/64/128/256 px, macOS ICNS at 16/32/64/128/256/512/1024 px, plus the 180 px touch icon and the three LAN-page SVG favicons. Electron Builder still consumes the same paths; no package or runtime dependency changed. The dev-only card gallery also displays the 512 px app icon and simplified small-size mark beside the verse designs.
+
 **Transition style (additive, no new WS action).** `OverlayStyleSettings` gains `transition: "cinematic" | "gentle" | "cut"` (closed `OVERLAY_TRANSITIONS`, default `"cinematic"`). It travels inside the existing `overlay:style` payload and through the existing `set-overlay-style` IPC, normalizer, revision ordering and debounced persistence (section 110); a settings file saved before this section has no field and normalizes to `"cinematic"`. `isOverlayStylePayload` stays strict (a payload missing the field or carrying another value is rejected). The dashboard Overlay view shows it as a second segmented group under the card design; the design preview iframe replays the entrance whenever the design or the transition changes, so the operator can judge it there. `gentle` is a short plain fade (and a short cross-fade between verses); `cut` is no motion at all.
 
 **How it works.** `apps/overlay/public/verse-motion.js` is new, pure and DOM-free (a classic script in the page, `window.VerseMotion`; CommonJS in Node for tests): it splits text into reveal units (`splitRevealUnits`, which keeps no-break spaces and glues lone French punctuation such as `:` `!` `»` `«` to its word so no line starts with it), finds the drop cap, groups units into lines from their measured tops (`groupLines`), computes every unit's start delay with a per-design spread cap (`revealPlan`), chooses the choreography (`pickVerseTransition`) and gives the auto-fit its per-layout, per-design limits (`fitLimits`). `overlay.js` builds one `span.vc-w` per unit with `textContent` only (never `innerHTML`), runs the existing auto-fit BEFORE any animation starts (transformed words would inflate the measured size), then measures lines and sets each word's `--d` delay. A small explicit state machine on `#verse` (`idle -> entering -> idle`, `idle -> swap-out -> swap-in -> idle`) drives classes `vc-enter`, `vc-swap-out`, `vc-swap-in`, `vc-fade`, `vc-fade-out`, `vc-cut`; a verse arriving during the outgoing half only replaces the pending verse (latest wins); a clear or the local Escape cancels everything. A refit requested mid-animation (resize, style change) is deferred to the moment the reveal settles. The auto-fit's last-resort shrink moved from an inline `transform` to a `--fit-scale` variable so the entrance keyframes can include it.
@@ -6472,3 +6536,361 @@ Every colour comes from the palette's seven roles through the existing CSS varia
 **Gallery (dev only).** `scripts/card-gallery.mjs` (run after `npm run build`) writes a git-ignored `card-gallery/` folder: `overlay-sim.html` is the real overlay page (index.html, verse-motion.js, overlay.js and fonts inlined, copied verbatim) with a fake in-page WebSocket, and `index.html` shows every design side by side with a short and a long or bilingual verse, palette, layout, transition and background pickers, and Replay buttons for the enter, verse-to-verse and exit choreography. Nothing in it is shipped or served.
 
 **Tests.** `apps/overlay/verse-motion.test.ts` (reveal units and French punctuation, drop cap, line grouping, delays in reading order within each design's cap, settle bounds, swap faster than enter, dense verses, transition choice including late join, reduced motion, gentle and cut, fit limits unchanged for the six existing designs); `apps/overlay/card-designs.test.ts` (every design has a CSS rule, an `overlay.js` entry and English and French names; the transition list matches the contract; no `innerHTML` in the verse path; the overlay never sends; reduced-motion block present); `overlay-style.test.ts` (new designs accepted, transition default/closed list/legacy settings/strict payload); `i18n.test.ts` covers the new strings.
+
+## 134. Review Hardening and Lint Gate (Phase 2 maintenance, owner request)
+
+**Why.** The owner asked for the installed review tooling to be used on the app. Four read-only reviews (TypeScript correctness, security, silent failures, test coverage) and one accessibility audit were run by model agents reading the code; none of them ran the app. Every finding below was re-checked against the source before any change. No architecture boundary, public interface, WS action or security boundary changed.
+
+**Fixed (each with a regression test where the behavior is testable without a browser):**
+- **Offline engine restart no longer dies silently** (`WhisperServerProcess.scheduleRestart`, section 99). A restart whose launch threw before any child existed (port allocation, spawn) was swallowed by an empty catch, leaving the offline backup dead while the failover chain still counted it. Now the failure is logged (`local-whisper.restart-failed`), retried with the same backoff (1 s doubling to 30 s) for at most 8 consecutive attempts, then logged as `local-whisper.restart-abandoned`. One pending timer absorbs duplicate requests (the exit handler and a failed launch can both ask); `stop()` cancels it. A successful start still resets the counter. Behavior change: an engine that fails 8 times in a row is no longer retried forever; the operator's next mic start calls `ensureStarted()` again.
+- **A source outage is no longer reported as "verse not found"** (`OfflineFallbackVerseSource`, section 77). When the live source threw and the offline source had no answer (`null`), the wrapper returned `null`, so `resolveVerse` saw a confirmed miss and its negative cache could remember an outage as a missing verse. It now rethrows the primary error in that case, exactly as `LocalizedVerseSource` already does; a verse the offline source does have is still served.
+- **Stale mic readings no longer feed the service log or echo watch** (`AppCore`, section 132). `mic:auto-gain` can arrive while the mic is stopped; the resulting `mic:health` broadcast also fed `serviceHealth.observeMicState` and `echoWatch.observeMic`, which could open a dropout that was never closed or start an echo episode with the mic off. `AppCore` now tracks `micRunning` (set after a successful `asr.start()`, cleared on `mic:stop`) and skips only those two observers when it is false; the `mic:health` broadcast itself is unchanged.
+- **A throwing typed-reference preview no longer leaves a stale request queued** (`verse:preview`, section 131). The `finally` block now also clears the queued request.
+- **`resolveVerse` validates the source's answer** (sections 13-15). A source verse whose reference differs from the one requested, or whose text is blank, is treated as a source failure: logged as `source-failed`, counted by the circuit breaker, never cached (positively or as "not found") and never returned. No current source can trigger it (all build the verse from the requested reference and reject blank text), so this is defence in depth for a future or faulty source. Note for a later change: the free English source does not compare the API's own `reference` field with the request; it trusts the API's text for the URL it asked for.
+- **The offline fallback now says when it is serving** (`OfflineFallbackVerseSource`, section 46). While its breaker is open it logs `breaker-open-serving-offline` once per outage (reset when the live source answers again), so the operator can tell which source produced the text.
+- **Less silent failure elsewhere:** `HybridAsrProvider.setApiKey` logs `hybrid.stop-failed` instead of discarding a failed stop; the faster-whisper installer's sidecar refresh treats only a missing file as expected and lets permission or I/O errors surface.
+- **Web build static pages** (`/overlay`, `/stage`, `/live`, `/remote`) now send `Referrer-Policy: no-referrer` and `X-Content-Type-Options: nosniff`, like the desktop static server.
+- **Dashboard accessibility (markup and CSS only, no new strings):** the Overlay view's `#ov-target` group now has an accessible name (existing `overlay.placeTitle` key); the setup screen's two toggle groups start with the correct `aria-pressed` (the existing `wireOptionGroup` keeps it in sync); the overlay position anchors are 32 px, the MASTER.md floor, instead of 24 px.
+
+**Lint gate.** `npm run lint` (ESLint 9 with `typescript-eslint` "recommended", no type-aware rules, plus `no-empty` with no allowance for empty catch, AGENTS.md section 25) runs over `apps/`, `packages/` and `scripts/` TypeScript and in CI after the typecheck. Both packages are dev dependencies only (AGENTS.md section 40: nothing enters the packaged app; the production dependency audit is unchanged). The browser pages (vanilla JS) are not linted; they remain covered by the source-reading tests. The first run found 8 errors (unused imports, a dead local, an unused parameter, a `let` never reassigned, and a test double that records its own instance, kept with a one-line documented disable); all were fixed rather than silenced. Three warnings remain: unused `no-control-regex` disable directives, which are harmless and left in place. Result at this change: 0 errors, 3 warnings; `npm test` 1280 tests, 1277 pass, 0 fail, 3 skipped (the real-engine tests that need installed binaries).
+
+**Reported by the reviews and deliberately NOT changed here** (each is a candidate for its own focused change):
+- Silent failures: `local-asr-installer.ts` and `engineInstalled()` in the faster-whisper installer treat any filesystem error as "absent" instead of only `ENOENT`; `FailoverAsrProvider` discards stop errors without a log (it has no logger today); the AI helpers return `null` on an unparsable model answer, indistinguishable from "no suggestion".
+- Test gaps, highest risk first: `mic:start` when `asr.start()` rejects (and whether `micCalibrating` should clear); WS server-level tests for schema-valid-but-wrong-shape JSON; `scene:next`/`scene:previous` at the rundown boundaries and with nothing loaded; a source returning a verse whose reference differs from the request (the hallucination guard, rules 13-14); LRU/TTL boundary conditions; ASR failover with both providers failing and a bounded switchover queue. The reviewer flagged `timer:*` as possibly having no `AppCore` handler; that was not verified here.
+- Security (low, defence in depth; see SECURITY.md): no `Origin` check on the WS upgrade, IPC handlers do not check `senderFrame`. The `Origin` check is deliberately not added blindly: phone remotes and OBS load pages from LAN or loopback addresses, so the allowed origins must be decided first.
+- Accessibility: transient status regions that appear with their content (near-miss, echo warning, typed preview, ASR warning) can be missed by screen readers; canvas editor and its position fields lack proper names; dense controls are 28 px against the 32 px floor; sidebar icon-only names need checking at narrow widths.
+
+**Tests.** `local-whisper-server.test.ts` (a restart whose launch throws is logged and retried, and a later attempt brings the engine back), `offline-fallback-verse-source.test.ts` (an outage with no offline answer is rethrown, never reported as not found; serving while the breaker is open is logged once), `resolve-verse.test.ts` (a source verse for a different reference, or with blank text, is rejected, logged and never cached).
+
+## 135. Proposal: A Bounded Extension Mechanism (NOT APPROVED; no code; owner request to propose)
+
+**Status.** A proposal for the owner to accept, change or reject. AGENTS.md sections 6 and 41 and the ROADMAP "Dynamic plugin loading" entry stay in force until the owner approves one of the options below. Nothing in this section is implemented.
+
+**Why it is being asked.** The owner asked for plugins to bring innovation. The honest starting point: no concrete extension has been requested, and the app already has four typed extension seams chosen at build time (`AsrProvider`, `VerseDetector`, `VerseSource`, `ReferenceInterpreter`; section 50), which is how local Whisper, Deepgram, the French source and the AI proposer were all added without a plugin system. A mechanism should only be built for a named use case.
+
+**Options.**
+- **A (recommended): no runtime mechanism; make the existing seams easier to extend.** Document each seam's contract in one place and ship a small shared conformance test helper per seam (for example, the checks every `VerseSource` must pass: validated shape, null for unknown, rethrow on outage, never an unvalidated response). Cost: tests and docs only. Risk: none to the invariants. It does not let anyone add a feature without editing the repo, which is the point.
+- **B: statically registered, in-repo "integrations" for read-only outputs.** A closed TypeScript interface (`OutputIntegration`: `onVerseShown(verse)`, `onVerseCleared()`, `onStatus(status)`), implemented by modules that live in this repository and are listed in one source file. The operator turns each on or off in the dashboard. An integration receives only events that already passed the hallucination guard (the same payloads `verse:show` carries), can send nothing back into the pipeline, gets no commands, no secrets (any key it needs goes through `ConfigStore` and the main process like the Anthropic key), no renderer code and no filesystem access beyond its own folder. Its failures are caught at its boundary, logged with the correlation id, and never reach the pipeline. Candidates that would fit: a ProPresenter or Planning Center export (both currently locked), a text-file or OSC output. NDI (section 62) is the existing example of an output transport and would not be moved. Cost: one interface, one registry file, a conformance test, a dashboard toggle list. Risk: each integration widens what leaves the machine; this needs the section 59.3 note per integration.
+- **C (rejected): dynamic loading** (plugin directories, discovery, manifests, runtime install, config-driven resolution). It would let unreviewed code run inside the process that holds the keys and drives the congregation screen, and breaks invariants 1-3 and the Electron security model (section 27) unless re-argued from scratch.
+
+**What would change under B.** One new interface in `packages/contracts`, one registry module, a dashboard section, SECURITY.md (a new trust boundary), ROADMAP.md. Nothing in the WS action registry, no new inbound path, no change to the detector, cache or lookup order.
+
+**Tests required under B.** Conformance suite (an integration throwing or hanging cannot delay or alter `verse:show`; it is never called for a verse that failed validation; its queue is bounded); the registry is a closed, source-controlled list; disabled integrations receive nothing.
+
+**Decision needed from the owner:** A, B (and the first integration that justifies it), or neither.
+
+## 136. Proposal: Rundown Persistence Across Restarts (NOT APPROVED; no code; Phase 2 follow-up)
+
+**Status.** Proposal only. Section 64.5 left this open on purpose: it needs a file format, a location, and a decision on the live cursor.
+
+**Problem.** A loaded rundown lives only in `RundownController` memory. Restarting the app mid-service (or after preparing it on Saturday) loses it.
+
+**Proposed shape.**
+- A `RundownStore` beside `SessionHistoryStore` (`apps/server/core/`), reusing its proven pattern: one `rundown.json` under the existing user-data directory, atomic temp-file, `fsync`, rename (AGENTS.md section 29), serialized writes, and an unparseable file moved aside to `rundown.json.corrupt-<time>` and reported, never overwritten. A missing file is an empty start.
+- Saved on each successful `rundown:load` (the only operation that changes the scene list). Loaded at startup through the same `isRundownPayload` validation used for the WS command; a stored rundown that fails validation is quarantined like a corrupt file.
+- Only the scene list is restored, not the live cursor: after a restart nothing is on screen, which is the safe default (a restored cursor would put a verse on the congregation screen without an operator action). The dashboard shows the restored list and the operator steps in as usual.
+- Bounded: at most 200 scenes and 1 MiB on disk; larger input is rejected at `rundown:load` with a visible error, not truncated silently.
+- Scenes keep referring to media by `mediaCueId`; an id that no longer exists in the media library is reported when the scene is reached (the existing missing-cue path), not at load.
+- No new WS command or event. `AppCore` takes the store as an optional dependency, so every existing test is unchanged.
+
+**What could break.** A rundown saved by a newer version and read by an older one is quarantined, not misread. The web build has its own user-data location and needs the same wiring.
+
+**Tests required.** Round trip; missing file; corrupt file quarantined and not overwritten by the next save; invalid scene rejected on load; size and scene-count bounds; concurrent loads serialize; the cursor is not restored; a store that fails to write does not block `rundown:load` (the failure is logged and reported).
+
+**Decision needed from the owner:** approve as specified, or change the cursor or bound decisions above.
+
+## 137. Proposal: OBS Control over obs-websocket (NOT APPROVED; scope change; no code)
+
+**Status.** Proposal only. "Automatic OBS control" is on the locked list (AGENTS.md section 4, section 3 non-goals, ROADMAP "Deferred"). The owner asked in chat for OBS control to be built; per AGENTS.md sections 2 and 43 this note comes first and code waits for the decisions at the end. The owner did not say what the control should do, so the smallest useful slices are laid out as tiers.
+
+**Not verified here.** The obs-websocket protocol details below are written from knowledge of the v5 protocol (built into OBS since version 28; OBS 32.2.2 is installed on the owner's machine) and must be checked against the protocol document before any code. Whether the WebSocket server is enabled in that OBS, and its port and password, were deliberately not inspected (OBS config can hold the password).
+
+**Tiers.**
+- **Tier 1 (proposed first): status and an operator-clicked scene switch.** The dashboard shows whether OBS is connected and which scene is live, lists OBS's scenes, and lets the operator click one to make it the program scene. Nothing happens without a click.
+- **Tier 2 (optional, default OFF, separate approval): scene follow.** The operator picks two of OBS's scenes (for example "Camera" and "Camera + verse"). When a verse is shown the app switches to the second, when it is cleared it switches back, but only if the live scene is still the one the app set (an operator who changed scene by hand in OBS is never overridden).
+- **Excluded in every tier:** starting or stopping the stream or recording, editing sources, filters or audio, studio-mode transitions, and any write other than `SetCurrentProgramScene`. Going live must stay a human action in OBS.
+
+**Design.**
+- **Owner module:** a new `apps/desktop/main/obs-control.ts` in the Electron main process, the same place and shape as the NDI output (section 62). It uses the existing `ws` dependency and `node:crypto`; no new dependency (AGENTS.md section 40). `AppCore`, the detector and the overlay know nothing about OBS.
+- **Connection state machine** (AGENTS.md section 48): `DISCONNECTED -> CONNECTING -> AUTHENTICATING -> CONNECTED -> RECONNECTING -> CONNECTED`, with invalid transitions ignored safely. Reconnects use bounded backoff and a maximum attempt count (sections 37 and 38); after that it stays `DISCONNECTED` until the operator reconnects. Target is loopback (`127.0.0.1`, default port 4455) only in the first version; a remote host is a separate decision.
+- **Authentication:** the protocol's challenge/response (a SHA-256 and base64 derivation from the password, the salt and the challenge); the password itself is never sent. The password is stored like the Anthropic key: `ConfigStore` + `safeStorage` as `obsPasswordEncrypted`, decrypted only in the main process, never given to the renderer (the renderer learns only "a password is set"), never logged (AGENTS.md sections 24 and 28).
+- **Renderer interface:** named IPC handlers in the preload, like NDI (`get-obs-status`, `set-obs-config`, `obs-set-scene`), no raw IPC. **No new WebSocket action or event** (AGENTS.md section 19), so the public registry does not grow. It is desktop-only; the web build has no IPC and does not offer it.
+- **Schema validation of every OBS message** (AGENTS.md section 15): scene names must be strings with a length cap, the scene list a bounded count (at most 200), unknown or malformed frames are dropped and logged; raw OBS responses are never passed to the renderer. A scene switch is only accepted for a name present in the last validated scene list; free-text names are rejected.
+- **Tier 2 hook:** `AppCore` already has an outbound-callback precedent (`options.onAutoGainChanged`). A narrow `onVerseVisibilityChanged(visible)` option would be called after a verse has passed validation and been shown or cleared; the main process wires it to the OBS module. The OBS module never calls back into `AppCore`, so there is no path from OBS to the pipeline.
+- **Failure behavior** (sections 4.5 and 46): OBS being absent, wrong-password or slow never affects detection, the overlay or NDI. A failed or timed-out scene switch is shown to the operator and logged with the correlation id and is not retried automatically (a late retry could change a live program unexpectedly). Only reconnection retries.
+
+**What changes if approved.** `obs-control.ts` and its IPC handlers and preload wrappers; optional `ConfigStore` fields (a config saved before this has none, which means disabled); a dashboard "OBS" section; one optional `AppCore` callback (Tier 2). Documents: AGENTS.md section 4 (move "automatic OBS control" from locked to approved, with its limits), the section 3 non-goal list and the line near section 59 that repeats it, ROADMAP.md, SECURITY.md (a new outbound local connection and a new secret), TESTING.md.
+
+**What could break.** Nothing existing: all new fields are optional and absence means off. A different OBS port or password than configured simply shows "not connected".
+
+**Tests required.** Deterministic, no OBS needed, using a `FakeObsServer` (a local `ws` server in the test that speaks the hello/identify/request protocol): the authentication derivation against a fixed known vector; each state transition including invalid ones; malformed, oversized and unknown frames dropped; reconnect is bounded and observable; a scene switch outside the validated list is rejected; no password in any log line; a failed switch is not retried. Tier 2: a shown verse causes exactly one switch, a clear switches back only if the app's scene is still live, a manual change in OBS is never reverted, disabled by default. A short manual checklist against a real OBS is added to TESTING.md (not automated, like the NDI receiver).
+
+**Decisions needed from the owner.**
+1. Tier 1 only, or Tier 1 plus Tier 2?
+2. Is loopback-only (OBS on the same computer as ChurchOverlay) enough for now?
+3. Confirm the exclusions (no start/stop stream or record, no source edits).
+4. Approve moving "automatic OBS control" out of the locked list in AGENTS.md section 4 on those terms; this note cannot change AGENTS.md itself.
+
+## 138. Transcription Pipeline Review (audio and ASR, Phase 2 maintenance, owner request)
+
+**Why.** The owner asked for the installed review tooling to be applied to the transcription pipelines. Two read-only model reviews covered (a) capture, normalization, silence gate, gain and frame delivery, and (b) the ASR providers, failover and transcript handling. They read the code; they did not run it, and no latency, accuracy or WER measurement was taken (AGENTS.md section 34). Each item below that is marked "fixed" was reproduced by a failing test against the old code, or confirmed by reading it, before the change. No boundary, public interface or WS action changed.
+
+**What the reviews cleared** (read, found correct): a partial transcript cannot reach verse detection (`passesTranscriptGate`; the one `detector.detect` call on a partial only feeds the near-miss log); provider confidence is never invented (Deepgram sets it only when the API sends a number; Groq and local Whisper set none); float-to-int16 conversion clamps and rounds, the adaptive-gain limiter cannot overflow, endianness is explicit little-endian; calibration and gain state reset on `mic:start`; the local Whisper backlog, the Groq buffer and the auto-return backoff are bounded; Groq, local Whisper and the Deepgram connect all have timeouts.
+
+**Fixed (each with a test):**
+
+- **Deepgram socket leaked when `stop()` ran during connect** (`DeepgramProvider`, section 86). `stop()` closed the socket only if already open. A socket still connecting then opened, `start()` carried on, and a live, *billed* connection kept delivering transcripts after the mic was stopped. `start()` now closes a socket that finished opening after a stop and returns quietly (a deliberate stop is not an error). Reproduced first: the new test failed on the old code.
+- **Failover `stop()` could leave the secondary running** (`FailoverAsrProvider`, section 95). `stop()` did not wait for an in-flight activation, so a secondary whose `start()` was pending finished starting after the stop. It now waits for the activation, and stops the primary even if `secondary.stop()` throws. Both cases reproduced first.
+- **The web build lost the end-of-utterance flush** (`HybridAsrProvider`, section 80). `AppCore` finds `onUtteranceEnd`, `setCurrentVerseRef` and `discardBufferedAudio` by name (`"x" in asr`); the hybrid wrapper had none, so in web mode Groq fell back to fixed-length cuts and never got the verse-aware prompt. They are now forwarded to the real provider (and are no-ops without a key). Behavior change: web mode now cuts at sentence boundaries like the desktop app. Not forwarded on purpose: `onRateLimitedSustained` (hybrid has no second provider to fail over to).
+- **Discarded audio is now logged** (`GroqProvider.discardBufferedAudio`, called on failover). Up to the throttled buffer (15 s) was deleted with no trace; it now logs `asr.audio-discarded` with the duration (AGENTS.md sections 11 and 46).
+- **A Groq 429 no longer loses the refused chunk's audio** (`GroqProvider.transcribeAndEmit`, section 80). When a chunk's request got HTTP 429 the audio was already detached from the buffer and never re-queued, although the operator is told transcription "resumes in Ns"; a verse spoken in that chunk was lost. The chunk is now put back at the front of the buffer (older audio first), within the existing `MAX_THROTTLED_BUFFER_MS` bound; if it cannot fit it is dropped and logged as `asr.audio-discarded` with `reason: rate-limited-buffer-full`. Reproduced first: the second request carried 1 s instead of 2 s. Timeouts and network failures are NOT re-queued yet (below).
+- **Groq timeout/network failures are not success-shaped or retried.** The bounded request timeout covers response-body reading as well as connection setup. A timeout/network failure logs the discarded chunk, reports through the existing ASR error path, emits no transcript, and rejects the audio send; audio is deliberately not replayed because the provider may already have processed it. Sustained-network failover is signaled once at the configured threshold.
+- **Stopping while Groq is rate-limited reports its undelivered tail.** A final flush that remains buffered after the bounded throttle check is logged as `asr.audio-discarded` (`reason: stop-undelivered`), cleared rather than replayed into a later mic session, and makes `stop()` reject. The regular 429/error status remains visible to the operator.
+- **History references are copied at store boundaries.** `SessionHistoryStore.record()` snapshots the nested reference and `getEntries()` returns fresh nested objects, so caller mutation cannot alter in-memory or persisted history.
+- **Server-side audio sequence gaps are observable per microphone session.** AppCore tracks uint32 sequence ordering/wraparound, counts gaps, missing frames and out-of-order frames with saturating counters, throttles anomaly logs, and writes a session summary at stop. This is server-only telemetry; the binary audio and public WebSocket protocols are unchanged.
+- **Silence-gate metrics no longer accumulate across sessions** (`SilenceGate.resetMetrics`, called at `mic:start`). The counters and the RMS peak were never reset, so `mic.stopped` and the status payload mixed every session since the process started, which misleads the "nothing is detected" diagnosis. `startCalibration()` is deliberately unchanged (calibration frames still count within a session).
+
+
+**Reported but NOT changed, and not verified by me** (the reviewer's claims; each needs its own check and, where it changes ASR behavior, a measurement or a live test first):
+
+- The Groq seam text de-duplication seems to run on every chunk, not only overlapping ones, which could strip a deliberately repeated reference and emit an empty final.
+- A final from the primary that arrives after a failover is dropped without a log; `handleAudioFrame` skips the end-of-utterance flush when `sendAudio` throws; `lastAssembledText` in `AppCore` is never reset, so a byte-identical repeated assembled reference may be suppressed.
+
+**Fixed after the review.** Browser microphone frames now use a 64 KiB
+`WebSocket.bufferedAmount` high-water mark; stale frames are dropped rather than
+queued without bound. Disconnected, congested, failed-send, and capture-sequence-gap
+counts are shown in the operator microphone card. Reconnection restarts the server
+mic pipeline when capture is still active, and sends a pending stop if the operator
+stopped while disconnected. The pure browser sender has deterministic tests and is
+included in the lint gate. This measures browser-side send/drop conditions, not
+end-to-end packet loss, because individual frames are not acknowledged by the server.
+- After a `mic:stop`, a still-pending `mic:start` can set `micRunning` (section 134) to true again, because the start resolves after the stop. Narrow (the dashboard sends the pair in order) and I did not reproduce it.
+
+**Local provider: web and GitHub research (sections 99, 113, 118), nothing here is implemented or measured.** The owner asked for ideas from GitHub and the web. Findings, with sources: the local faster-whisper sidecar already does what the common guidance recommends (`vad_filter` with a 300 ms silence window, `condition_on_previous_text=False`, `beam_size=1`, a no-speech threshold, log-probability and compression-ratio limits, a repeated-phrase guard, French/English-only language choice, a prompt-echo guard); whisper.cpp runs with `-nt -sns`. So the research mostly confirms the design. What it adds:
+
+- **Model size is the main lever the app has not used.** Only `base` and `small` ship for both local engines (`local-asr-installer.ts`, `faster-whisper-manifest.ts`). OpenAI's Whisper (github.com/openai/whisper, MIT, last release v20250625) offers `large-v3-turbo`, a multilingual model far faster than `large-v3`; it would improve French accuracy but is much larger and, on a CPU-only laptop, may not keep up with live speech. The open CUDA gate (ROADMAP item 16) decides whether it is usable: it needs a measurement on the church's hardware, a pinned and hashed manifest entry, and a disk-space warning, not a guess.
+- **whisper.cpp has its own VAD** (a `--vad` flag with a separate Silero model file appears in its changelog and CLI). I could not confirm that the bundled v1.8.0 `whisper-server` accepts it, so the first step is `whisper-server --help` on the real binary. The app already gates silence upstream (section 9), so the expected gain is small.
+- **Streaming instead of per-utterance batches** (`ufal/whisper_streaming`, "LocalAgreement-2": re-decode a growing buffer and commit only the words two consecutive passes agree on) would show text earlier. It is the biggest change: the local engine currently emits a final only at the end of an utterance, and committed words would have to be treated as partials (never reaching detection, AGENTS.md section 8) until the utterance ends.
+- **A different engine family:** OpenWhispr (github.com/OpenWhispr/openwhispr, MIT, the project the sidecar credits) now also offers NVIDIA Parakeet models through sherpa-onnx. Its README does not state French support, latency or hardware needs, so none of that is verified; it would be a third engine with a new native runtime, a new installer and licence review.
+- **The owner also asked for the local provider to be "main".** Today local is deliberately the last link of the chain (cloud primary, never a silent switch: sections 95, 99, 113). Making it the default is an architecture decision, not a tuning change; the numbers it needs (latency and French/English accuracy on the target machine, using the WER tooling of section 87) do not exist yet. Recorded as a question for the owner, not changed.
+
+Sources: github.com/openai/whisper, github.com/ufal/whisper_streaming, github.com/SYSTRAN/faster-whisper, github.com/OpenWhispr/openwhispr, and general web guidance on VAD and hallucination settings (blog-level, not authoritative).
+
+**Tests.** `deepgram-provider.test.ts` (stop during connect), `failover-provider.test.ts` (stop waits for activation; a throwing secondary still stops the primary), `hybrid-provider.test.ts` (forwarding), `groq-provider.test.ts` (discard log; a 429'd chunk is re-queued and sent with the next flush; the re-queue stays bounded and a forced drop is logged), `silence-gate.test.ts` (`resetMetrics`).
+
+## 139. Optional Offline-First ASR Mode (Phase 2, owner request)
+
+**Decision.** The owner asked in chat for the local provider to be "main". Offered the choices, the owner picked an **optional offline-first mode**: a setting the operator turns on, with the default left cloud-first. Making local the default for everyone was not chosen, because no latency or French/English accuracy measurement of the local engines on the church's hardware exists yet (section 138; ROADMAP item 16 still lists CUDA and a real-service comparison as open).
+
+**What it is.** `AsrStrategy` (section 95) gains a third value, `"offline-first"`. The provider chain is built by the same `asrChain()` and nested `FailoverAsrProvider` composition as today; the only differences are the order and the trigger:
+
+- Order: `local -> [cloud chain as before]` instead of `[cloud chain] -> local`. The cloud part keeps the streaming-first order (Deepgram then Groq) when both keys exist, or the single configured cloud provider.
+- Trigger: the local provider, as a primary, uses `"primary-error"` (like Deepgram): a failed start, a failed send or a reported engine error moves audio to the next provider and announces it through the existing failover status. Automatic return to the local engine uses the same bounded backoff as the Deepgram auto-return (section 115); the operator can also return manually (`asr:return-primary`).
+- **Unchanged:** the default (`streaming-first`) and `batch-first` chains are byte-for-byte the same; the engine is still installed and enabled only by the operator (section 99/113), never downloaded at service start; a saved config without the new value behaves as before; the web build does not read the strategy and is unaffected; no WebSocket action, no provider-SDK import in the core, no change to detection, validation or the verse path.
+
+**No silent fallback (AGENTS.md section 46).** If `offline-first` is selected but the local engine is not enabled, not installed or failed its checks, the chain falls back to the cloud-first order, and that is visible: a `asr.offline-first-unavailable` warning is logged at service start, and the dashboard shows "Offline-first is selected but the local engine is not ready: using cloud" in the strategy note and keeps the provider line truthful (it names the providers actually carrying audio). The offline-first button is enabled only while the local engine is ready (or already selected, so it can be turned off).
+
+**Trade-offs, stated plainly.**
+
+- The local engines emit a final transcript only at the end of an utterance and no partials (sections 99, 113), and the cloud streaming primary was chosen for sub-second finals (section 95: Groq's batch round trip was measured at p90 about 3.3 s). Offline-first therefore trades speed for independence from the internet. Whether the local engine is fast and accurate enough on the church's machine must be measured on that machine (one laptop was measured, below); use the section 87 WER tooling and a real service before relying on it.
+- A transient local engine error now fails over to the cloud (it is a primary with the `primary-error` trigger). That is the intended visible degradation, not a silent switch.
+- At least one cloud key is still required at setup (`planAsr`); a fully key-less install is a separate change.
+
+**CPU, speed and accuracy: measured on ONE laptop** (Intel Core i5-8365U, 4 cores / 8 threads, 7.8 GB RAM; whisper.cpp v1.8.0 and the `base` model, both the exact artifacts the installer pins, hashes verified; speech synthesized with Windows' English voice, so it is clean and not a real preacher; a busy machine made repeated timings differ by up to about 2x, so read these as orders of magnitude):
+
+- An idle loaded engine costs about 0% CPU. A decode costs about the same whether the clip is 4 s or 17 s (20-30 CPU-seconds), because whisper.cpp always encodes a full 30 s window.
+- **7 threads (the previous default on this machine): about 72% of the whole machine while decoding**, real-time factor 0.3 for a 17 s clip but about 1.2 for a 4 s sentence (barely keeping up). **4 threads: about 28-37%**, real-time factor 0.6-1.0 (17 s) but 1.9-3.1 for a 4 s sentence. 2 threads: about 21% and 2.7. Lower CPU and real-time speech pull in opposite directions on this hardware.
+- `-ac` (shrinking whisper.cpp's audio window) cut CPU about 5x but corrupted the text ("Turnuit me" for "Turn with me", "Chaptertry" for "Chapter 3") and silently dropped everything after about 10 s, so it is **not** used.
+- Accuracy: the `base` model garbled a 17 s sentence even at full settings ("debt and gavachies on Liby Gathonson…"). The `small` model was not measured (about 3x the compute, so it would be slower still). The `base` model is good enough as an emergency backup, not as the main engine for verse references.
+- Not settled: whether turning off whisper.cpp's fallback re-decoding (`temperature_inc=0`, which the faster-whisper sidecar already does) saves CPU on hard audio. On clean speech the transcripts were identical, but the timings were too noisy to compare and the noisy-audio runs were invalid (my test files had a damaged WAV header and crashed the engine; the app always sends its own canonical WAV, so the app cannot hit that). Left unchanged.
+
+**What this means, and the safeguards that were added.** On a laptop like this one, offline-first with the `base` model is **not recommended**: it cannot be both light on the CPU and faster than speech. It stays opt-in and the cloud-first default is the fastest and most accurate path. To keep an opt-in from hurting a service: (1) in offline-first the engine is limited to **half the logical cores** (`localEngineThreads`: 4 here instead of 7; the default for the fallback role is unchanged); (2) when the engine falls more than two batches behind speech it now **reports an error once per burst** (`LocalWhisperProvider.reportOverload`), which as a primary moves transcription to the cloud with the usual visible failover status, and as the last resort tells the operator why words are missing (before, the drop was only a log line); (3) the dashboard notes that offline-first uses more processor and should be tried before a service.
+
+**What could break.** Nothing for existing installs: the new value is only reachable by choosing it. An older app version reading a config saved with `offline-first` rejects the invalid strategy (ConfigStore validation) and reports it; the operator must reselect a strategy.
+
+**Tests.** `asr-strategy.test.ts` (plan ignores `offline-first` for cloud ordering; the chain puts local first only when requested and available; the default chain is unchanged), `local-whisper-server.test.ts` (`localEngineThreads`: default unchanged, offline-first is half the cores, floor 2, cap 8), `local-whisper-provider.test.ts` (falling behind speech is reported once, not once per dropped batch; a fast engine never reports), `config-store` strategy validation accepts the new value, `i18n.test.ts` (EN/FR parity of the new strings).
+
+**Not done here (needs the church's hardware).** A larger model (`large-v3-turbo`), whisper.cpp's own VAD and LocalAgreement streaming (section 138 research) remain proposals.
+
+
+## 140. Live-Log Review Fixes (Phase 2 maintenance, owner request, 2026-10-12)
+
+Driven by one real French service log. No new WS action; two additive, optional payload fields on existing operator-only events.
+
+**What changed.**
+1. **AI helpers failed with 404 on every transcript.** `GroqTextClient` defaulted to `llama-3.1-8b-instant`, which answers 404 on developer keys (section 128 listed it as the default). Default is now `openai/gpt-oss-20b`, the model `SermonNotesGenerator` already used.
+2. **Bounded failure for the AI helpers (AGENTS.md sections 37, 38).** `GuardedTextCompleter` wraps the provider's `TextCompleter` in the existing `CircuitBreaker`: 3 consecutive failures open it, calls are then refused locally (no request) for 60 s, then one probe is allowed. It logs `ai.circuit-open|half-open|closed`, never changes provider, and a refused call rejects like any failure so every helper keeps its fail-soft path. `createTextCompleter` now returns the wrapper (`.inner` is the client).
+3. **No silent substitution of a different reference (AGENTS.md section 46).** `resolveNavigationCommand` no longer clamps an out-of-range verse to the chapter's last verse or an out-of-range chapter to the book's last chapter ("Esaïe 4, verset 8" displayed 4:6). Both are now a no-op with a reason; the `fallback` flag and the `navigation.fallback` log are removed. This reverses the PROD AUDIT 2026-09 behaviour of section 61.
+4. **"Did you mean?" instead (operator-only).** `suggestNearestReferences` (pure, re-validated through the known-valid index) offers a chapter's last verse when the verse number runs past it. It rides as an optional `suggestions` list (max 3, validated in `action-registry.ts`) on `detector:near-miss` and `verse:preview-result`. The dashboard renders buttons; a button sends an ordinary `verse:override` (or fills the box), so nothing reaches the overlay without the normal validation path and an operator action.
+5. **Correlation IDs per utterance (AGENTS.md section 23).** Both providers used one id for the whole session. The id now rotates after each final transcript (Groq: every transcript), so partials and the final of one utterance share an id and the next utterance gets its own.
+6. **Detector.** `nombre` (the ASR drops the plural of "Nombres") is an alias, refused in the bare "word N M" form so "un grand nombre 12 14" is not a reference; the French spaced colon ("Jean 3 : 16"), full-width colon and zero-width characters are folded; plural "versets"/"verses" are accepted as the keyword.
+7. **Overlay legibility.** The second language is the same size, family and colour as the first and stays italic (the only differentiator); fullscreen caps rise (type up to 200 px, 96% x 94% of the frame, no 26em measure) so a verse is readable from the back of the room. Auto-fit still shrinks long verses to fit.
+8. **Dashboard.** Show refuses a reference the server's preview already answered "not found" (red field and a log line) instead of sending it to be dropped; the typing preview no longer squeezes the input (wrapping command bar).
+
+**What breaks.** Nothing persisted. Tests that pinned the old behaviour were changed deliberately: the Groq session-wide correlation id, the two navigation fallbacks, and the fullscreen `fitLimits` caps.
+
+**Tests.** `guarded-text-completer.test.ts`, `nearest-references.test.ts`, `sermon-replay.test.ts` (real transcripts from the log, detector to known-valid index, no network), `action-registry.test.ts` (suggestions bounds), `resolve-navigation-command.test.ts`, `groq-provider.test.ts`, `verse-motion.test.ts`.
+
+9. **Startup model check and a dashboard indicator for the AI helpers.** `GroqTextClient.checkAvailability()` lists the models the key may use (response shape-validated, AGENTS.md section 15) and answers `ok` / `model-unavailable` / `auth`; a network error, timeout or odd body is `unknown` and changes nothing. `GuardedTextCompleter` turns a definitive answer into status `unavailable` and opens its circuit at once (no completion is spent), and reports `ok` / `paused` / `unavailable`. AppCore runs the check once at startup and broadcasts the status as an additive optional `aiHelpers` field on `status:update` (not a new action, so the public registry does not grow; AGENTS.md section 19) and restates it on every later status update while it is not `ok`. The field carries only a fixed state and reason vocabulary (`model-unavailable`, `auth`, `repeated-failures`), validated in `action-registry.ts`, never provider error text, because `status:update` also reaches viewer pages. The dashboard shows a warning banner with a fixed message per reason (English and French). Limit: a dashboard that connects after the status changed learns it from the next status update, not at connect.
+10. **Announced-chapter context for a bare "verset N".** Investigating the idea showed a sharper defect than "lost context": `NavigationCommandDetector` reads "Dans Esaïe 4, le verset 8" as only a bare `goto-bare-verse 8`, which `resolveNavigationCommand` resolved against the last DISPLAYED verse. In the live log that was Isaiah 4 (so it was a harmless no-op), but with John 3 on screen it would have displayed John 3:8, a verse nobody asked for. `extractAnnouncedChapter` (pure, `detector/announced-context.ts`) finds a catalog book plus an in-range chapter number in the utterance, with no verse attached; AppCore keeps it for 60 s (bounded), uses it as the position for a bare `goto-bare-verse` only, and drops it whenever a verse is shown or cleared. A bare verse resolved from this context is always an operator-only pending suggestion, even in Auto mode; confirmation is required before display. Only final transcripts reach it. It is context, never a reference: everything computed from it still goes through `index.exists()` and the verse source. "nombre" counts only with an explicit chapter keyword.
+
+11. **Anthropic startup check.** `ClaudeClient.checkAvailability()` (GET `/v1/models/{model}`, no completion spent) answers `ok` / `model-unavailable` (404) / `auth` (401, 403) / `unknown`, with the same "only a definitive answer counts" rule as item 9.
+12. **Package size (measured, not guessed).** Built the Windows NSIS installer before and after: the app's own code is only 10 MB (`app.asar`); the download is dominated by Electron (376 MB unpacked, `electron.exe` alone 240 MB). The only lever that does not touch Chromium is its 55 locale files (49.6 MB unpacked) of which the en/fr UI needs 1.3 MB. `build.electronLanguages` = `["en-US", "fr"]` and `build.compression` = `"maximum"` take the installer from 117.2 MB to 108.9 MB (-8.3 MB, -7%) and the unpacked app to 329 MB. Python adds nothing to the installer: the optional offline ASR downloads an embeddable CPython on demand (section 113). NDI's native module was skipped in these builds (no NDI SDK on the build machine); the section 62 browser-source fallback applies.
+13. **No Electron menu bar.** The default File / Edit / View / Window bar is removed on Windows and Linux (`Menu.setApplicationMenu(null)`, plus `autoHideMenuBar` on the dashboard window); macOS keeps its menu because the copy/paste/quit shortcuts are wired through it. `CHURCHOVERLAY_SHOW_MENU=1` restores it for debugging. Side effect: the menu's accelerators (reload, devtools) are gone on Windows and Linux in normal use.
+
+14. **Offline Python tools (`tools/`, not shipped).** Six standard-library-first utilities that work from a service's JSONL log and recorded audio: `alias_miner.py` (mis-heard book names from `correction.candidate` events), `log_to_replay.py` (real transcripts to replay-test rows, using the built detector), `asr_bakeoff.py` (WER, CER and a separate number recall), `vad_eval.py` (a port of the silence gate, speech recall per threshold, optional Silero), `quote_tuner.py` (grid search of the quotation matcher against LSG text with the built matcher), `service_report.py` (latency percentiles, gate metrics, near-misses, AI trouble). They read the alias tables and catalog from the TypeScript source, never edit the app, and are not in electron-builder's `files` whitelist. `tools/tests` (28 tests) pass. First measurement (`quote_tuner`, 200 verses, 205 negatives, synthetic noise): shingle 4 / minRuns 3 / minCoverage 0.25 reached 84.8% recall against 72.0% for the current defaults, with 0 false positives and 0 wrong verses on both. NOT adopted: the noise model is synthetic and the negatives are few, so the defaults stay until real-service negatives (`--negatives`) agree.
+15. **Correction memory, groundwork only (section 141 is not written yet).** Built and tested but not wired to AppCore, the WebSocket or the dashboard: `alias-proposal.ts` (propose which word was mis-heard for a book, and re-validate any word), `learned-aliases.ts` (a bounded, validated set of operator-approved words with a hardened file parser) and an optional `RegexDetector({ learnedAliases })` that honours them in explicit forms only (a colon or "verset"/"chapitre"), never in the bare "word N M" form and never over a real catalog book. Nothing uses it yet, so behaviour is unchanged. Still to do: the operator-only protocol (approve / forget / list commands and a `correction:update` event), the file-backed store in the desktop process, the dashboard UI, and the architecture note.
+
+**Not done.** The correction memory wiring above; a one-click pre-service self-test (there is no existing one: the header's "Vérifier" is the review-before-showing mode); browser layout regression tests. Verified by looking: the menu bar is gone in the packaged app, and the overlay shows both languages at the same size with the English in italic (real AppCore, real overlay page, Chromium). Not verified: OBS itself, and a packaged-installer run on another machine.
+
+## 142. Production Audit Fixes, Bible Browser and Noise Modes (Phase 2 maintenance, owner request, 2026-11-11)
+
+Owner-reported production problems, fixed by one audit round and one review-driven fix round. Per-area working notes (root causes with file and line, test lists, unverified items) are in `audit-notes/` (`verse-detection.md`, `asr-mic.md`, `overlay.md`, `dashboard.md`, `bible-browser.md`, `ai-features.md`). Section 141 stays reserved for the correction-memory wiring named in section 140 item 15.
+
+**Scope change approved by the owner in chat:** an operator Bible browser (reading and word search, section 142.4). It adds no Bible dataset and no new translation: it reads through the existing `VerseSource` chain and the bundled Louis Segond 1910 data (sections 77 and 98). AGENTS.md section 4's other locks are unchanged.
+
+**142.1 Verses that appeared by themselves (section 15 guard unchanged).** Two causes were reproduced with failing tests first. (a) The ASR can cut a spoken number between two finals ("John 11 verse 1" then "2"); the first final displayed John 11:1 at once. (b) `goto-chapter` ("Turn to John 11", "Jean 3 on voit") was resolved to verse 1 and shown. Fixes: a **settle window** (`referenceSettleMs`, default 1000 ms, 0 disables) holds a detection whose trailing number could still grow (checked against `KnownValidVerseIndex`) and merges only a following final that is a bare number (digits and punctuation, nothing else; "3 things I want to say" never merges). A chapter-only mention is now a pending suggestion, never auto-shown; it sets the announced chapter so a following bare "verse 12" is resolved against that chapter and is also offered as a pending suggestion, never auto-shown without confirmation. A held detection discarded by Clear, an override, a navigation or stop logs `verse.settle-dropped`. The bare "word N M" form is rejected when a unit, month, time or common prose word (dit, says, nous, they) follows. Cost: a verse that can still grow and is the last thing said (John 3:5) appears about 1 s later. Not changed: a spoken-word split ("verset un" then "deux") is not merged; a bare compact form with a common-word book ("Mark 3 16") still auto-shows.
+
+**142.2 Transcription languages and noise (sections 86, 95, 97, 99, 113, 138, 139).** Transcription is restricted to French and English. Groq now requests `verbose_json` and honours the sticky `LanguageLock`; a label that is not fr/en is judged by the text (kept unless it reads as Spanish or Portuguese, then retried once with the lock or French). Deepgram language labels are normalised by primary subtag (`en-US`, `fr-CA`) and a transcript is judged only on 4 or more alphabetic words, never on numbers and book names. After 5 consecutive language drops a safety valve warns and lets text through. `transcript-screen.ts` is the single text screen for every engine: credits, music symbols, non-Latin script, repetition and implausible word mix are removed or dropped (the offending span is cut and the rest re-screened, so "♪ ouvrez Jean 3:16" still yields Jean 3:16), names are not counted as unknown words in normal and noisy mode. `segment-quality.ts` has per-mode thresholds and a low-confidence floor that spares segments with a digit, a book word or a navigation word. **Noise mode** (`NoiseMode` normal / noisy / tongues, operator command `asr:noise-mode`, persisted, reported in `mic:health`) tightens these rules; tongues is the strictest and may drop a name-heavy real sentence (a sentence missed, not a wrong one shown). `SilenceGate` has a robust option: speech-band (300-3400 Hz) level against an adaptive noise floor, a calibrated base that relaxes after loud pre-service music, a floor that rises only on steady noise (not on continuous speech), and non-finite input guards. `AdaptiveGain` caps a frame's gain by its own peak. **Visibility:** `mic:health` carries the effective gate threshold, the noise floor, drops per minute by reason and warnings (`no-transcripts` after 30 s of forwarded audio, `gate-closed-loud` after 20 s, `language-guard-bypassed`); every drop is counted in one `DropLedger` and logged at info, rate-limited. Not verified: real church audio (all thresholds are reasoned on synthetic signals), live Groq `verbose_json` and Deepgram per-word language fields. Tongues rendered as real French or English words cannot be detected. Browser AGC and noise suppression in `getUserMedia` are unchanged pending a listening test.
+
+**142.3 Overlay (section 110, 133, 140 item 7).** The fit is relative to the frame: fullscreen up to 95% x 92% of the frame and a font up to 30% of the frame height, lower-third up to 11% of the frame height, found by a single synchronous binary search (no flicker), refit on resize and when fonts load. Decorative glows no longer inflate the measured height. If the last-resort fit reaches its minimum font size, the verse card is marked `data-fit-limited="true"`; the existing scale fallback still prevents overflow, but this is an indicator rather than a readability guarantee for arbitrarily long text. A WebSocket outage clears every local content channel after 20 seconds; a faster reconnect preserves the current frame while the server sends the authoritative show-or-clear state for each channel to that viewer. Language drives typography, not the primary or secondary slot: English is italic and French upright, for both text blocks and the reference parts, with the same family, weight, size and animation. Verified in Chromium (1920x1080, 1280x720, portrait, 480x270, all 15 card designs); not verified in OBS itself, in NDI output or in the dashboard preview iframe. Instrument Sans has no italic face, so English in the sans designs is a synthetic slant.
+
+**142.4 Operator Bible browser.** A "Bible" view in the dashboard (Ctrl+7): books, chapter grid and verse reader (French or English book names per UI language), previous and next verse and chapter, and word search. Browse mode changes nothing on screen until the operator presses Show; Live mode puts every step on screen. New operator-only commands `bible:chapter`, `bible:search`, `verse:navigate` and results `bible:chapter-result`, `bible:search-result`, `verse:navigate-result` (operator broadcast only; payloads bounded; single-flight with the newest request winning). Chapter requests are validated against the catalog and `KnownValidVerseIndex` before any source call, results go through the existing cache, negative cache and circuit breaker, a malformed browser answer never trips the breaker that live display shares, and a partial chapter reports its `missing` verses. Word search is French only (an in-memory inverted index over the shipped LSG data, built in time slices on the first search rather than at startup); English words are found only in chapters already opened this session. Showing a verse is an ordinary `verse:override`. Not done: multi-verse display (a shift-click range is only highlighted), the phone remote does not get these commands.
+
+**142.5 AI helpers (sections 93, 121, 123-126).** Four causes of "the AI features do not work": the Anthropic key could only be entered at first-run setup (now a Save, Remove and Test connection card; the renderer can set the key but never read it); the free Groq model is a reasoning model whose hidden reasoning used the whole token budget so every helper got an empty answer (`reasoning_effort` low and token headroom, sent only for gpt-oss models); no operator-visible status (a status line now distinguishes needs key, key refused, model unavailable, rate limited, paused); and the sermon-notes generator had no timeout covering the body read and could blank the notes panel on an empty answer (the timer now spans the body, an empty answer is a failure that keeps the previous notes and retries the text). A replace-only Groq key field was added. The Anthropic default model id was NOT changed and could not be confirmed; a retired id shows as "model not available" in the status line. Guard rails unchanged: AI output is only ever a pending suggestion validated through `KnownValidVerseIndex`. Nothing here was run against a live key.
+
+**142.6 Dashboard.** The live view no longer overlaps at 1366x768 with the Activity drawer open, the Activity card is no longer clipped, the event log no longer records every status update and keystroke preview (it shows detail per entry, keeps 200 lines and is size-bounded), and an unparsable manual reference shows an inline hint with examples in both languages. Checked against a mock Electron bridge, not in real Electron. Not done: the broader visual polish pass and a full performance audit of `dashboard.js`.
+
+**What breaks.** Nothing persisted. A bare chapter mention and a bare compact reference followed by prose words are no longer shown automatically (the operator confirms or says "verset"). Tests that pinned old behaviour were changed deliberately.
+
+**Tests.** About 170 tests added (settle and detector, transcript screen, gate and gain on synthetic audio, providers' language handling, Bible browser service, payloads and renderer logic, AI mocked HTTP, overlay fit and language rules). `npm test` is 1566 passing, 3 skipped; three timing-based tests (WebSocket heartbeat, local-whisper overload, settle window) can fail intermittently under a heavily loaded machine, and the WebSocket heartbeat test also failed once in four runs on the code before this section.
+## 143. Full-Audit Fix Rounds: Resilience, Display Safety, Config Recovery (Phase 2 maintenance, owner request, 2026-11-13)
+
+A read-only whole-app audit (seven specialist reviews; reports in `audit-notes/full-audit/`, summary and score in `REPORT.md`) found no Critical or High security issue but six operational blockers: the app could fail without telling the operator and left no log. Fix notes per area are in `audit-notes/fixes/`. No scope change. This section supersedes the statements it names.
+
+**143.1 Logs and crash handling (commit `2b222f1`).** The desktop app now writes a rotating JSONL log to `userData/logs/churchoverlay.log` (5 files of 5 MB, secrets redacted, write failures counted, never thrown) and keeps the last 500 lines in memory; the dashboard has an "Open logs folder" action and the diagnostics export includes the recent log. This replaces the "rotating logs" comment that was never implemented. The main process handles `uncaughtException` and `unhandledRejection` (logged with the stack, shown as a non-blocking dashboard notice, rate-limited, fatal only before a window exists). The dashboard window reloads after `render-process-gone` or `did-fail-load` (at most 3 times per 2 minutes) and has background throttling off. A missing safeStorage shows a dialog before quitting; `before-quit` awaits shutdown for at most 5 s.
+
+**143.2 Microphone loss.** Renderer: `mic-capture-guard.js` classifies capture errors (denied, not found, in use, overconstrained, other), watches track `ended`/`mute`, `devicechange` and AudioContext state, and shows "live" only while frames flow (no frame for 3 s is "no-frames"); it re-acquires the device up to 5 times with backoff. Server: `mic-audio-watchdog.ts` reports `mic:health` state `no-audio` after 4 s without frames while the mic is on and counts a dropout. A failed `mic:start` reverts server state and sends operator-only `mic:start-failed`; `mic:start` while running is a no-op (no gate recalibration on a dashboard reconnect); `asr.start`/`stop` are bounded to 20 s.
+
+**143.3 ASR failover.** `FailoverProvider` has one in-flight activation, an outage state with 2 s to 60 s backoff, and reports a dead secondary once (it retried on every audio frame before). Groq 401/403 is a `key-refused` state that triggers failover; 5xx chunks are requeued with bounded backoff; every discarded chunk is counted in the `DropLedger`. Deepgram reconnects when it is the last provider in the chain. The local fallback engine uses half the cores (2 to 8). This amends sections 86, 95 and 119.
+
+**143.4 Display safety.** Display-mode voice commands match only when the whole utterance is a short imperative ("passe en français", "switch to French"); prose such as "il parle en français" no longer switches and persists the mode. A bare compact reference ("Jean 5 6") is always a pending suggestion, in auto and review mode; explicit forms are unchanged. This completes the item left open in section 142.1. Lookup tables keyed by transcribed text are null-prototype, and the transcript handler is wrapped in try/catch ("constructor 3:16" used to throw). A verse whose lookup fails sends operator-only `verse:lookup-failed` (reason `unavailable`, `not-found`, `invalid` or `superseded`) and the dashboard shows a "Bible source degraded" indicator. An override superseded by a later detection is reported instead of dropped silently. A rundown verse scene the operator cleared stays cleared when the overlay reconnects.
+
+**143.5 Viewer role (amends section 30 and SECURITY.md).** The server enforces an allow-list of events a viewer token may receive (`VIEWER_OUTBOUND_EVENTS`). Transcripts, translations, near-misses and pending verses go to operators only. Viewers no longer receive `rundown:state`.
+
+**143.6 Configuration (amends section 139's downgrade note).** An invalid or unknown optional or enum field falls back to its default with a warning; one undecryptable key no longer discards the other keys or the file (the encrypted value is kept until re-entered). The file carries `schemaVersion`; a newer file loads tolerantly and is backed up once before its first rewrite. An unparseable file is kept aside and `config.json.bak` is tried before giving up. Loads are serialised with saves. `get-startup-status` returns `configRecovered` and the dashboard shows a banner. `set-custom-bible-api-url` changes the English source in place on the instance AppCore holds (it used to create an orphan, after which the live language toggles stopped working). `startServices` and `shutdown` are serialised and the shutdown flush is best-effort.
+
+**143.7 Completed afterwards on `main` (pull requests #73 and #74 and later commits, by a second contributor; summarised from the commits, verified here by build and tests only).** French verse source fetch timeout and a circuit-breaker probe that always clears; word-search index built on first search instead of at startup; overlay disconnect fail-safe and resync of all content kinds; contrast-safe announcement, definition and outline text with a contrast test; pending-verse Dismiss, age and a Ctrl+Enter guard, on the dashboard and the phone remote; confirmations before replacing a key or loading a rundown; brand-accent contrast clamp; French and English on the stage and live pages; deterministic timers in the heartbeat, settle and local-whisper tests plus a heartbeat fix so a client with a queued pong is not dropped; broader Bible vocabulary hints and cross-book spelling variants for recognition. Dependencies moved to Electron 45 and ESLint 10.
+
+**What breaks.** Viewers receive fewer events (143.5). Chapter-only mentions, bare compact references and prose containing "en français" no longer change the screen by themselves. Tests that pinned the old behaviour were changed deliberately.
+
+**Tests.** `npm test` on `92b8275`: 1709 tests, 1706 passing, 3 skipped, in three consecutive clean runs; `npm test` now uses `--test-concurrency=2` and the release workflow runs lint.
+
+**Not verified.** Real Electron (the dashboard was exercised against a mock bridge only), a real microphone unplug or sleep/wake, real church audio, live Groq, Deepgram and Anthropic keys, OBS and NDI. **Not done:** an app-version handshake so already-open overlay and remote pages reload after an upgrade; installer signing and release-pipeline hardening (audit S-02); cleartext phone remote and token rotation (S-04); a supersession index for this document.
+## 144. Accuracy and Performance Pass: Spoken-Conjunction Detection, Verse-Cache Warming, Request Coalescing (Phase 2 maintenance, owner request, 2026-11-15)
+
+An owner-requested accuracy and performance round over the detection, transcript post-processing and verse-resolution paths. No scope change; every boundary (detector/verse-source/WS, section 5) is unchanged. Measured before and after per AGENTS.md section 34, with a new colocated benchmark harness (`apps/server/detector/detection-path.bench.ts`, run like the audio one: `npm run build`, then `node dist/apps/server/detector/detection-path.bench.js`).
+
+**144.1 The spoken conjunction between the two numbers ("et"/"and").** Found by dry-running the pipeline with natural phrasing: "First Samuel chapter sixteen and verse seven" normalized correctly to "1 Samuel chapter 16 and verse 7" and then matched nothing — every reference pattern required the verse keyword to follow the chapter number directly. A preacher saying "Jean 3 et verset 16", "John 3 and verse 16", "chapter 3 and verse 5" or the French "chapitre 3 et verset 16" lost the verse entirely (or, for navigation, got a chapter jump instead of the verse, because `GOTO_CHAPTER_PATTERN`'s trailing exclusion did not know the conjunction either). The conjunction is now an optional slot BETWEEN the two numbers in `SPOKEN_REFERENCE_PATTERN`, `SPOKEN_REFERENCE_DOUBLE_KEYWORD_PATTERN`, `BOOK_CHAPTER_VERSE_PATTERN` and `BARE_CHAPTER_VERSE_PATTERN`, and the three guard lookaheads/lookbehinds (`GOTO_CHAPTER_PATTERN`, `BOOK_BARE_CHAPTER_PATTERN`, `BARE_VERSE_PATTERN`) know it too — without those, one utterance would again race two commands (goto-chapter plus goto-verse). The slot only exists where a reference keyword anchors the reading, so enumeration ("Jean 3 et 16 personnes") still matches nothing; the keyword-less compact form deliberately does not grow a conjunction. Detection outputs for previously-matching phrasings are unchanged.
+
+**144.2 Bible-term boundaries (transcript display).** `normalizeBibleTerms()` used ASCII `\b`, which sees no boundary before "é" — "l'évangile de Jean" never capitalized "Évangile" (both the space and the apostrophe are non-word characters to `\b`). Unicode letter/digit lookarounds replace it (the same fix the detector's own patterns got); compounds like "archévangile" are still refused, plurals untouched. Its seven patterns are also compiled once at module level instead of once per transcript (partials included): 3.5 → 0.3 µs/transcript on the benchmark.
+
+**144.3 Verse-cache warming from chapter-capable sources.** `resolveVerseDetailed()`'s miss path, when the source is chapter-capable (`getChapter`, the same Partial-cast pattern `resolveChapter()` uses), now reads the chapter ONCE, serves the requested verse from it, and warms every sibling into the bounded `VerseCache` — the same rule the Bible Browser's chapter read already applied. Every current implementation answers a chapter read with a single request (GetBible and FreeApi ship whole chapters anyway and used to discard all but one verse), so a preacher reading consecutive verses of one chapter — the dominant live pattern — pays one round-trip instead of one full-chapter download PER VERSE. Measured end-to-end in dry-run: verse 1 of John 3 751 ms, verses 2 and 3 that follow 2 ms and 1 ms. Response validation is unchanged in strictness (every verse must belong and carry text; a faulty answer is a breaker failure, never shown or cached), a verse absent from a fetched chapter stays a confirmed "not found" with its valid siblings still warmed, and sources without `getChapter()` take the unchanged verse-by-verse path. `VerseCache`'s positive bound grows 500 → 1500 entries so one Psalm-119-sized warming (176 entries) cannot evict the working set (still bounded, well under a megabyte of text; negative side unchanged).
+
+**144.4 Request coalescing (single-flight).** Concurrent identical requests used to race duplicate downloads: `GetBibleVerseSource` now keys in-flight chapter reads by translation/book/chapter, and `FreeApiSource` keys in-flight HTTP requests by URL with ONE shared, lazily-memoized body parse (a Response body can only be consumed once — memoizing the parse result still let a second caller start a second read before the first settled). Waiters share the outcome (success, 404 or failure); slots free when the request settles, so the maps stay bounded by concurrency and a failed read is retried, never remembered. Nothing is cached by this layer — the negative cache, positive cache and breaker rules are per-caller and unchanged.
+
+**144.5 Detection hot path.** `RegexDetector.collect()` returns early when the normalized text contains no digit (every pattern needs two digit groups; the check must stay after `normalizeSpokenReferences`, which is where number words become digits — a pre-normalization check would drop "Psaume cent dix-neuf"). The per-call pattern-array allocation is hoisted to module constants. Measured on the new benchmark: mixed transcripts 23.5 → 22.2 µs/call, digit-free partials 23.5 → 18.2 µs (the spoken-form normalization dominates the remaining cost; what this removes is the pattern scans and per-match filtering). A result memoization layer was considered and deliberately rejected: the detector reads learned aliases at detect time, so caching results per text could serve a stale answer after an operator approves an alias.
+
+**144.6 WebSocket broadcast encoding.** `broadcastWhere()` UTF-8-encodes its payload once into a Buffer instead of once per connected client (ws re-encodes every string payload at send time). The buffer is sent with `{ binary: false }`, which keeps it a TEXT frame — verified against the ws library and pinned by a new server test asserting the `isBinary` flag is false; browser pages' `JSON.parse(event.data)` and every ws client consumer are unaffected.
+
+**What breaks.** Nothing persisted; no WS protocol change (broadcasts were and remain text frames). Phrasings with the spoken conjunction now resolve where they previously silently did nothing, and consecutive verses of a warmed chapter resolve from the cache. One test double (`ChapterStubSource`) was corrected to serve catalog-sized chapters — a 4-verse stub chapter turned every verse past 4 into a false "not found" once warming landed, which no real source does.
+
+**Tests.** 21 tests added (conjunction detection and its negative cases, one-command navigation assertions for the exclusion lookaheads, Bible-term boundaries, verse-cache warming including not-found/failure/faulty-answer cases, single-flight on both sources including shared failure and retry, the broadcast text frame). `npm test`: 1730 tests, 1727 passing, 3 skipped (the same live-Groq/whisper environment gates), lint and typecheck clean.
+
+**Not verified.** Live Deepgram/Groq keys (the conjunction fix and post-processing are downstream of ASR and covered by the existing provider tests), real OBS rendering, the Electron GUI. **Not done:** verse RANGES ("verses 16 to 18") remain out of scope pending a display decision; the near-miss detection that runs on partials for operator feedback was left exactly as it is (sanctioned operator feedback, not verse display).
+## 145. Innovation Pass: Verse Ranges End-to-End, Concurrent Multi-Reference Resolution (Phase 2 maintenance, owner request, 2026-11-15)
+
+An owner-requested innovation round ("more powerful performance"), built directly on section 144's warmed, coalesced verse path. No boundary moves (section 5); everything is additive to the wire shapes.
+
+**145.1 Verse RANGES, end to end — the display decision section 144 deferred is now made.** A preacher quoting a stretch of text — "Proverbes chapitre 1, verset 5 à 7", "Proverbs chapter 1 verses 16 to 18", the dictated "Jean 3:16-18", the ASR pause "Jean 3, 16-18" — used to be truncated to the first verse, with the operator expected to press "next verse" for the rest (section 144 explicitly left ranges "out of scope pending a display decision"). The decision: a detected range shows as ONE overlay verse whose text carries every verse of the range, each prefixed with its bracketed number ("[16] ... [17] ..."), and whose reference line reads "Book C:V-E" ("Jean 3:16-18"). One utterance, one command, one show.
+
+Mechanically: `VerseRangeDetector` (apps/server/detector/verse-range-detector.ts) mirrors RegexDetector's three shapes (double-keyword prose, single-keyword spoken, compact written) with a range tail after the START verse. The tail is ONE shared expression, `RANGE_TAIL` in its own import-free module (range-tail.ts), interpolated POSITIVELY by the range patterns and NEGATIVELY (`(?!RANGE_TAIL d)`) by all four single patterns — so a range utterance can never also fire a truncated single, the same one-utterance-one-command rule the navigation guard lookaheads apply. `RegexDetector` itself grows `detectRanges()` (delegating to a range detector that shares its learned aliases), found structurally at the composition root via `asVerseRangeDetector()`; the `VerseDetector` contract itself is unchanged. Ranges validate through the same hallucination guard (`detectValidatedRanges`): the START verse must exist, the spoken end clamps down to the last CONTIGUOUS verse the index confirms ("16 to 40" in John 3 stops at the chapter's end, Psalm 23 "1 to 9" at 6), and `MAX_RANGE_VERSES` (12) bounds one utterance so "verset 1 à 176" can neither flood the overlay with a wall of text nor turn one detection into 176 source reads. A reversed span ("28 - 5" quantity noise) never reaches validation. The compact form keeps the single detector's everyday-word and trailing-word guards ("Marc 12 14-16 personnes" stays a quantity; learned aliases never apply to a compact form). On the wire, `Verse` gained one OPTIONAL field, `verseEnd` (packages/contracts) — every existing producer and consumer is unaffected; the overlay, dashboard, phone remote and live-view reference lines append "-E" only when it is present.
+
+**145.2 Range resolution through the guarded path — never a second, weaker way to verse text.** `resolveVerseRange()` resolves each verse of the range through the SAME `resolveVerseDetailed()` cache -> breaker -> source path as a single reference (response validation, negative caching, breaker accounting unchanged). In practice the whole range resolves from the cache after the FIRST verse pays one chapter read (the section 144.3 warming), so a six-verse spoken range costs one network round-trip — the same as one verse, which is exactly what the old truncated single cost. Display honesty: only verses that actually resolved are joined, each with its bracketed number, so a versification gap is VISIBLE ("[16] ... [18] ..."), never papered over by adjacency; the event is logged (`range-partially-resolved`). If the start verse itself fails, nothing is shown. Bilingual secondaries join only when EVERY resolved verse carries one — never half-shown. `resolveTranscriptVerses()` drops any single reference already covered by a validated range of the same transcript (merged sentences), so nothing shows twice.
+
+**145.2.1 The two races a range utterance would have lost.** Found by dry-running the pipeline, the same way section 144's conjunction gap was found. First, the NAVIGATION detector: its keyword patterns had no idea a range tail existed, so "Proverbes chapitre 1, verset 5 à 7" produced a goto-book-chapter-verse command for verse 5 and "Jean chapitre 3 versets 16 à 18" produced a goto-CHAPTER jump — each beginning a display intent that superseded the in-flight range lookup (the utterance showed the wrong thing, or nothing). Every keyword pattern here now ends in the same (?!RANGE_TAIL d) exclusion the single patterns use; GOTO_CHAPTER_PATTERN's and BOOK_BARE_CHAPTER_PATTERN's verse-keyword exclusions also accept the PLURAL "versets"/"verses" (which previously escaped the trailing \b), and BOOK_BARE_CHAPTER_PATTERN additionally refuses a SPACE-separated second number ("Jean 3 16-18", and the compact single "Jean 3 16", mean verses — never a chapter-only goto) while KEEPING the comma-separated pause enumeration "Abacuc, 1, 2, 3," live-observed in 2026-09. Bare verse commands ("verset 16") are untouched: a bare range reusing the current position is still the documented future item, so there is nothing for a bare pattern to yield to yet. Second, the transcript ASSEMBLER routed a range line into the fragment window (its currentHasReference check only asked the single detector, which a range line correctly leaves empty), so the range sentence sat waiting to be merged into the next one; the check now asks the range detector too, and a range line resets the assembler like any complete reference.
+
+**145.3 Concurrent multi-reference resolution — the sequential note superseded.** resolve-transcript-verses.ts's original "references resolve sequentially on purpose" note predated both single-flight (144.4) and cache warming (144.3). What sequentiality still cost was the one remaining case: a sentence citing references in DIFFERENT chapters ("Jean 3:16 et Psaume 23:1") paid one round-trip PER chapter. References now resolve concurrently (Promise.all), with results mapped back to input order BEFORE either the SF-03 lookup report runs or verses return — callers observe exactly the sequence the sequential version produced, only sooner. Same-chapter references coalesce into one chapter read via warming + single-flight, so concurrency adds no request amplification. The transcript gate runs once, up front, for both the single and the range path.
+
+**What breaks.** Nothing persisted; the only wire change is the additive optional `verseEnd`. One deliberate behavior handoff: a range-tailed utterance no longer produces a truncated single (the old sermon-replay fixture asserting "Jean chapitre 3 versets 16 à 18" -> "john 3:16" now asserts nothing from the single detector, with the range detector owning the line). A range-tail also removes one marginal false positive ("... verset 5 à 7" could previously half-match a quantity sentence's tail).
+
+**Tests.** 24 tests added (range detection FR/EN across all three shapes, "jusqu'au/jusqu'à", number-word ranges, the negative cases, guard interplay, alias/stopword rules, one-utterance-one-command; clamping, the cap, dedupe, the structural capability lookup; joined-text resolution incl. one-chapter-read proof, in-range gaps, start failure, breaker failure, partial prefix, bilingual join and half-join rules; end-to-end range shows, covered-single suppression, the concurrency proof via an overlapped-read double, capability-less and partial-transcript fallbacks). The detection-path bench gained `RegexDetector.detectRanges` and two range-bearing fixtures: detect 23.2 us/transcript (the shared range lookaheads cost ~1.0-1.4 us over section 144's 22.2), digit-free partials 18.9, detectRanges 12.5. `npm test`: 1755 tests, 1752 passing, 3 skipped (the same live-Groq/whisper environment gates), lint and typecheck clean.
+
+**Not verified.** Real OBS rendering of a range show, live ASR keys (detection is downstream of ASR and covered by the provider tests), the Electron GUI. **Not done:** enumerated verses WITHOUT a conjunction or range tail ("versets 16, 17, 18") stay three separate readings (only the first is a reference; the rest are navigation-shaped) — a list-display decision, not a range; bare ranges reusing the current position ("verses 16 to 18" with no book) remain a navigation-detector decision, not this pass's.
+
+## 146. Frontend Pass: the Surfaces Catch Up (Phase 2 maintenance, owner request, 2026-11-15)
+
+An owner-requested frontend round ("work on the frontend too"), after sections 144-145 improved the detection and resolution path behind the surfaces. No boundary moves (section 5); the only wire change is additive: the OPERATOR's typed reference may carry an optional `verseEnd`. A full-surface audit (dashboard, OBS overlay, live view, phone remote, stage monitor) found the gaps below; every fix lives in the surfaces' own no-build-step JS, guarded or unit-tested in the established style.
+
+**146.1 The operator can now type a RANGE — the manual twin of section 145's spoken ranges.** Range DETECTION was complete, but the dashboard's typed-reference box still accepted only single verses, so the one person who knows best what should be on screen could not show "Jean 3:16-18" without saying it aloud. The typed-reference parser moved out of dashboard.js into its own unit-tested globalThis module (`parse-reference.js`, the `mic-capture-guard.js` pattern) and accepts a range tail: "Jean 3:16-18", "jn 3 16 18" (quick entry's fourth token), en/em dashes, spaces around the dash; a REVERSED tail is rejected to the format hint, an EQUAL tail is the plain single verse. `verse:override` and `verse:preview` carry the optional end as `TypedVerseReference` (contracts; the registry validator accepts a number, rejects anything else). AppCore's `operatorTypedRange()` applies the SAME guards as `detectValidatedRanges` — the start verse must exist in the known-valid index, the end clamps down to the last CONTIGUOUS verse it confirms, `MAX_RANGE_VERSES` (12) caps the span, and a malformed or reversed end degrades to the single verse rather than becoming an error the operator must decode — then `resolveVerseRange()` resolves it and ONE verse:show goes out, exactly like a detected range. The typing box's live preview resolves a typed range to the JOINED verse, so the operator sees exactly what Show will display. The dashboard also remembers a shown range WHOLE: recent-verse chips keep `verseEnd` (recalling "Jean 3:16-18" re-shows the range, not verse 16 alone — the old `lastShownReference`/chip payload silently truncated it), and Alt+Right after a range continues at its END (verse 19, not 17 — the middle of the range already on screen); Alt+Left still steps back from the range's first verse.
+
+**146.2 Drift between the surfaces, found by the audit, fixed and guarded.** Six concrete defects: (1) the dashboard's French-translation list predated the Darby toggle and omitted `darby`, so a Darby verse showed "John 3:16" in the pending banner, tally chip and recent chips while the overlay read "Jean 3:16" — the list is now the same named `FRENCH_TRANSLATIONS` constant the overlay and remote already use; (2) the stage monitor's `formatReference` truncated a range's reference to its start verse ("John 3:16" on the preacher's screen while the congregation read "Jean 3:16-18") — it now appends the same -E suffix every other surface renders; (3) the live view was the one surface without the bounded backoff-aware reconnect (a fixed 2.5 s retry, socket errors swallowed) — it now backs off 1s->30s like the others, resets the attempt counter on a successful open, and logs the error; (4) the phone remote's prepared-verse list had its own silent copy of `fireVerse` that dropped an unparseable reference with no toast and never armed the verse ack — one module-scope `fireVerse` now serves quick-fire, presets and the prepared list alike; (5) a non-OK service-pack response (expired token, server error) reset the remote's button as if nothing had happened — the failure is now reported the way network exceptions already were; (6) the OBS overlay's `verse:show` handler had no payload guard, so a malformed payload would throw inside the message listener and kill the media/announcement/outline handling behind it — it now ignores the payload and stays on the last good verse, the same guard remote.js and the dashboard already had. Two parity guards lock the no-build-step copies against the next drift: `reference-parity.test.ts` (FRENCH_TRANSLATIONS and FRENCH_BOOK_NAMES equal across dashboard/overlay/remote) and `fonts-parity.test.ts` (the five font directories byte-identical).
+
+**What breaks.** Nothing persisted; the only wire change is the optional `verseEnd` on verse:override/verse:preview (rejected for non-numeric values, ignored-and-degraded when semantically unusable). The `reference.formatHint` string changed in both languages to mention ranges. A typed "Book C:V-E" that previously FAILED to parse now shows a verse — that is the feature. The stage monitor and live view render a range's reference with the -E suffix; their reference lines still use English book names (only the overlay/dashboard/remote carry the French table) — recorded as future work with the shared-module decision it needs.
+
+**Tests.** 11 tests added (the typed-reference parser's full contract including the pre-146 singles and the rejected/reversed tails; registry acceptance of a numeric `verseEnd` and rejection of anything else; the AppCore range-override broadcast proving ONE joined verse:show with bracketed numbers through the guarded path; the clamp/cap proof through verse:preview — "john 3:30-99" clamps to the chapter's real end, "psalm 119:1-176" caps at 12; the two parity guards). `npm test`: 1766 tests, 1763 passing, 3 skipped (the same live-Groq/whisper environment gates), lint and typecheck clean.
+
+**Not verified.** Real OBS rendering, the Electron GUI, a live phone remote (all surfaces exercised through their unit/source guards only). **Not done:** French book names on the stage monitor and live view reference lines (needs the shared-module decision — five copies of the table is where drift came from); the dashboard's dead `.canvas-snap-guide` CSS and the fragile `:has([style*="flex"])` queue-card selector; the always-on 5 s latency poll while the window is hidden; the stale `apps/overlay/dev-preview/dashboard.js` copy. All recorded for a later pass.
+
+## 147. Animated Worship Backgrounds (Phase 2 maintenance, owner request, 2026-11-16)
+
+An owner-requested continuation of the frontend pass: "some animated background for overlay like fire flame ... some christian animation background for the overlay card". The overlay style (section 110) already carried palette, card design, transition and brand; what played BEHIND the card was only the opt-in `?background=nature` video loop — a URL the operator had to hand-craft into the OBS browser source, unknown to the dashboard and to `overlay:style`. This section makes the background a first-class, operator-selectable part of the style, and adds five pure-CSS animated worship scenes beside the video.
+
+**147.1 The background is a style field, chosen in the dashboard, validated like everything else.** `OverlayStyleSettings` gains `background: OverlayBackground` from a closed contract enum (`OVERLAY_BACKGROUNDS`): `none` (the classic palette gradient, the default and the value every pre-147 setting normalizes to), `nature` (the existing local video loop, now operator-selectable — the `?background=nature` URL parameter keeps working so existing OBS sources are untouched), and five scenes: `pentecost-fire`, `winepress`, `glory-rays`, `living-water`, `heavenly-clouds`. The server's normalizer accepts the closed list and repairs anything else to `none` (same oneOf pattern as card and transition); the strict `isOverlayStylePayload` check requires the field, which is safe because `overlay:style` is a server-only EVENT (section 110.4, `allowedSenders: []`) — the only broadcaster is the server itself. The dashboard's Overlay view grows an "Animated background" picker built from the meta catalog (`backgrounds` joined `get-overlay-style-meta`), and `overlay-settings.js`'s `settingsFrom` carries `background` through — the one place a forgotten field would have silently reset the operator's choice on every unrelated overlay edit. The design gallery previews any scene through a generalized `__setGalleryBackground` hook (the old `__setGalleryNatureBackground` remains as a wrapper), and its scene select grew the five options.
+
+**147.2 The resolver: three sources, most specific wins.** overlay.js resolves ONE effective background from the design gallery's override, then the operator's `overlay:style` choice, then the legacy URL parameter. A scene applies as `html[data-scene="<id>"]` (the attribute is set only with a closed-list id); nature keeps the whole existing video state machine (`nature-background` classes, local-source origin check, ready/fallback marking) driven by the same resolver, so the video and the scenes can never be active at once and every pre-existing behavior is preserved. `applyOverlayStyle` re-runs the resolver on every style broadcast.
+
+**147.3 The scenes themselves: pure CSS, one GPU contract, and a living paint layer.** Each scene is a `.scene` layer inside `#scene-backdrop` (z-index 0, beside the nature plate): a static base gradient plus a cast of animated elements — five teardrop flame tongues with white-hot cores over a coal bed and bloom glow, an 18-spark ember storm with mid-flight sway, and a heat-haze band (Pentecost); a turbulence-warped juice surface with must drops dripping into the pool, rings spreading where they land, and rotating tumbling grapes (winepress); a slow conic fan of light turning above the frame, six swaying beams, falling dust motes and a breathing glow (glory rays); a turbulence-warped water surface under rolling baptismal bands, sliding light glints and rising bubbles (living water); and dawn clouds at seven depths under two sweeping light shafts (heavenly clouds). Two kinds of motion coexist under one contract. The cast animates ONLY `transform` and `opacity` per `@keyframes scene-*` — GPU-compositable in OBS, enforced by a source guard (blur, gradients and blend modes exist only as static paint). On top of that, two animated SVG filters — `#scene-fire-warp` and `#scene-liquid-warp`, `feTurbulence` + `feDisplacementMap` with SMIL-morphed `baseFrequency` — displace the fire and liquid layers every frame, which is what makes the flames LICK and the surfaces roll instead of pulse; they are paint-time effects, not composited transforms, so a second guard pins them to the `prefers-reduced-motion: no-preference` block: under reduced motion the filters are never attached, every CSS animation stops, and each scene freezes into its static gradient — the same fallback contract as the nature video. Exactly one scene is ever `display: block` (the others cost nothing). Legibility is layered, not left to chance: each scene carries its own scrim, and the fullscreen verse gradient becomes a LIGHT translucent veil over scenes (`html[data-scene] #verse.fullscreen`, 0.18→0.42 — lighter than the bright nature video's 0.34→0.58); an opaque fullscreen gradient would have hidden the scenes completely, which the first rendering pass caught. The palette's card and the contrast gate keep their role above all of it.
+
+**What breaks.** Persisted settings gain the field on the next write; stored settings without it normalize to `none`, so nothing visual changes until the operator picks a background. The wire's `overlay:style` payload now carries `background` — server-broadcast only, so no client sender exists to break. The gallery's page-backdrop select reuses its old values for stage/bright/none and gains the scenes (transparent page behind the overlay's own scene). The old `?background=nature` URL keeps working with its original meaning.
+
+**Tests.** 8 tests added (background normalization: defaults, closed-list acceptance, repair-to-none, legacy stored settings, strict payload acceptance/rejection/missing-field; and the parity guards: overlay.js's own BACKGROUNDS list equals the contract, every scene has a display rule and DOM markup with no orphan rules, every background has English and French names, the dashboard builds the picker from meta and carries `background` through settingsFrom, the reduced-motion freeze exists, the gallery previews every scene through the validated hook, and the keyframes GPU contract). Scenes were additionally rendered headlessly (Chromium via Playwright against the gallery's fake-socket page) in fullscreen and lower-third layouts, and the nature state machine was exercised for the URL parameter, the gallery override and the scene-over-URL precedence. `npm test`: 1774 tests, 1771 passing, 3 skipped (the same live-Groq/whisper environment gates), lint and typecheck clean.
+
+**Not verified.** Real OBS rendering, the Electron GUI, and the scenes against every palette at runtime (the contrast gate is unchanged and computed against the card, not the backdrop). **Not done:** per-scene palette pairing suggestions in the dashboard (a scene can look moody under a light palette — the operator sees the live preview); a liturgical-year auto-rotation; scene motion intensity control. All recorded for a later pass.
+## 148. Security Hardening Pass: Token Rotation, Handshake Rate Limits, Log Masking, Pinned Release Chain (S-02/S-03/S-04/S-09, owner request, 2026-11-16)
+
+The audit's four P0 security items closed in one pass: a captured remote token or a flooded handshake no longer means losing the overlay mid-service, and the release chain no longer trusts moving tags. No boundary moves (section 5); the wire protocol is unchanged — the only protocol-adjacent change is behavioral (a rotated token revokes the sessions holding it), and every threshold is a documented constant, not a magic number in a handler.
+
+**148.1 Live token rotation and revocation (S-04).** `ChurchOverlayWsServer.setTokens()` (apps/server/ws/server.ts) swaps the accepted tokens without restarting anything: each token that CHANGED terminates exactly the sessions authenticated with the OLD one (reported through `onRejected`, never silent) and leaves the other role untouched — a no-op rotation revokes nothing. The new `rotate-token` IPC handler (apps/desktop/main) persists the fresh token and its generation date through `ConfigStore.update` (atomic, on the save queue), swaps the running server, rebuilds both token-bearing URLs (the OBS overlay link and the phone-remote link) from the live values without tearing down a listener, and reloads the NDI window when the viewer token rotated (that page would otherwise reconnect forever with the dead token). The dashboard grows per-token Rotate buttons (OBS panel = viewer token, Phone Remote panel = operator token) with an explicit confirm that spells out the consequence — every link already handed out stops working — plus token-age lines with a 7-day stale alert (`operatorTokenGeneratedAt`/`viewerTokenGeneratedAt`, absent on pre-existing configs, never guessed). Two session-liveness fixes make rotation survivable by its own author: the dashboard's WS reconnect re-reads the live connection info instead of retrying with the captured token (a rotation would otherwise brick the dashboard's own session until restart), and the phone-remote link the operator re-copies always reflects the current tokens. The FIRST `allowPhoneRemote` activation (either entry point — setup checkbox or dashboard toggle) now shows an explicit trusted-network warning whose acknowledgment persists (`allowPhoneRemoteWarningAck`); the main process also records it at enable time so both entry points converge, and the warning text is i18n-complete in EN and FR.
+
+**148.2 Handshake and /api rate limiting, reserved operator slots (S-03).** `HandshakeRateLimiter` (apps/server/ws/handshake-rate-limiter.ts, shared `packages/shared/ip-utils.ts` for address normalization) limits the WS handshake per client address: sliding window of 10 attempts/minute, a self-inflicted 60 s ban after 3 refused attempts, bounded map (4 096 addresses, insertion-order eviction — AGENTS.md section 36), loopback exempt (the app's own pages connect from 127.0.0.1 and reconnect freely). It plugs in through `verifyClient`, the one ws hook that answers an unwanted upgrade with a real HTTP status (429 + `Retry-After`) instead of leaving the socket hanging; the offered protocols are classified by the server's constant-time comparator before admission, so role-aware capacity decisions never compare attacker-controlled strings with `===`. Viewer connections now stop at `maxConnections - reservedOperatorSlots` (default 1) — a flood of overlay/phone pages can never lock out the one client that controls the service — and an operator arriving at the FULL cap evicts the OLDEST viewer (`connectedAt` bookkeeping, bounded and deleted on close) instead of being refused; the connection backstop in `handleConnection` counts OPEN clients so a just-evicted viewer cannot block its replacement. The same discipline guards /api: `createApiRateLimiter` (apps/web/api-auth.ts, 60 req/min per address, 429 + `Retry-After`, loopback exempt) is installed BEFORE the token check and the body parser, so an anonymous flood is stopped first and an unauthenticated caller still pays nothing large. Thresholds, all in one place: handshake 10/min, ban 60 s after 3 refusals, /api 60/min, reserved operator slots 1 — each overridable (handshake `maxAttemptsPerMinute: 0` or `reservedOperatorSlots: 0` restores the old behavior), each unit-tested.
+
+**148.3 No usable token in a printed URL (S-09).** `apps/web/redact-url.ts` masks the token in every URL the process prints — both the `#token=` fragment the pages use and the legacy `?token=` form — to a 4-character fingerprint, enough to tell two links apart, useless to authenticate with. The web mode's startup console prints masked URLs by default and says so; `CHURCHOVERLAY_PRINT_FULL_URLS=1` opts back in for a trusted console, and the real links remain available to the authenticated `/api/status` caller. The dev tools got the same discipline (`scripts/dry-run.ts`, `scripts/dev-preview.ts` — the latter used to print the OPERATOR token in full), so "paste my log into an issue" no longer hands over credentials.
+
+**148.4 The release chain trusts commits, not tags (S-02).** Every external action in both workflows (checkout, setup-node, cache, upload/download-artifact, softprops/action-gh-release) is pinned to a FULL COMMIT SHA verified at write time with `git ls-remote <repo> refs/tags/<tag>{}`, each carrying the version it names in a comment; upgrading is a deliberate, reviewable diff. BUILD and PUBLISH are separate jobs: the build job holds only `contents: read` (checkout, tag/package.json match check, npm ci, lint, test on Windows, electron-builder, checksum generation, artifact upload), and the `release` job — the only one with `contents: write`, running solely on a version tag — downloads the artifact and publishes. Every release now ships `SHA256SUMS.txt` (GNU `sha256sum -c` compatible, generated with `Get-FileHash`) as a release asset AND inline in the release notes, so a congregation downloading the installer can verify it instead of trusting the page.
+
+**What breaks.** Three deliberate behavior changes, each behind a flag or an explicit handoff: (1) a rotated token disconnects the sessions holding the old one — clients reconnect with the new token (the dashboard does so automatically); (2) with the default cap of 64, viewers now stop at 63 so one slot always remains for an operator (`reservedOperatorSlots: 0` restores the old first-come behavior — the raw-cap test opts out explicitly); (3) the web mode's startup console prints masked URLs by default (`CHURCHOVERLAY_PRINT_FULL_URLS=1` restores full links). Config gained three optional fields (`allowPhoneRemoteWarningAck`, `operatorTokenGeneratedAt`, `viewerTokenGeneratedAt`); a file from an older version loads unchanged, a corrupt new field degrades to its default with the standard per-field warning, and nothing is defaulted silently. No wire-protocol change: the WS handshake, message validation and viewer allow-list are byte-for-byte as before.
+
+**Tests.** 32 tests added across the pass: config round-trip/absence/corrupt-degrade for the three S-04 fields; `setTokens` per-role revocation semantics, unchanged-token no-op, and re-admission with the new token against a REAL server; the limiter's window, ban and expiry, per-address independence, IPv4-mapped-IPv6 bucketing, loopback exemption and the hard cap on tracked addresses (including the insertion-order eviction the allowed path must enforce too); `offeredRole` classification; reserved-slot refusals and oldest-viewer eviction against a real server with the raw-cap test opting out; the /api limiter's 429 + `Retry-After`, sliding window, loopback exemption and disable switch, end to end over real HTTP. `npm test`: 1 798 tests, 1 795 passing, 3 skipped (the same live-Groq/whisper environment gates), lint and typecheck clean.
+
+**Not verified.** A real Windows run of the rewritten release workflow (the YAML parses, the pin SHAs resolve to live commits, and the checksum generator was exercised against PowerShell semantics only by review), the Electron GUI flows end to end (rotation buttons, warning modal — exercised through their IPC handlers' contracts and the status payload), a real phone remote reconnect after rotation. **Not done:** token rotation does not yet reach the `apps/web` mode's env-pinned tokens (OPERATOR_TOKEN/VIEWER_TOKEN are process constants there — a rotation endpoint for web mode is a separate pass), the installer is not yet signed (S-07's P2 item), and the dashboard does not yet offer a bulk "revoke everything" button beyond rotating each token (the `both` kind already exists in the IPC surface for it).
+
+## 149. P1 Quality Pass: Coverage Gate, CodeQL, Electron Fuses, Anti-Framing, Frontend Lint, First Module Split (owner request, 2026-11-16)
+
+The audit's P1 lot, executed after the lockfile repair that restored `npm ci` (npm 10 vs npm 11 dedup of the minimatch/brace-expansion chain under the `minimatch ^11.0.1` overrides — the lock is regenerated with npm 10, the CI's version, and validated by both). No boundary moves (section 5); no runtime dependency added — `c8` and `@electron/fuses` are devDependencies only.
+
+**149.1 The suite's quality guarantee is now enforced, not just true (P1-1).** Coverage was measured at 97.44% statements / 89.98% branches / 97.27% functions — far above the 40% floor the plan budgeted, so `test:coverage` runs the suite under c8 with hard thresholds at 95/85/95/95: a regression below the floor fails CI instead of silently rotting the guarantee. CI gained a Coverage gate step and a CodeQL workflow (`javascript-typescript`, `security-extended` queries, push/PR to main + weekly sweep), every action pinned to a full commit SHA per the S-02 policy (codeql-action v3.39.3, verified via `git ls-remote refs/tags/v3.39.3^{}`).
+
+**149.2 The packaged Electron binary is no longer a general-purpose Node runtime (P1-4, S-07).** `scripts/apply-fuses.cjs` — an electron-builder `afterPack` hook, running for both `package` and `dist` — flips RunAsNode=false, EnableCookieEncryption=true, EnableNodeOptionsEnvironmentVariable=false, EnableNodeCliInspectArguments=false on the packaged binary. OnlyLoadAppFromAsar and EnableEmbeddedAsarIntegrityValidation are deliberately DEFERRED to the P2-1 signing pass (no packaged-run smoke test exists yet; the integrity fuse wants a signed installer) — the deferral is recorded in the hook and pinned by a source-guard test so un-deferring is a deliberate diff. The fuses cannot be exercised in CI (no packaged build there); a real Windows run belongs to the signing pass.
+
+**149.3 The phone remote is the one page strangers reach, and it now refuses to be framed (P1-4, S-08).** `StaticServer.frameDeny` adds `X-Frame-Options: DENY` + `Content-Security-Policy: frame-ancestors 'none'` to HTML responses (200 and 304 alike, never on scripts/fonts/media). The desktop's remote instance (0.0.0.0 when allowPhoneRemote is on) and web mode's `/remote` mount both enable it. The overlay and the display pages stay framable ON PURPOSE: the dashboard's Live view embeds the overlay from a file:// null origin that frame-ancestors cannot express, and OBS loads them top-level — the guard targets the CONTROL surfaces exactly.
+
+**149.4 The no-build-step frontend surfaces are linted like the backend (P1-2).** ESLint now covers all 14 vanilla-JS files (~11k lines: dashboard renderer, overlay, remote, stage, live) as classic scripts with exactly the 28 non-language globals the sources use (found by probe, not guessed). Same policies as the TS gate: no-undef, no empty catch without a documented reason, no dead names without `_`, no expression statements. The new gate surfaced four real scories, all fixed: a dead `const ref` in showPendingVerse, an unused drag arg, an unused caught error, and an expression-statement guard rewritten as an explicit `if` (behaviour identical). The dev-preview stale copy stays excluded (documented duplicate, section 146).
+
+**149.5 First module split: the pure reference formatting (P1-2).** `reference-format.js` (the parse-reference.js globalThis convention) now owns capitalize, FRENCH_BOOK_NAMES, FRENCH_TRANSLATIONS, rangeSuffix, formatReference, formatBilingualReference — unit-tested DIRECTLY for the first time (capitalization, the "Jean 3:16-18" range suffix, the bilingual "Jean 3:16 · John 3:16" join, table integrity). dashboard.js keeps only the display-mode-aware wrapper formatDisplayedReference, which reads the mode toggle and can never be pure: the boundary follows behaviour, not line count. reference-parity.test.ts follows the dashboard's tables into the module. dashboard.js: 5 020 → 4 974 lines.
+
+**What breaks.** Nothing for the operator. The coverage gate can fail a PR that drops coverage below 95/85/95/95 (that is its purpose). A packaged Windows build now carries the four fuses — an operator who intentionally launched the app with ELECTRON_RUN_AS_NODE or --inspect was never a supported workflow. A decoy page can no longer iframe the phone remote. Lint now fails on the frontend JS for the same reasons it already failed on TS.
+
+**Tests.** 13 added across the pass: the three frameDeny server tests (headers on HTML, absence on scripts/styles, absence without the option); the two fuse source-guards (hook registered + every fuse value, deferred fuses documented); four reference-format behaviour tests; the parity guard update; the coverage gate itself runs in CI. `npm test`: 1 814 tests, 1 811 passing, 3 skipped (the same live-Groq/whisper environment gates), lint and typecheck clean, coverage gate green.
+
+**Not verified.** A real packaged Windows run (the fuses flip is build-time only and flipFuses throws on a malformed binary, but no packaged smoke test exists — P2-1's job), CodeQL's first analysis on GitHub (the workflow is pinned and YAML-parsed; its findings, if any, will land on the Security tab). **Not done (next passes):** P1-3 — the app-core.ts split (3 380 lines → modules under 1 500); the rest of the dashboard.js split toward the plan's sub-800 target — the next clean extractions are the sermon-prep import block (~200 lines, needs its own context object) and the drag-and-drop import (~125 lines); the sermon-prep block bleeds into the AI-features state and must be extracted with an explicit context object, not by reach-around.

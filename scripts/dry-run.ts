@@ -24,6 +24,7 @@ import { KnownValidVerseIndex } from "../apps/server/verse/known-valid-verse-ind
 import { FreeApiSource } from "../apps/server/verse/free-api-source"
 import { DryRunAsrProvider } from "../apps/server/asr/dry-run-provider"
 import { Logger } from "../packages/shared/logger"
+import { redactUrl } from "../apps/web/redact-url"
 
 async function main(): Promise<void> {
   const logger = new Logger({ minLevel: "info" })
@@ -60,8 +61,9 @@ async function main(): Promise<void> {
   console.log("ChurchOverlay dry-run mode is running — no microphone, no ASR.")
   console.log("")
   console.log("Overlay (open this to see verses appear):")
+  // S-09: same masking discipline as the web mode's own startup log.
   console.log(
-    `  http://127.0.0.1:${httpPort}/index.html?token=${tokens.viewerToken}&wsPort=${wsPort}`
+    `  ${redactUrl(`http://127.0.0.1:${httpPort}/index.html?token=${tokens.viewerToken}&wsPort=${wsPort}`)}`
   )
   console.log("")
   console.log('Type a line and press Enter to push it through the real pipeline, e.g.:')

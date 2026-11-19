@@ -138,3 +138,117 @@ test("GetBibleVerseSource: a network failure (fetch rejects) is a real failure �
   )
   await assert.rejects(() => source.getVerse(JOHN_3_16), /network down/)
 })
+
+test("GetBibleVerseSource: a stalled verse or chapter request times out, aborts fetch, and clears its timer", async () => {
+  for (const method of ["getVerse", "getChapter"] as const) {
+    let expire: (() => void) | undefined
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined
+    let cleared = false
+    let signal: AbortSignal | undefined
+    const timers = {
+      setTimeout(callback: () => void) {
+        expire = () => callback()
+        timeoutHandle = setTimeout(() => {}, 60_000)
+        return timeoutHandle
+      },
+      clearTimeout(handle: ReturnType<typeof setTimeout>) {
+        cleared = true
+        clearTimeout(handle)
+      },
+    }
+    const source = new GetBibleVerseSource(
+      (async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+        signal = init?.signal as AbortSignal
+        return await new Promise<Response>(() => {})
+      }) as typeof fetch,
+      "ls1910",
+      "https://example.test",
+      { timeoutMs: 5000, timers }
+    )
+    const lookup = method === "getVerse" ? source.getVerse(JOHN_3_16) : source.getChapter("john", 3)
+    await Promise.resolve()
+    assert.ok(expire, `${method} request should arm its timeout`)
+    expire()
+    await assert.rejects(lookup, /request timed out after 5000 ms/)
+    assert.equal(signal?.aborted, true, `${method} fetch should be aborted`)
+    assert.equal(cleared, true, `${method} timeout should be cleared in finally`)
+    if (timeoutHandle) clearTimeout(timeoutHandle)
+  }
+})
+
+// CORRECTIF (2026-11-15): concurrent lookups of the same chapter — several
+// references of one chapter detected across a sentence, or Bible Browser and
+// live detection arriving together — used to race duplicate full-chapter
+// downloads. The in-flight map collapses them onto ONE HTTP request; the
+// slot is freed when the read settles, so a later read goes to the network
+// again.
+test("GetBibleVerseSource: concurrent reads of the same chapter share one HTTP request; a later read goes out again", async () => {
+  let fetchCalls = 0
+  const deferreds: Array<(response: Response) => void> = []
+  const fetchImpl = (async () => {
+    fetchCalls += 1
+    return await new Promise<Response>((resolve) => deferreds.push(resolve))
+  }) as typeof fetch
+  const source = new GetBibleVerseSource(fetchImpl)
+
+  const makeBody = (): Response =>
+    chapterResponse([
+      { verse: 16, text: "Car Dieu a tant aimé le monde..." },
+      { verse: 17, text: "another verse" },
+      { verse: 18, text: "yet another verse" },
+    ])
+
+  const verse16 = source.getVerse({ book: "john", chapter: 3, verse: 16 })
+  const verse17 = source.getVerse({ book: "john", chapter: 3, verse: 17 })
+  const wholeChapter = source.getChapter("john", 3)
+  await new Promise((resolve) => setTimeout(resolve, 10))
+
+  assert.equal(fetchCalls, 1, "three concurrent readers of John 3 must share one HTTP request")
+  assert.equal(deferreds.length, 1)
+  deferreds[0]?.(makeBody())
+  assert.deepEqual((await verse16)?.text, "Car Dieu a tant aimé le monde...")
+  assert.deepEqual((await verse17)?.text, "another verse")
+  assert.equal((await wholeChapter)?.length, 3)
+
+  // Settled reads free their slot: a new lookup is a fresh request.
+  const later = source.getVerse({ book: "john", chapter: 3, verse: 18 })
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  assert.equal(fetchCalls, 2, "a read after the previous one settled is not coalesced")
+  assert.equal(deferreds.length, 2)
+  deferreds[1]?.(makeBody())
+  assert.deepEqual((await later)?.text, "yet another verse")
+})
+
+test("GetBibleVerseSource: concurrent readers of a chapter that fails all see the same failure", async () => {
+  let fetchCalls = 0
+  const resolvers: Array<{ resolve: (response: Response) => void; reject: (err: Error) => void }> = []
+  const fetchImpl = (async () => {
+    fetchCalls += 1
+    return await new Promise<Response>((resolve, reject) => {
+      resolvers.push({ resolve, reject })
+    })
+  }) as typeof fetch
+  const source = new GetBibleVerseSource(fetchImpl)
+
+  const first = source.getVerse(JOHN_3_16)
+  const second = source.getChapter("john", 3)
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  assert.equal(fetchCalls, 1)
+  resolvers[0]?.reject(new Error("network down"))
+
+  const results = await Promise.allSettled([first, second])
+  assert.deepEqual(
+    results.map((r) => (r.status === "rejected" ? "rejected" : "fulfilled")),
+    ["rejected", "rejected"]
+  )
+  assert.match((results[0] as PromiseRejectedResult).reason.message, /network request failed: network down/)
+
+  // The failed read freed its slot: the next read retries the network, and
+  // succeeds on its own response.
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  const retried = source.getVerse(JOHN_3_16)
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  assert.equal(fetchCalls, 2, "a failure must not blacklist the chapter in the in-flight map")
+  resolvers[1]?.resolve(chapterResponse([{ verse: 16, text: "Car Dieu a tant aimé le monde..." }]))
+  assert.deepEqual((await retried)?.text, "Car Dieu a tant aimé le monde...")
+})

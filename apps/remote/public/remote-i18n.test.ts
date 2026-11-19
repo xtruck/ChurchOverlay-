@@ -40,3 +40,79 @@ test("remote page: the Layout & Media card is translated, not hardcoded English"
     assert.ok(html.includes(`data-t="${key}"`), `index.html does not mark ${key} as translatable`)
   }
 })
+
+test("remote page: the verse-string parser accepts accented French book names", () => {
+  const match = script.match(/function parseVerseString[\s\S]*?\.match\((\/.+\/[a-z]*)\)/)
+  assert.ok(match, "could not find the parseVerseString regex")
+  const re = new Function(`return ${match[1]}`)() as RegExp
+  assert.ok(re.test("Genèse 1:1"))
+  assert.ok(re.test("Ésaïe 41:10"))
+  assert.ok(re.test("1 Corinthiens 13:4"))
+})
+
+test("remote page: quick stage alerts and the timer title are sent from the translation table", () => {
+  const keys = [...html.matchAll(/data-msg-key="([^"]+)"/g)].map((m) => m[1] as string)
+  assert.equal(keys.length, 4)
+  assert.deepEqual(keys.filter((key) => !en.has(key) || !fr.has(key)), [])
+  assert.ok(!/data-msg="/.test(html), "a hardcoded English data-msg is back")
+  assert.ok(en.has("timerSermonTitle") && fr.has("timerSermonTitle"))
+  assert.ok(!script.includes('title: "Sermon"'), "timer title must come from t()")
+})
+
+test("remote presets are localized and outline labels match their submitted titles", () => {
+  for (const key of [
+    "timerPreset15", "timerPreset30", "timerPreset45", "timerPreset60",
+    "versePresetJohn316", "versePresetLove", "versePresetPsalm231", "versePresetShepherd",
+    "versePresetRomans828", "versePresetTogether", "versePresetPhilippians413", "versePresetStrength",
+    "outlinePoint1Title", "outlinePoint1Text", "outlinePoint2Title", "outlinePoint2Text",
+    "outlinePoint3Title", "outlinePoint3Text", "outlinePoint4Title", "outlinePoint4Text",
+  ]) {
+    assert.ok(en.has(key) && fr.has(key), `${key} missing in a language`)
+  }
+  for (const key of ["timerPreset15", "timerPreset30", "timerPreset45", "timerPreset60"]) {
+    assert.match(html, new RegExp(`class="pill-btn timer-preset-btn"[^>]*data-t="${key}"`))
+  }
+  const outlinePresets = [...html.matchAll(/class="preset-btn outline-preset-btn"[^>]*data-title-key="([^"]+)"[^>]*data-text-key="([^"]+)"[^>]*>[\s\S]*?<small data-t="([^"]+)"/g)]
+  assert.equal(outlinePresets.length, 4)
+  for (const [, titleKey, textKey, visibleTitleKey] of outlinePresets) {
+    assert.equal(titleKey, visibleTitleKey, "the submitted title must match the visible outline label")
+    assert.ok(en.has(textKey as string) && fr.has(textKey as string), "outline text is localized")
+  }
+  assert.match(script, /const title = t\(btn\.getAttribute\("data-title-key"\)\)/)
+  assert.match(script, /const text = t\(btn\.getAttribute\("data-text-key"\)\)/)
+  assert.doesNotMatch(html, /data-title="|data-text="/)
+})
+
+test("remote page: sends are acknowledged with a toast and offline sends are refused visibly", () => {
+  assert.ok(html.includes('id="toast"') && /id="toast"[^>]*aria-live="polite"/.test(html), "toast must be a polite live region")
+  for (const key of ["toastSent", "toastOffline", "toastBadRef", "toastShown", "toastPending", "toastNotShown"]) {
+    assert.ok(en.has(key) && fr.has(key), `${key} missing in a language`)
+  }
+  assert.match(script, /function sendJson[\s\S]*?showToast\(t\("toastOffline"\)[\s\S]*?return false/)
+  assert.match(script, /message\.type === "verse:pending"[\s\S]*?resolveVerseAck\("toastPending"/)
+  assert.match(script, /resolveVerseAck\("toastShown"/)
+  assert.match(script, /showToast\(t\("toastBadRef"\)/)
+})
+
+test("remote page: pending verses can be confirmed or dismissed and show a non-live age", () => {
+  for (const id of ["pending-verse", "pending-verse-age", "pending-verse-confirm-btn", "pending-verse-dismiss-btn"]) {
+    assert.ok(html.includes(`id="${id}"`), `${id} is missing`)
+  }
+  for (const key of ["pendingTitle", "pendingAge", "pendingConfirm", "pendingDismiss"]) {
+    assert.ok(en.has(key) && fr.has(key), `${key} missing in a language`)
+  }
+  assert.match(html, /id="pending-verse-age" aria-live="off"/)
+  assert.match(script, /message\.type === "verse:pending"[\s\S]*?showPendingVerse\(message\.payload, message\.timestamp\)/)
+  assert.match(script, /sendPendingVerseAction\("verse:confirm-pending"\)/)
+  assert.match(script, /sendPendingVerseAction\("verse:dismiss-pending"\)/)
+  assert.match(script, /event\.key === "Escape" && !event\.shiftKey/)
+  assert.match(script, /event\.ctrlKey && event\.key === "Enter" && !event\.repeat && !textEntryFocused/)
+  assert.match(script, /setInterval\(renderPendingVerseAge, 1000\)/)
+})
+
+test("remote page: Windows forced-colors keeps state and controls distinct", () => {
+  assert.match(html, /@media \(forced-colors: active\)/)
+  assert.match(html, /:focus-visible\s*\{\s*outline-color:\s*Highlight;/)
+  assert.match(html, /#on-screen\.live\s*\{\s*border:\s*2px solid Highlight;/)
+  assert.match(html, /\.tab-btn\.active::before\s*\{\s*background:\s*Highlight;/)
+})

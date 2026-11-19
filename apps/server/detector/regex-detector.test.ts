@@ -1,6 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { RegexDetector, normalizeBookName, FRENCH_BOOK_ALIASES, PHONETIC_BOOK_ALIASES, CATALOG_IDS } from "./regex-detector"
+import { BOOK_CATALOG } from "../verse/book-catalog"
 
 test("RegexDetector: detects a single valid 'Book Chapter:Verse' reference", () => {
   const detector = new RegexDetector()
@@ -157,19 +158,23 @@ test("RegexDetector: detects spoken French wording with a comma after the book n
 // group greedily capture "chapitre" itself as the book name, losing
 // "Proverbes" entirely — only masked in practice because
 // NavigationCommandDetector's own separate pattern happened to handle
-// this exact phrasing correctly. Also covers a trailing range indicator
-// ("... verset 5 à 7"/"verse 5 to 7") being harmlessly ignored — the
-// starting verse of a spoken range is all this detector needs to extract;
-// "next verse" navigation (already existing) steps through the rest.
-test("RegexDetector: detects the full 'book chapitre N, verset M' prose form without losing the book name, including a trailing verse-range indicator", () => {
+// this exact phrasing correctly.
+// Innovation pass (ARCHITECTURE.md section 145, 2026-11-15): the trailing
+// range indicator changed hands. The old behavior truncated a spoken range
+// to its first verse and relied on the operator pressing "next verse" for
+// the rest; the pending display decision has now been made (a detected
+// range shows as ONE joined overlay verse with bracketed verse numbers), so
+// a range tail now SUPPRESSES the single match here and VerseRangeDetector
+// owns the utterance end-to-end. One utterance, one command — never both a
+// truncated single and a range for the same numbers.
+test("RegexDetector: detects the full 'book chapitre N, verset M' prose form without losing the book name; a trailing verse-range indicator now belongs to the range detector", () => {
   const detector = new RegexDetector()
   assert.deepEqual(detector.detect("Proverbes chapitre 1, verset 5"), [
     { book: "proverbs", chapter: 1, verse: 5 },
   ])
-  assert.deepEqual(detector.detect("Proverbes chapitre 1 verset 5 à 7"), [
-    { book: "proverbs", chapter: 1, verse: 5 },
-  ])
-  assert.deepEqual(detector.detect("Proverbs chapter 1 verse 5 to 7"), [
+  assert.deepEqual(detector.detect("Proverbes chapitre 1 verset 5 à 7"), [])
+  assert.deepEqual(detector.detect("Proverbs chapter 1 verse 5 to 7"), [])
+  assert.deepEqual(detector.detect("Proverbs chapter 1 verse 5"), [
     { book: "proverbs", chapter: 1, verse: 5 },
   ])
 })
@@ -186,9 +191,67 @@ test("RegexDetector: detects two more live-observed Habakkuk mishearings (2026-0
   assert.deepEqual(detector.detect("Bakouct 5 verset 6"), [{ book: "habakkuk", chapter: 5, verse: 6 }])
 })
 
+test("RegexDetector: common phonetic and alternate book spellings resolve through the normal reference path", () => {
+  const detector = new RegexDetector()
+  const examples: ReadonlyArray<readonly [string, string, number, number]> = [
+    ["Habakuk 1:2", "habakkuk", 1, 2],
+    ["Abacouc 1 verset 2", "habakkuk", 1, 2],
+    ["Zachariah 1:1", "zechariah", 1, 1],
+    ["Zecharia 1:1", "zechariah", 1, 1],
+    ["Zephania 1:1", "zephaniah", 1, 1],
+    ["Obadia 1:1", "obadiah", 1, 1],
+    ["Malachai 1:1", "malachi", 1, 1],
+    ["Filemon 1:1", "philemon", 1, 1],
+    ["Phelemon chapter one verse two", "philemon", 1, 2],
+    ["Philimon 1:1", "philemon", 1, 1],
+    ["Matieu 1:1", "matthew", 1, 1],
+  ]
+  for (const [spoken, book, chapter, verse] of examples) {
+    assert.deepEqual(detector.detect(spoken), [{ book, chapter, verse }], spoken)
+  }
+})
+
+test("RegexDetector: phonetic spelling variants cover difficult names across the Old and New Testaments", () => {
+  const detector = new RegexDetector()
+  const examples: ReadonlyArray<readonly [string, string]> = [
+    ["1 Samual 1:1", "1 samuel"],
+    ["2 Samual 1:1", "2 samuel"],
+    ["Ecclesiasties 1:1", "ecclesiastes"],
+    ["Ecclesiastis 1:1", "ecclesiastes"],
+    ["Jeremias 1:1", "jeremiah"],
+    ["Ezekial 1:1", "ezekiel"],
+    ["Hoshea 1:1", "hosea"],
+    ["Obediah 1:1", "obadiah"],
+    ["Nahoum 1:1", "nahum"],
+    ["Zacharias 1:1", "zechariah"],
+    ["Malachias 1:1", "malachi"],
+    ["Galatian 1:1", "galatians"],
+    ["Galatien 1:1", "galatians"],
+    ["1 Corintian 1:1", "1 corinthians"],
+    ["2 Corintian 1:1", "2 corinthians"],
+    ["1 Thessalonien 1:1", "1 thessalonians"],
+    ["2 Thessalonien 1:1", "2 thessalonians"],
+    ["1 Timotee 1:1", "1 timothy"],
+    ["2 Timotee 1:1", "2 timothy"],
+    ["1 Timoty 1:1", "1 timothy"],
+    ["2 Timoty 1:1", "2 timothy"],
+  ]
+  for (const [spoken, book] of examples) {
+    assert.deepEqual(detector.detect(spoken), [{ book, chapter: 1, verse: 1 }], spoken)
+  }
+})
+
 // ARCHITECTURE.md section 105: comprehensive, proactive phonetic and
 // grammatical-number tolerance for all 66 books, across both languages —
 // requested directly (not waiting for each individual live miss).
+test("normalizeBookName: every catalog book has working English and French names", () => {
+  const frenchBookIds = new Set(Object.values(FRENCH_BOOK_ALIASES))
+  for (const book of BOOK_CATALOG) {
+    assert.equal(normalizeBookName(book.name), book.id, `English name "${book.name}"`)
+    assert.ok(frenchBookIds.has(book.id), `French alias missing for ${book.id}`)
+  }
+})
+
 test("normalizeBookName: grammatical singular/plural mismatches resolve in both languages", () => {
   assert.equal(normalizeBookName("Psalms"), "psalm")
   assert.equal(normalizeBookName("Proverb"), "proverbs")
@@ -276,4 +339,75 @@ test("RegexDetector: the same fixes do not make ordinary sentences produce a ref
   assert.deepEqual(detector.detect("à trois heures quinze minutes"), [])
   assert.deepEqual(detector.detect("the meeting starts at three sixteen"), [])
   assert.deepEqual(detector.detect("Timothy came at three sixteen"), [])
+})
+
+test("RegexDetector: a bare 'word N M' followed by a unit, month or time word is a quantity or a date, not a reference", () => {
+  const detector = new RegexDetector()
+  for (const text of [
+    "Marc 12 14 personnes",
+    "Jean 3 16 septembre",
+    "Luc 5 10 minutes",
+    "Job 1 5 times",
+    "Daniel 6 10 fois",
+    "Romains 8 28 euros",
+    "Jean 8 12 mai",
+    "Mark 3 16 percent",
+    "Mark 3 16 %",
+  ]) {
+    assert.deepEqual(detector.detect(text), [], text)
+  }
+})
+
+test("RegexDetector: bare compact form followed by prose is not a reference, the colon form is", () => {
+  const detector = new RegexDetector()
+  for (const text of ["Jean 3 16 dit", "Jean 3 16 disait que", "John 3 16 says", "John 3 16 said", "Jean 3 16 nous", "Jean 3 16 vous", "Jean 3 16 ans", "John 3 16 years", "Jean 3 16 fois", "John 3 16 times"]) {
+    assert.deepEqual(detector.detect(text), [], text)
+  }
+  assert.deepEqual(detector.detect("Jean 3:16 dit"), [{ book: "john", chapter: 3, verse: 16 }])
+  assert.deepEqual(detector.detect("Jean 3 verset 16 dit"), [{ book: "john", chapter: 3, verse: 16 }])
+})
+
+test("RegexDetector: the unit-word guard never touches explicit forms or an ordinary word after a compact reference", () => {
+  const detector = new RegexDetector()
+  assert.deepEqual(detector.detect("Jean 3:16 septembre"), [{ book: "john", chapter: 3, verse: 16 }])
+  assert.deepEqual(detector.detect("Jean 3 verset 16 personnes"), [{ book: "john", chapter: 3, verse: 16 }])
+  assert.deepEqual(detector.detect("Jean 3 16 pour nous"), [{ book: "john", chapter: 3, verse: 16 }])
+  assert.deepEqual(detector.detect("John 3 16 may be the most famous"), [{ book: "john", chapter: 3, verse: 16 }])
+  assert.deepEqual(detector.detect("Matthieu 5 3"), [{ book: "matthew", chapter: 5, verse: 3 }])
+})
+
+// CORRECTIF (2026-11-15, found by dry-running the pipeline): the spoken
+// conjunction between the chapter number and the verse keyword — "et" and
+// "and" — was accepted by neither reference pattern, so the common preaching
+// forms below were silently lost. The conjunction slot sits BETWEEN the
+// number and a keyword, so plain enumeration can never half-match.
+test("RegexDetector: 'Book N et verset M' / 'Book N and verse M' (spoken conjunction before the keyword) is detected", () => {
+  const detector = new RegexDetector()
+  assert.deepEqual(detector.detect("Jean 3 et verset 16"), [{ book: "john", chapter: 3, verse: 16 }])
+  assert.deepEqual(detector.detect("John 3 and verse 16"), [{ book: "john", chapter: 3, verse: 16 }])
+  assert.deepEqual(detector.detect("lisez Romains 8, et verset 28"), [{ book: "romans", chapter: 8, verse: 28 }])
+})
+
+test("RegexDetector: 'chapter N and verse M' (conjunction in the double-keyword prose form) is detected", () => {
+  const detector = new RegexDetector()
+  assert.deepEqual(detector.detect("Proverbs chapter 3 and verse 5"), [{ book: "proverbs", chapter: 3, verse: 5 }])
+  assert.deepEqual(detector.detect("Psaumes chapitre 23 et verset 1"), [{ book: "psalm", chapter: 23, verse: 1 }])
+})
+
+test("RegexDetector: 'First Samuel chapter sixteen and verse seven' — ordinals, number words and the conjunction together (the original dry-run miss)", () => {
+  const detector = new RegexDetector()
+  const result = detector.detect("Let us look at First Samuel chapter sixteen and verse seven")
+  assert.deepEqual(result, [{ book: "1 samuel", chapter: 16, verse: 7 }])
+})
+
+test("RegexDetector: the conjunction is never enough without a keyword — enumeration stays a non-reference", () => {
+  const detector = new RegexDetector()
+  assert.deepEqual(detector.detect("Jean 3 et 16 personnes"), [])
+  assert.deepEqual(detector.detect("John 3 and 16 people were there"), [])
+})
+
+test("RegexDetector: digit-free transcripts produce no references (sound early-out: every pattern needs two digit groups)", () => {
+  const detector = new RegexDetector()
+  assert.deepEqual(detector.detect("et donc nous voyons que la grâce de Dieu a été répandue"), [])
+  assert.deepEqual(detector.detect("so what Paul is saying here in this passage"), [])
 })

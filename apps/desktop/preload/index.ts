@@ -77,21 +77,43 @@ contextBridge.exposeInMainWorld("churchOverlay", {
   exportSession: () => ipcRenderer.invoke("export-session"),
   exportRehearsal: () => ipcRenderer.invoke("export-rehearsal"),
   exportDiagnostics: () => ipcRenderer.invoke("export-diagnostics"),
+  // B1: persistent log folder, and non-blocking notices from the main process
+  // (uncaught errors, crash recovery, failed service start). The history is
+  // what a freshly loaded dashboard reads; live notices arrive through the callback.
+  openLogsFolder: () => ipcRenderer.invoke("open-logs-folder"),
+  getMainNotices: () => ipcRenderer.invoke("get-main-notices"),
+  onMainNotice: (callback: (notice: unknown) => void) => {
+    ipcRenderer.removeAllListeners("main-notice")
+    ipcRenderer.on("main-notice", (_event, notice) => callback(notice))
+  },
   generateServiceSummary: (sermonNotesText: string) => ipcRenderer.invoke("generate-service-summary", sermonNotesText),
   generateServiceExtras: (sermonNotesText: string) => ipcRenderer.invoke("generate-service-extras", sermonNotesText),
   exportServiceExtras: () => ipcRenderer.invoke("export-service-extras"),
+  exportSessionTranscript: () => ipcRenderer.invoke("export-session-transcript"),
   getSessionHistory: () => ipcRenderer.invoke("get-session-history"),
   getPipelineLatency: () => ipcRenderer.invoke("get-pipeline-latency"),
+  getWsClientLatency: () => ipcRenderer.invoke("get-ws-client-latency"),
   importSermonPrep: (text: string) => ipcRenderer.invoke("import-sermon-prep", text),
   getSermonPrep: () => ipcRenderer.invoke("get-sermon-prep"),
   clearSermonPrep: () => ipcRenderer.invoke("clear-sermon-prep"),
   setEnableSermonNotes: (enabled: boolean) => ipcRenderer.invoke("set-enable-sermon-notes", enabled),
   setAiFeature: (feature: string, enabled: boolean) => ipcRenderer.invoke("set-ai-feature", { feature, enabled }),
   setAiProvider: (provider: string) => ipcRenderer.invoke("set-ai-provider", provider),
+  setAiKey: (key: string) => ipcRenderer.invoke("set-ai-key", key),
+  setGroqKey: (key: string) => ipcRenderer.invoke("set-groq-key", key),
+  testAiConnection: () => ipcRenderer.invoke("test-ai-connection"),
   setNdiEnabled: (enabled: boolean) => ipcRenderer.invoke("set-ndi-enabled", enabled),
   getNdiStatus: () => ipcRenderer.invoke("get-ndi-status"),
   setAllowPhoneRemote: (enabled: boolean) => ipcRenderer.invoke("set-allow-phone-remote", enabled),
+  // S-04: the dashboard's explicit first-enable "trusted network" warning
+  // persists its acknowledgment through this call, and the token rotation
+  // buttons go through rotateToken() — both narrow, purpose-built calls,
+  // same shape as every other bridge method here.
+  acknowledgeRemoteNetworkWarning: () => ipcRenderer.invoke("acknowledge-remote-network-warning"),
+  rotateToken: (kind: "operator" | "viewer" | "both") => ipcRenderer.invoke("rotate-token", { kind }),
   setFrenchTranslation: (translation: string) => ipcRenderer.invoke("set-french-translation", translation),
+  getCustomBibleApiUrl: () => ipcRenderer.invoke("get-custom-bible-api-url"),
+  setCustomBibleApiUrl: (url: string) => ipcRenderer.invoke("set-custom-bible-api-url", url),
   getOverlayStyleMeta: () => ipcRenderer.invoke("get-overlay-style-meta"),
   getOverlayStyle: () => ipcRenderer.invoke("get-overlay-style"),
   setOverlayStyle: (style: unknown) => ipcRenderer.invoke("set-overlay-style", style),

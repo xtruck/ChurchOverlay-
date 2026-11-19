@@ -4,11 +4,36 @@ export type VerseReference = {
   verse: number
 }
 
+/**
+ * ARCHITECTURE.md section 146 (frontend pass): the OPERATOR's typed
+ * reference, as carried by verse:override and verse:preview. An optional
+ * additive `verseEnd` turns it into a manually entered RANGE ("Book C:V-E")
+ * — the operator's equivalent of a detected spoken range, resolved through
+ * the exact same guarded path (known-valid index, contiguous-verse clamp,
+ * MAX_RANGE_VERSES cap, resolveVerseRange) so manual entry is never a
+ * second, weaker way to verse text. A malformed or reversed verseEnd simply
+ * degrades to the single verse; it is never an error the operator must
+ * decode.
+ */
+export type TypedVerseReference = VerseReference & { readonly verseEnd?: number }
+
 export type Verse = {
   reference: VerseReference
   text: string
   translation: string
   source: string
+  /**
+   * Innovation pass (ARCHITECTURE.md section 145): present only when this
+   * verse is the START of a detected spoken/written RANGE ("verses 16 to
+   * 18", "Jean 3:16-18"). `text` then carries every verse of the range,
+   * each prefixed with its bracketed number ("[16] ... [17] ..."), and the
+   * overlay's reference line renders "Book C:V-E". The `reference` field
+   * itself stays the range's start verse, so navigation ("next verse" from
+   * a shown range continues at end+1) and session recording keep their
+   * existing single-reference semantics. Additive and optional — every
+   * existing producer and consumer is unaffected.
+   */
+  verseEnd?: number
   /**
    * Phase 2 (ARCHITECTURE.md section 63.3): present only in bilingual
    * display mode. Additive and backward-compatible — every existing
@@ -117,4 +142,91 @@ export type NavigationCommand =
 
 export interface NavigationCommandDetector {
   detect(text: string): NavigationCommand[]
+}
+
+/**
+ * Bible Browser (audit-notes/bible-browser.md): an OPTIONAL capability a
+ * VerseSource may offer, same pattern as getTranslationId()/setMode(): read a
+ * whole chapter in one request instead of N single-verse lookups. A source
+ * without it is still usable (resolveChapter assembles the chapter verse by
+ * verse). Returns the verses the source actually has, in verse order, or null
+ * when the chapter is confirmed absent; a thrown error is a source failure.
+ */
+export interface ChapterCapableSource {
+  getChapter(book: string, chapter: number): Promise<readonly Verse[] | null>
+}
+
+/** One verse of a browsed chapter (the Bible Browser's wire shape, bounded). */
+export type BibleChapterVerse = {
+  readonly verse: number
+  readonly text: string
+  /** Bilingual mode only: the secondary-language text of the same verse. */
+  readonly secondary?: string
+}
+
+/** bible:chapter (operator -> server). `seq` lets the dashboard drop stale answers. */
+export type BibleChapterRequestPayload = {
+  readonly seq: number
+  readonly book: string
+  readonly chapter: number
+}
+
+/** bible:chapter-result (server -> operators only). verses is null with a reason when there is nothing to show. */
+export type BibleChapterResultPayload = {
+  readonly seq: number
+  readonly book: string
+  readonly chapter: number
+  readonly verses: readonly BibleChapterVerse[] | null
+  readonly translation?: string
+  readonly secondaryTranslation?: string
+  readonly source?: string
+  readonly reason?: "not-found" | "unavailable"
+  /** Verse numbers of the chapter the source did not provide (a gappy or differently versified source): the reader says so. */
+  readonly missing?: readonly number[]
+}
+
+/** bible:search (operator -> server). */
+export type BibleSearchRequestPayload = {
+  readonly seq: number
+  readonly query: string
+}
+
+export type BibleSearchHit = {
+  readonly reference: VerseReference
+  readonly text: string
+  readonly translation: string
+  readonly score: number
+}
+
+/**
+ * bible:search-result (server -> operators only). `coverage` says honestly what was searched:
+ * the bundled French text (always, once indexed) and how many chapters of other text were
+ * already loaded this session (the only English text there is).
+ */
+export type BibleSearchResultPayload = {
+  readonly seq: number
+  readonly query: string
+  readonly hits: readonly BibleSearchHit[]
+  readonly total: number
+  readonly coverage: {
+    readonly french: "offline" | "indexing" | "unavailable"
+    readonly loadedChapters: number
+  }
+  readonly reason?: "too-short"
+}
+
+export type VerseNavigateDirection = "next-verse" | "previous-verse" | "next-chapter" | "previous-chapter"
+
+/** verse:navigate (operator -> server): step from the SERVER's current position (section 61.4). */
+export type VerseNavigatePayload = {
+  readonly direction: VerseNavigateDirection
+}
+
+/**
+ * verse:navigate-result (server -> operators only): sent ONLY when a verse:navigate did not put a
+ * verse on screen, so "Next verse" never silently does nothing.
+ */
+export type VerseNavigateResultPayload = {
+  readonly direction: VerseNavigateDirection
+  readonly reason: "no-position" | "boundary" | "unavailable"
 }

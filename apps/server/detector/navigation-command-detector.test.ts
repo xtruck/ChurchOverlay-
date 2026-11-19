@@ -49,6 +49,29 @@ test("NavigationCommandDetector: short synonyms embedded in a longer sentence do
   assert.deepEqual(detector.detect("The sky is clear today."), [])
 })
 
+test("NavigationCommandDetector: natural next/previous-one phrases work only as complete commands", () => {
+  const detector = new NavigationCommandDetector()
+  for (const phrase of [
+    "next one",
+    "the next one",
+    "go to the next one",
+    "show me the next one",
+    "go forward one verse",
+    "one verse forward",
+    "go to the next best",
+    "go to the nearest west",
+  ]) {
+    assert.deepEqual(detector.detect(`${phrase}.`), [{ kind: "next-verse" }], phrase)
+  }
+  for (const phrase of ["previous one", "the previous one", "go to the previous one", "go back one verse", "go back a verse", "one verse back"]) {
+    assert.deepEqual(detector.detect(`${phrase}.`), [{ kind: "previous-verse" }], phrase)
+  }
+  assert.deepEqual(detector.detect("I will go to the next one after this reading."), [])
+  assert.deepEqual(detector.detect("We can go back one verse in the story."), [])
+  assert.deepEqual(detector.detect("We should go to the next best book after this."), [])
+  assert.deepEqual(detector.detect("The nearest west side of town is quiet."), [])
+})
+
 test("NavigationCommandDetector: 'goto-chapter' parses 'Book chapter N' correctly", () => {
   const detector = new NavigationCommandDetector()
   assert.deepEqual(detector.detect("Let's go to Romans chapter 8 now."), [
@@ -146,15 +169,46 @@ test("NavigationCommandDetector: a book name immediately before a bare 'verse N'
   assert.deepEqual(detector.detect("Look at verse 17."), [{ kind: "goto-bare-verse", verse: 17 }])
 })
 
-test("NavigationCommandDetector: voice commands to switch display mode", () => {
+test("NavigationCommandDetector: voice commands to switch display mode (short imperative forms only)", () => {
   const detector = new NavigationCommandDetector()
-  assert.deepEqual(detector.detect("Let's switch to French for this next part."), [
-    { kind: "goto-display-mode", mode: "french" },
-  ])
-  assert.deepEqual(detector.detect("English only from here."), [{ kind: "goto-display-mode", mode: "english" }])
-  assert.deepEqual(detector.detect("Please switch to bilingual mode."), [
-    { kind: "goto-display-mode", mode: "bilingual" },
-  ])
+  assert.deepEqual(detector.detect("Switch to French."), [{ kind: "goto-display-mode", mode: "french" }])
+  assert.deepEqual(detector.detect("English only"), [{ kind: "goto-display-mode", mode: "english" }])
+  assert.deepEqual(detector.detect("Please switch to bilingual mode."), [{ kind: "goto-display-mode", mode: "bilingual" }])
+  assert.deepEqual(detector.detect("Display in English"), [{ kind: "goto-display-mode", mode: "english" }])
+  assert.deepEqual(detector.detect("Switch to bilingual"), [{ kind: "goto-display-mode", mode: "bilingual" }])
+})
+
+// AUDIT TS-01: a display-mode switch must only fire when the utterance IS the
+// command, never because "en français"/"in english" appears inside prose.
+test("NavigationCommandDetector: display-mode phrases inside ordinary sentences never switch mode (TS-01, FR+EN)", () => {
+  const detector = new NavigationCommandDetector()
+  const prose = [
+    "il parle en français",
+    "Ce mot se traduit en français.",
+    "en anglais on dit grace",
+    "Il a écrit ce livre en anglais et en français.",
+    "Let's switch to French for this next part.",
+    "English only from here.",
+    "He said it in english only because the crowd was small.",
+    "The text was translated to french and then switch to english later in the sermon",
+    "Passons en français maintenant pour lire ce passage ensemble.",
+    "Mets-toi en anglais pour ce passage.",
+    "Français seulement pour ce passage.",
+    "Mode bilingue pour la suite.",
+    "En anglais.",
+    "En français",
+    "the display in english is nice",
+  ]
+  for (const text of prose) {
+    assert.deepEqual(detector.detect(text), [], text)
+  }
+})
+
+test("NavigationCommandDetector: narrative 'in the next verse' / 'go back to' are not navigation commands", () => {
+  const detector = new NavigationCommandDetector()
+  assert.deepEqual(detector.detect("In the next verse Paul says something else."), [])
+  assert.deepEqual(detector.detect("Dans le verset suivant Paul explique."), [])
+  assert.deepEqual(detector.detect("Let's go back to the beginning of the story."), [])
 })
 
 // French phrases (ARCHITECTURE.md section 65 — confirmed explicitly: the
@@ -166,6 +220,17 @@ test("NavigationCommandDetector: French substring phrases for verse/chapter navi
   assert.deepEqual(detector.detect("Passons au chapitre suivant."), [{ kind: "next-chapter" }])
   assert.deepEqual(detector.detect("Retournons au chapitre précédent."), [{ kind: "previous-chapter" }])
   assert.deepEqual(detector.detect("Il faut effacer l'écran maintenant."), [{ kind: "cancel" }])
+})
+
+test("NavigationCommandDetector: French one-verse forward/back phrases work as complete commands", () => {
+  const detector = new NavigationCommandDetector()
+  for (const phrase of ["avance d'un verset", "avançons d'un verset", "un verset en avant"]) {
+    assert.deepEqual(detector.detect(`${phrase}.`), [{ kind: "next-verse" }], phrase)
+  }
+  for (const phrase of ["recule d'un verset", "reculons d'un verset", "un verset en arrière"]) {
+    assert.deepEqual(detector.detect(`${phrase}.`), [{ kind: "previous-verse" }], phrase)
+  }
+  assert.deepEqual(detector.detect("Nous avancerons d'un verset dans notre lecture."), [])
 })
 
 // ARCHITECTURE.md section 72: "prochain X" (adjective-first) is just as
@@ -264,21 +329,17 @@ test("NavigationCommandDetector: a typographic apostrophe matches the same phras
 
 test("NavigationCommandDetector: French voice commands to switch display mode, independent of verb conjugation", () => {
   const detector = new NavigationCommandDetector()
-  // "en français"/"en anglais" deliberately avoids depending on a specific
-  // verb conjugation — it matches "passons en français", "mets en
-  // français", "passe en français" and any other phrasing alike.
-  assert.deepEqual(detector.detect("Passons en français maintenant."), [
-    { kind: "goto-display-mode", mode: "french" },
-  ])
-  assert.deepEqual(detector.detect("Mets-toi en anglais pour ce passage."), [
-    { kind: "goto-display-mode", mode: "english" },
-  ])
-  assert.deepEqual(detector.detect("Français seulement pour ce passage."), [
-    { kind: "goto-display-mode", mode: "french" },
-  ])
-  assert.deepEqual(detector.detect("Mode bilingue pour la suite."), [
-    { kind: "goto-display-mode", mode: "bilingual" },
-  ])
+  // Any conjugation of a short imperative is accepted, but the utterance must
+  // BE the command (TS-01): nothing but optional politeness around it.
+  for (const text of ["Passons en français.", "Passe en français", "Passez en français", "Mets en français", "Affichage en français", "Passons en français maintenant.", "Mode français", "Français seulement"]) {
+    assert.deepEqual(detector.detect(text), [{ kind: "goto-display-mode", mode: "french" }], text)
+  }
+  for (const text of ["Passons en anglais", "Affichage en anglais", "Anglais seulement", "S'il vous plaît passe en anglais"]) {
+    assert.deepEqual(detector.detect(text), [{ kind: "goto-display-mode", mode: "english" }], text)
+  }
+  for (const text of ["Mode bilingue", "Passons en bilingue", "Affichage bilingue"]) {
+    assert.deepEqual(detector.detect(text), [{ kind: "goto-display-mode", mode: "bilingual" }], text)
+  }
 })
 
 // ---------------------------------------------------------------------------
@@ -379,4 +440,70 @@ test("NavigationCommandDetector: 'le verset'/'the verse' is tolerated everywhere
     { kind: "goto-bare-chapter-verse", chapter: 1, verse: 2 },
   ])
   assert.deepEqual(detector.detect("Turn to the verse 2"), [{ kind: "goto-bare-verse", verse: 2 }])
+})
+
+// CORRECTIF (2026-11-15, found by the same dry-run probe that fixed
+// RegexDetector's conjunction gap): with "et verset"/"and verse" between the
+// numbers, the exact verse command never fired and GOTO_CHAPTER_PATTERN —
+// whose exclusion lookahead did not know the conjunction — jumped the whole
+// chapter instead. All assertions here also pin the "exactly ONE command"
+// shape, so the exclusion/lookbehind updates can never reintroduce the
+// two-command race.
+test("NavigationCommandDetector: 'Book chapter N et verset M' / 'Book chapter N and verse M' is ONE goto-book-chapter-verse", () => {
+  const detector = new NavigationCommandDetector()
+  assert.deepEqual(detector.detect("Jean chapitre 3 et verset 16"), [
+    { kind: "goto-book-chapter-verse", book: "john", chapter: 3, verse: 16 },
+  ])
+  assert.deepEqual(detector.detect("John chapter 16 and verse 7"), [
+    { kind: "goto-book-chapter-verse", book: "john", chapter: 16, verse: 7 },
+  ])
+})
+
+test("NavigationCommandDetector: a bare 'chapter N et verset M' continuation resolves against the current position, once", () => {
+  const detector = new NavigationCommandDetector()
+  assert.deepEqual(detector.detect("allons au chapitre 9 et verset 3"), [
+    { kind: "goto-bare-chapter-verse", chapter: 9, verse: 3 },
+  ])
+  assert.deepEqual(detector.detect("turn to chapter 9 and verse 3"), [
+    { kind: "goto-bare-chapter-verse", chapter: 9, verse: 3 },
+  ])
+})
+
+test("NavigationCommandDetector: a '<Book> N et verset M' tail is never a chapter-only goto", () => {
+  const detector = new NavigationCommandDetector()
+  // RegexDetector owns the full "Jean 3 et verset 16" shape for verse display.
+  // Here the BOOK_BARE_CHAPTER exclusion must suppress the chapter-only goto
+  // (the conjunction is now part of its trailing lookahead); what remains is
+  // the same goto-bare-verse the pre-existing conjunction-free shape
+  // ("Jean 3 verset 16", "Daniel 3 verset 4") has always produced.
+  assert.deepEqual(detector.detect("Jean 3 et verset 16"), [{ kind: "goto-bare-verse", verse: 16 }])
+  assert.deepEqual(detector.detect("Daniel 3 et verset 4"), [{ kind: "goto-bare-verse", verse: 4 }])
+})
+
+test("NavigationCommandDetector: 'chapter N and M' without a verse keyword stays a chapter goto", () => {
+  const detector = new NavigationCommandDetector()
+  assert.deepEqual(detector.detect("Jean chapitre 3 et 4 personnes"), [
+    { kind: "goto-chapter", book: "john", chapter: 3 },
+  ])
+})
+
+// Innovation pass (ARCHITECTURE.md section 145.2.1): a range-tailed utterance
+// belongs to the range detector — the navigation patterns must yield, or the
+// command's display intent supersedes the in-flight range lookup and the
+// congregation sees the wrong verse (or a chapter jump, or nothing).
+test("NavigationCommandDetector: a range-tailed utterance produces NO navigation command (one utterance, one command)", () => {
+  const detector = new NavigationCommandDetector()
+  assert.deepEqual(detector.detect("Proverbes chapitre 1, verset 5 à 7"), [])
+  assert.deepEqual(detector.detect("John chapter 1 verses 5 to 7"), [])
+  assert.deepEqual(detector.detect("Jean chapitre 3 versets 16 à 18"), [])
+  assert.deepEqual(detector.detect("chapitre 9, verset 3 à 5"), [])
+  assert.deepEqual(detector.detect("Jean 3 16-18"), [])
+  // The live-observed comma pause enumeration is deliberately untouched.
+  assert.deepEqual(detector.detect("Abacuc, 1, 2, 3,"), [{ kind: "goto-chapter", book: "habakkuk", chapter: 1 }])
+  // Real commands still fire exactly as before the range work.
+  assert.deepEqual(detector.detect("go to Romans chapter 8"), [{ kind: "goto-chapter", book: "romans", chapter: 8 }])
+  assert.deepEqual(detector.detect("Romans chapter 9, verse 3"), [
+    { kind: "goto-book-chapter-verse", book: "romans", chapter: 9, verse: 3 },
+  ])
+  assert.deepEqual(detector.detect("verse 16"), [{ kind: "goto-bare-verse", verse: 16 }])
 })

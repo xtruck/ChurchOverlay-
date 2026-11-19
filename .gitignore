@@ -18,3 +18,7 @@ live-tests/
 
 # Dev-only verse card gallery output (scripts/card-gallery.mjs)
 card-gallery/
+
+# Python bytecode from the offline tools in tools/
+__pycache__/
+*.pyc

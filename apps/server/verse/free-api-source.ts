@@ -1,4 +1,4 @@
-import type { Verse, VerseReference, VerseSource } from "../../../packages/contracts"
+import type { ChapterCapableSource, Verse, VerseReference, VerseSource } from "../../../packages/contracts"
 import { isPlainObject } from "../../../packages/shared/type-guards"
 
 /**
@@ -39,22 +39,93 @@ import { isPlainObject } from "../../../packages/shared/type-guards"
  */
 const DEFAULT_BASE_URL = "https://bible-api.com"
 const V1_TRANSLATION = "kjv"
+// A stalled connection must not hang the live lookup path (AGENTS.md section 37).
+const FETCH_TIMEOUT_MS = 5000
 
-export class FreeApiSource implements VerseSource {
+export class FreeApiSource implements VerseSource, ChapterCapableSource {
   private readonly fetchImpl: typeof fetch
   private readonly baseUrl: string
+  // In-flight requests keyed by URL. Concurrent identical lookups — the same
+  // reference detected through more than one pipeline path (settled hold,
+  // assembler, bare-verse continuation) in the same instant — share ONE HTTP
+  // request and its outcome instead of racing duplicates. Entries are removed
+  // the moment the request settles, so the map stays bounded by the number of
+  // concurrent requests (AGENTS.md section 36). Cleanup is attached as
+  // .then(onSettled, onSettled) — never .finally(), whose derived promise
+  // would re-raise a rejection with no observer.
+  private readonly inFlight = new Map<string, Promise<{ status: number; ok: boolean; json: () => Promise<unknown> }>>()
 
   constructor(fetchImpl: typeof fetch = fetch, baseUrl: string = DEFAULT_BASE_URL) {
     this.fetchImpl = fetchImpl
     this.baseUrl = baseUrl
   }
 
+  /**
+   * The shared request unit: one fetch and ONE lazy, memoized body parse per
+   * URL. A Response's body can only be consumed once, so concurrent waiters
+   * cannot each call response.json() — the first parse is stored and every
+   * waiter (including later ones after a failure) receives the same result.
+   * Callers keep their own status handling (404 vs !ok), unchanged.
+   */
+  private request(url: string): Promise<{ status: number; ok: boolean; json: () => Promise<unknown> }> {
+    const existing = this.inFlight.get(url)
+    if (existing) return existing
+    const request = this.doRequest(url)
+    this.inFlight.set(url, request)
+    const release = (): void => {
+      this.inFlight.delete(url)
+    }
+    void request.then(release, release)
+    return request
+  }
+
+  private async doRequest(url: string): Promise<{ status: number; ok: boolean; json: () => Promise<unknown> }> {
+    const response = await this.fetchImpl(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
+    // The Response body can only be consumed once, so every waiter shares ONE
+    // parse PROMISE — not one parse result: memoizing the result would still
+    // let a second caller start a second (already-consumed) read while the
+    // first parse is still in flight.
+    let body: Promise<unknown> | null = null
+    return {
+      status: response.status,
+      ok: response.ok,
+      json: () => {
+        if (body === null) body = response.json()
+        return body
+      },
+    }
+  }
+
+  /**
+   * Bible Browser (audit-notes/bible-browser.md): the whole chapter in one request
+   * (`/john+3?translation=kjv` answers with every verse; verified against the live
+   * service, Psalm 119 returns all 176). Same null-vs-throw contract as getVerse().
+   */
+  async getChapter(book: string, chapter: number): Promise<readonly Verse[] | null> {
+    const url = `${this.baseUrl}/${encodeURIComponent(book.trim())}+${chapter}?translation=${V1_TRANSLATION}`
+    let response: Awaited<ReturnType<FreeApiSource["request"]>>
+    try {
+      response = await this.request(url)
+    } catch (err) {
+      throw new Error(`FreeApiSource: network request failed: ${err instanceof Error ? err.message : String(err)}`)
+    }
+    if (response.status === 404) return null
+    if (!response.ok) throw new Error(`FreeApiSource: unexpected HTTP status ${response.status}`)
+    let body: unknown
+    try {
+      body = await response.json()
+    } catch {
+      throw new Error("FreeApiSource: response body was not valid JSON")
+    }
+    return parseChapterVerses(body, book, chapter)
+  }
+
   async getVerse(reference: VerseReference): Promise<Verse | null> {
     const url = buildRequestUrl(this.baseUrl, reference)
 
-    let response: Response
+    let response: Awaited<ReturnType<FreeApiSource["request"]>>
     try {
-      response = await this.fetchImpl(url)
+      response = await this.request(url)
     } catch (err) {
       // Network failure (offline, DNS, timeout, ...): a real failure, not
       // "not found" — let the caller's circuit breaker see it.
@@ -87,6 +158,34 @@ export class FreeApiSource implements VerseSource {
   }
 }
 
+function parseChapterVerses(body: unknown, book: string, chapter: number): Verse[] {
+  if (!isPlainObject(body)) throw new Error("FreeApiSource: chapter response was not an object")
+  const translation = body.translation_id
+  if (typeof translation !== "string" || translation.trim().length === 0) {
+    throw new Error("FreeApiSource: chapter response had no translation id")
+  }
+  if (!Array.isArray(body.verses) || body.verses.length === 0) {
+    throw new Error("FreeApiSource: chapter response had no verses")
+  }
+  const result: Verse[] = []
+  for (const entry of body.verses as unknown[]) {
+    if (
+      !isPlainObject(entry) ||
+      entry.chapter !== chapter ||
+      typeof entry.verse !== "number" ||
+      !Number.isInteger(entry.verse) ||
+      entry.verse < 1 ||
+      typeof entry.text !== "string" ||
+      entry.text.trim().length === 0
+    ) {
+      throw new Error("FreeApiSource: chapter response contained a malformed verse")
+    }
+    result.push({ reference: { book, chapter, verse: entry.verse }, text: entry.text.trim(), translation, source: "bible-api.com" })
+  }
+  result.sort((a, b) => a.reference.verse - b.reference.verse)
+  return result
+}
+
 function buildRequestUrl(baseUrl: string, reference: VerseReference): string {
   const book = encodeURIComponent(reference.book.trim())
   return `${baseUrl}/${book}+${reference.chapter}:${reference.verse}?translation=${V1_TRANSLATION}`
@@ -100,6 +199,16 @@ function parseVerseResponse(body: unknown, reference: VerseReference): Verse | n
 
   if (typeof text !== "string" || text.trim().length === 0) return null
   if (typeof translation !== "string" || translation.trim().length === 0) return null
+
+  // When the API reports which verses it returned, they must be exactly the
+  // one requested: a multi-verse blob or a different verse is never shown.
+  const verses = body.verses
+  if (Array.isArray(verses)) {
+    if (verses.length !== 1) return null
+    const only: unknown = verses[0]
+    if (!isPlainObject(only)) return null
+    if (only.chapter !== reference.chapter || only.verse !== reference.verse) return null
+  }
 
   return {
     reference,

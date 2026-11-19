@@ -39,6 +39,15 @@ const DEFAULT_SMOOTHING_MS = 800
 /** Level estimate follows louder speech faster than quieter speech (standard AGC asymmetry). */
 const LEVEL_ATTACK_MS = 150
 const LEVEL_RELEASE_MS = 2500
+/**
+ * Loud music or a crowd arriving while the gain is high (quiet speech lifted
+ * +20 dB a moment earlier) would be driven into the soft limiter for the ~1 s
+ * the smoothed gain needs to come down: audible distortion, and the "pumping"
+ * of an AGC chasing the room. So the gain applied to a frame is capped by that
+ * frame's own peak (never past the limiter knee), and the stored gain follows
+ * a cap downward with this fast time constant. Upward stays at smoothingMs.
+ */
+const GAIN_ATTACK_MS = 120
 /** Soft-limiter knee: samples above this are compressed smoothly toward full scale. */
 const LIMIT_KNEE = 24000
 const FULL_SCALE = 32767
@@ -96,9 +105,22 @@ export class AdaptiveGain {
       this.gain += (desired - this.gain) * smoothingFactor(frameMs, this.smoothingMs)
     }
     if (this.gain <= 1.0001) return frame
-    const out = new Int16Array(frame.samples.length)
-    for (let i = 0; i < frame.samples.length; i++) {
-      out[i] = softLimit((frame.samples[i] as number) * this.gain)
+    const samples = frame.samples
+    let peak = 0
+    for (let i = 0; i < samples.length; i++) {
+      const magnitude = Math.abs(samples[i] as number)
+      if (magnitude > peak) peak = magnitude
+    }
+    let applied = this.gain
+    if (peak * applied > LIMIT_KNEE) {
+      applied = Math.max(1, LIMIT_KNEE / peak)
+      this.gain += (applied - this.gain) * smoothingFactor(frameMs, GAIN_ATTACK_MS)
+      if (this.gain < applied) this.gain = applied
+    }
+    if (applied <= 1.0001) return frame
+    const out = new Int16Array(samples.length)
+    for (let i = 0; i < samples.length; i++) {
+      out[i] = softLimit((samples[i] as number) * applied)
     }
     return { ...frame, samples: out }
   }

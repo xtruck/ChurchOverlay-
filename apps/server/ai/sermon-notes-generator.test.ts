@@ -204,3 +204,58 @@ test("SermonNotesGenerator: default model is openai/gpt-oss-20b, a Production mo
   assert.notEqual(body.model, "llama-3.1-8b-instant")
   assert.notEqual(body.model, "llama-3.3-70b-versatile")
 })
+
+test("SermonNotesGenerator: the request carries an abort signal, a bounded token cap and low reasoning effort (gpt-oss)", async () => {
+  let init: RequestInit | undefined
+  const generator = new SermonNotesGenerator({
+    apiKey: "gsk_key_0123456789",
+    fetchImpl: (async (_url: string | URL | Request, i?: RequestInit) => {
+      init = i
+      return new Response(JSON.stringify({ choices: [{ message: { content: "- ok" } }] }), { status: 200 })
+    }) as typeof fetch,
+  })
+  await generator.summarize("text")
+  const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+  assert.equal(body.reasoning_effort, "low")
+  assert.ok((body.max_completion_tokens as number) >= 1_000)
+  assert.ok(init?.signal instanceof AbortSignal)
+})
+
+test("SermonNotesGenerator: a body that stalls after the headers is aborted by the same timeout (no forever-hang)", async () => {
+  const stalled = (async (_url: string | URL | Request, init?: RequestInit) => {
+    const stream = new ReadableStream({
+      start(controller) {
+        init?.signal?.addEventListener("abort", () => controller.error(new Error("aborted")))
+      },
+    })
+    return new Response(stream, { status: 200 })
+  }) as typeof fetch
+  const generator = new SermonNotesGenerator({ apiKey: "gsk_key_0123456789", fetchImpl: stalled, timeoutMs: 50 })
+  await assert.rejects(generator.summarize("text"), /timed out/)
+})
+
+test("SermonNotesGenerator: an empty or length-truncated answer is an error, never an empty summary", async () => {
+  for (const content of ["", "   \n"]) {
+    const generator = new SermonNotesGenerator({
+      apiKey: "gsk_key_0123456789",
+      fetchImpl: (async () => new Response(JSON.stringify({ choices: [{ message: { content }, finish_reason: "length" }] }), { status: 200 })) as typeof fetch,
+    })
+    await assert.rejects(generator.summarize("text"), /no answer/)
+  }
+})
+
+test("SermonNotesGenerator: reasoning_effort is sent only to a gpt-oss model", async () => {
+  for (const [model, expected] of [["openai/gpt-oss-20b", true], ["llama-3.1-8b-instant", false]] as const) {
+    let body: Record<string, unknown> = {}
+    const generator = new SermonNotesGenerator({
+      apiKey: "gsk_key_0123456789",
+      model,
+      fetchImpl: (async (_u: string | URL | Request, init?: RequestInit) => {
+        body = JSON.parse(String(init?.body)) as Record<string, unknown>
+        return new Response(JSON.stringify({ choices: [{ message: { content: "- ok" } }] }), { status: 200 })
+      }) as typeof fetch,
+    })
+    await generator.summarize("t")
+    assert.equal("reasoning_effort" in body, expected, model)
+  }
+})

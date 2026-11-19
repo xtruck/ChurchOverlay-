@@ -51,13 +51,24 @@ const MAX_SCRUBBED_LENGTH = 300
  * WebSocket broadcasts that viewer pages also receive).
  */
 export function scrubSecrets(text: string): string {
+  const result = redactInlineSecrets(text)
+  return result.length > MAX_SCRUBBED_LENGTH ? result.slice(0, MAX_SCRUBBED_LENGTH) + "…" : result
+}
+
+/**
+ * The redaction half of scrubSecrets without the length bound, for sinks that
+ * must keep whole lines intact (the persistent log file): a last line of
+ * defense in case a credential reached a line by a path the Logger's own
+ * field-level redaction never saw.
+ */
+export function redactInlineSecrets(text: string): string {
   let result = text
   for (const pattern of INLINE_SECRET_PATTERNS) {
     result = result.replace(pattern, (match, prefix) =>
       typeof prefix === "string" && match.startsWith(prefix) ? prefix + REDACTED : REDACTED
     )
   }
-  return result.length > MAX_SCRUBBED_LENGTH ? result.slice(0, MAX_SCRUBBED_LENGTH) + "…" : result
+  return result
 }
 
 /**

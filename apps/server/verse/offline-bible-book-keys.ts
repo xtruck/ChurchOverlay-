@@ -1,3 +1,5 @@
+import { nullProto } from "../../../packages/shared/type-guards"
+
 /**
  * ARCHITECTURE.md section 77: canonical (English) book id -> the exact key
  * `data/fra_lsg.json` uses for that book. Deliberately its own table, not
@@ -9,7 +11,7 @@
  * against the file's own top-level keys before writing this, not assumed
  * from the other two tables' conventions.
  */
-export const OFFLINE_BIBLE_BOOK_KEYS: Readonly<Record<string, string>> = {
+export const OFFLINE_BIBLE_BOOK_KEYS: Readonly<Record<string, string>> = nullProto({
   genesis: "genese",
   exodus: "exode",
   leviticus: "levitique",
@@ -76,4 +78,4 @@ export const OFFLINE_BIBLE_BOOK_KEYS: Readonly<Record<string, string>> = {
   "3 john": "3jean",
   jude: "jude",
   revelation: "apocalypse",
-}
+})

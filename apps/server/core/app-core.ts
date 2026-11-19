@@ -7,10 +7,12 @@ import type {
   DisplayMode,
   MediaCue,
   MediaShowPayload,
+  NavigationCommand,
+  OutlineShowPayload,
   Rundown,
-  RundownScene,
   RundownStatePayload,
   TranscriptResult,
+  TypedVerseReference,
   Verse,
   VerseDetector,
   VerseIndex,
@@ -26,8 +28,10 @@ import type {
 
 /** Fixed operator-safe ceiling for every visible verse: 2 minutes 30 seconds. */
 export const DEFAULT_VERSE_AUTO_CLEAR_MS = 150_000
+const OUTLINE_AUTO_CLEAR_MS = 14_000
 /** Upper bound on verse scenes prefetched per rundown:load (sequential requests). */
 const MAX_RUNDOWN_PREFETCH = 50
+import { heardSnippet } from "./heard-snippet"
 import type { Server as HttpServer } from "node:http"
 import { generateUlid } from "../../../packages/shared/ulid"
 import type { Logger } from "../../../packages/shared/logger"
@@ -35,6 +39,7 @@ import { scrubSecrets } from "../../../packages/shared/logger"
 import { InterpreterEchoGuard, guessSpokenLanguage } from "./interpreter-echo-guard"
 import { SuggestionArbiter, suggestionKey } from "./suggestion-arbiter"
 import { CallBudget, type TextCompleter } from "../ai/claude-client"
+import type { AiHelpersStatus, AiHelpersStatusSource } from "../ai/guarded-text-completer"
 import { ReferenceRepairer } from "../ai/reference-repairer"
 import { LiveTranslator } from "../ai/live-translator"
 import { ClaudeSermonNotes } from "../ai/claude-sermon-notes"
@@ -43,12 +48,18 @@ import { AiSuggestionCoordinator } from "./ai-suggestion-coordinator"
 import { VerseCache } from "../verse/verse-cache"
 import { CircuitBreaker } from "../verse/circuit-breaker"
 import { SilenceGate } from "../audio/silence-gate"
-import { ChurchOverlayWsServer, type ServerTokens } from "../ws/server"
+import { ChurchOverlayWsServer, type ServerTokens, type WsClientLatencySnapshot } from "../ws/server"
 import { resolveTranscriptVerses } from "./resolve-transcript-verses"
-import { resolveVerse, translationIdFor } from "../verse/resolve-verse"
+import { resolveVerse, resolveVerseDetailed, translationIdFor, type VerseLookupFailure } from "../verse/resolve-verse"
+import { resolveVerseRange } from "../verse/resolve-verse-range"
+import { MAX_RANGE_VERSES } from "./detect-and-validate"
+import type { DetectedVerseRange } from "../detector/verse-range-detector"
 import { passesTranscriptGate } from "./transcript-gate"
 import { LatencyTracker, type LatencySnapshot } from "./latency-tracker"
-import { correctTranscription, detectHallucination } from "../asr/transcription-corrector"
+import { correctTranscription } from "../asr/transcription-corrector"
+import { screenTranscript } from "../asr/transcript-screen"
+import { MicDiagnostics } from "../audio/mic-diagnostics"
+import { TranscriptionPolicy, isNoiseMode } from "../asr/noise-mode"
 import { postprocessTranscript } from "../asr/postprocess/pipeline"
 import { hasForeignScript, isLikelyThirdLatinLanguage } from "../asr/script-guard"
 import { EchoWatch, isMediaAudible, type EchoWarning } from "./echo-warning"
@@ -62,15 +73,25 @@ import type { MediaLibrary } from "../media/media-library"
 import { MediaCueDetector } from "../media/media-cue-detector"
 import { MediaPlaybackController } from "../media/media-playback-controller"
 import { NavigationCommandDetector, containsCatalogBookName } from "../detector/navigation-command-detector"
-import { isCatalogBookWord } from "../detector/regex-detector"
+import { compactOnlyReferenceKeys, isCatalogBookWord } from "../detector/regex-detector"
 import { resolveNavigationCommand } from "../verse/resolve-navigation-command"
+import { suggestNearestReferences } from "../verse/nearest-references"
+import { createBibleBrowser } from "../verse/bible-browser-service"
+import { ChapterCache } from "../verse/chapter-cache"
+import type { BibleWordSearch } from "../verse/bible-word-search"
+import { extractAnnouncedChapter } from "../detector/announced-context"
+import { joinSplitNumber, trailingNumberEquals, trailingVerseCouldGrow } from "../detector/trailing-number"
+import { detectValidatedReferences } from "./detect-and-validate"
+import { asVerseRangeDetector } from "../detector/verse-range-detector"
 import { RundownController } from "../rundown/rundown-controller"
 import { parseSermonPrep, type SermonPrepParseOutcome, type SermonPrepResult } from "../rundown/sermon-prep"
 import { GlossaryDetector } from "../glossary/glossary-detector"
 import { SessionRecorder, type SessionEntry } from "./session-recorder"
 import type { SessionHistoryStore, SessionHistoryEntry } from "./session-history-store"
+import { AudioFrameSequenceTracker } from "../audio/audio-frame-sequence"
 import { AdaptiveGain } from "../audio/adaptive-gain"
 import { MicHealthMonitor } from "../audio/mic-health"
+import { ASR_LIFECYCLE_TIMEOUT_MS, MIC_WATCHDOG_INTERVAL_MS, MicAudioWatchdog, withTimeout, type AppCoreTimers } from "../audio/mic-audio-watchdog"
 import type { QuoteMatcher } from "../detector/quote-matcher"
 import type { OverlayStyle, OverlayStyleSettings } from "../../../packages/contracts/overlay-style"
 import { normalizeOverlayStyleSettings, resolveOverlayStyle, seedOverlayStyle } from "../overlay/overlay-style"
@@ -113,6 +134,12 @@ type SermonNotesSummarizer = {
   summarize(transcriptText: string): Promise<string>
 }
 
+function unrefTimer(handle: unknown): void {
+  if (typeof handle !== "object" || handle === null || !("unref" in handle)) return
+  const unref = handle.unref
+  if (typeof unref === "function") unref.call(handle)
+}
+
 export type StartAppCoreOptions = {
   readonly asr: ObservableAsrProvider
   readonly detector: VerseDetector
@@ -143,8 +170,24 @@ export type StartAppCoreOptions = {
    * automatically — a preacher quoting is not always asking for a display.
    */
   readonly quoteMatcher?: Pick<QuoteMatcher, "match">
+  /**
+   * Bible Browser (audit-notes/bible-browser.md): the full-Bible French word index behind the
+   * dashboard's "search by words". `current()` is null while it is still being built. Optional:
+   * without it the search reports French as "unavailable" (chapter browsing is unaffected).
+   */
+  readonly bibleWordSearch?: { current(): BibleWordSearch | null; failed?(): boolean }
+  /** Chapter text loaded for the Bible Browser (bounded LRU). Injectable for tests. */
+  readonly chapterCache?: ChapterCache
   /** Called when the operator toggles auto-gain, so the host can persist it. */
   readonly onAutoGainChanged?: (enabled: boolean) => void
+  /**
+   * Operator noise/tongues strictness (asr/noise-mode.ts). The host passes the
+   * same instance to the ASR providers so one switch retargets every layer.
+   * Default: a private "normal" policy.
+   */
+  readonly transcriptionPolicy?: TranscriptionPolicy
+  /** Called when the operator changes the noise mode, so the host can persist it. */
+  readonly onNoiseModeChanged?: (mode: "normal" | "noisy" | "tongues") => void
   /**
    * Optional (ARCHITECTURE.md section 60) — when absent, media commands
    * are handled gracefully (logged, no-op) rather than crashing or being
@@ -193,6 +236,13 @@ export type StartAppCoreOptions = {
    * already explicit operator actions and are never held.
    */
   readonly verseConfirmationMode?: VerseConfirmationMode
+  /**
+   * Settle window for a detected reference whose trailing verse number could
+   * still grow ("John 11 verse 1" may become "verse 12" when the ASR cuts the
+   * utterance between the digits). Default 1000 ms; 0 disables. References
+   * that cannot grow (John 3:16) are never delayed.
+   */
+  readonly referenceSettleMs?: number
   /**
    * Optional (ARCHITECTURE.md section 82) — the overlay's initial verse
    * display layout, "fullscreen" by default. Purely a presentation
@@ -281,6 +331,10 @@ export type StartAppCoreOptions = {
    * delay instead of waiting out the real default.
    */
   readonly verseAutoClearMs?: number
+  /** Injectable wall clock and timers for the mic watchdog and the asr start/stop bound (SF-08, SF-06); tests pass fakes. */
+  readonly timers?: AppCoreTimers
+  /** Bound on a provider start()/stop() during mic:start / mic:stop (TS-11); default 20 s. */
+  readonly asrLifecycleTimeoutMs?: number
 }
 
 export type AppCoreHandle = {
@@ -322,6 +376,11 @@ export type AppCoreHandle = {
    */
   getSessionEntries(): readonly SessionEntry[]
   /**
+   * Export the current session transcript as Markdown format.
+   * Includes timestamps, verse references, and verse text.
+   */
+  getSessionTranscriptMarkdown(): string
+  /**
    * ARCHITECTURE.md section 132: passive log of dropped transcripts, mic
    * dropouts and echo warnings, merged with the verses and latency into the
    * post-service health report by the Electron main process.
@@ -349,6 +408,13 @@ export type AppCoreHandle = {
    * a WS event, so the public protocol and the read-only overlay are unchanged.
    */
   getPipelineLatency(): LatencySnapshot
+  /**
+   * The set of connected WebSocket clients and their per-client round-trip
+   * latency history. Read by the dashboard through Electron IPC to update
+   * the network diagnostics panel; not a WS event, so the public protocol
+   * and the read-only overlay are unchanged.
+   */
+  getWsClientLatency(): readonly WsClientLatencySnapshot[]
   /**
    * ARCHITECTURE.md section 130: parses pasted sermon notes (plain text) into
    * validated references and adds their books to the ASR planned-book bias.
@@ -380,11 +446,29 @@ export type AppCoreHandle = {
  */
 export async function startAppCore(options: StartAppCoreOptions): Promise<AppCoreHandle> {
   const { logger, asr, detector, index, source } = options
+  // Innovation pass (ARCHITECTURE.md section 145): the pipeline's single VerseDetector
+  // instance also carries the range capability when it is a RegexDetector; looked up
+  // once, structurally, so a non-range detector implementation stays valid.
+  const rangeDetector = asVerseRangeDetector(detector)
   const cache = options.cache ?? new VerseCache()
   const circuitBreaker = options.circuitBreaker ?? new CircuitBreaker()
   const silenceGate = options.silenceGate ?? new SilenceGate()
   const adaptiveGain = options.adaptiveGain ?? new AdaptiveGain()
+  const transcriptionPolicy = options.transcriptionPolicy ?? new TranscriptionPolicy()
+  silenceGate.setNoiseMode(transcriptionPolicy.mode)
+  // Transcripts dropped by the text screen, by reason (diagnostics; logged on every drop).
+  const screenDropCounts: Record<string, number> = {}
+  const micDiagnostics = new MicDiagnostics()
+  let activeMicWarnings = ""
   const micHealth = new MicHealthMonitor()
+  // SF-08: wall-clock watch for "no frames at all", which the frame-clocked health above cannot see.
+  const timers = options.timers ?? {}
+  const clockNow = timers.now ?? Date.now
+  const setAppTimeout = timers.setTimeout ?? ((callback: () => void, ms: number) => setTimeout(callback, ms))
+  const clearAppTimeout = timers.clearTimeout ?? ((handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>))
+  const micAudioWatchdog = new MicAudioWatchdog()
+  let micWatchdogTimer: unknown = null
+  const asrLifecycleTimeoutMs = options.asrLifecycleTimeoutMs ?? ASR_LIFECYCLE_TIMEOUT_MS
   const pipelineLatency = new LatencyTracker()
   let rundownPrefetchGeneration = 0
   let stopped = false
@@ -415,6 +499,12 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   const glossaryDetector = new GlossaryDetector()
   const definitionClearMs = options.definitionClearMs ?? 12000
   let definitionClearTimer: ReturnType<typeof setTimeout> | null = null
+  let activeDefinition: DefinitionShowPayload | null = null
+  let definitionExpiresAt = 0
+  let activeAnnouncement: { readonly title: string; readonly body: string } | null = null
+  let activeCanvas: CanvasSceneData | null = null
+  let activeOutline: OutlineShowPayload | null = null
+  let outlineClearTimer: ReturnType<typeof setTimeout> | null = null
   // ARCHITECTURE.md section 67: a principal poster is a persistent
   // background layer, not a scene the rundown state machine needs to know
   // about — held here purely so showVerse() knows whether to arm the
@@ -462,6 +552,12 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   // verse" after an operator's manual override continues from wherever
   // the operator pointed, the least-surprising default.
   let currentVersePosition: VerseReference | null = null
+  // The chapter the speaker just ANNOUNCED ("Dans Esaïe 4, le verset 8" names Isaiah 4), kept so a bare
+  // "verset N" resolves against it instead of against whatever verse was last displayed (which would
+  // show a verse of the wrong book). Bounded by a short lifetime and dropped as soon as any verse is
+  // shown or cleared; it is context only, every reference built from it is still validated.
+  let announcedChapter: { readonly reference: VerseReference; readonly at: number } | null = null
+  const ANNOUNCED_CHAPTER_TTL_MS = 60_000
   // The actual resolved Verse behind currentVersePosition, kept only so a
   // newly-connecting viewer can be resynced with what is REALLY on screen
   // during a verse-interrupt (see onViewerConnected below) — without this,
@@ -560,6 +656,28 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   const sermonNotesIntervalMs = options.sermonNotesIntervalMs ?? 60000
   let sermonNotesEnabled = options.sermonNotesEnabled ?? false
   let sermonNotesBuffer = ""
+  const SERMON_NOTES_BUFFER_MAX_CHARS = 12_000
+  // The Groq notes generator is not behind the guarded completer, so its failures would be invisible.
+  // Two consecutive failed cycles show the operator the AI-helpers banner (fixed reason code); a success clears it.
+  // (With the guarded Claude/Groq-text completer, that completer already reports its own status.)
+  let sermonNotesFailures = 0
+  function reportSermonNotesOutcome(failure: string | null): void {
+    if (options.claudeClient) return
+    const wasDegraded = sermonNotesFailures >= 2
+    sermonNotesFailures = failure === null ? 0 : sermonNotesFailures + 1
+    const degraded = sermonNotesFailures >= 2
+    if (degraded === wasDegraded && !(degraded && sermonNotesFailures === 2)) return
+    const status: AiHelpersStatus = degraded
+      ? { state: "paused", reason: failure !== null && /does not exist|decommissioned|disabled for this session/i.test(failure) ? "model-unavailable" : "repeated-failures" }
+      : { state: "ok" }
+    aiHelpersStatus = status
+    wsServer.broadcast({
+      id: generateUlid(),
+      type: "status:update",
+      timestamp: Date.now(),
+      payload: { asrHealth: currentAsrHealth(), aiHelpers: status, audioMetrics: silenceGate.getMetrics() },
+    })
+  }
   const sermonNotesTimer: ReturnType<typeof setInterval> | null = sermonNotesGenerator
     ? setInterval(() => {
         if (!sermonNotesEnabled) return
@@ -569,6 +687,9 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         sermonNotesGenerator
           .summarize(text)
           .then((notes) => {
+            // An empty answer must never reach the panel (it would append a blank note): treat it as a failed cycle.
+            if (!notes.trim()) throw new Error("sermon notes answer was empty")
+            reportSermonNotesOutcome(null)
             wsServer.broadcast({
               id: generateUlid(),
               type: "sermonNotes:update",
@@ -580,17 +701,32 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
             // ARCHITECTURE.md section 65.7: "logs and skips that cycle
             // silently recoverable next cycle — never affects mic capture,
             // ASR, or verse display in any way."
-            logger.error({
-              component: "app-core",
-              event: "sermon-notes.summarize-failed",
-              error: err instanceof Error ? err.message : String(err),
-            })
+            const message = err instanceof Error ? err.message : String(err)
+            logger.error({ component: "app-core", event: "sermon-notes.summarize-failed", error: message })
+            // Keep the text of the failed cycle (bounded) so the next cycle covers it; the panel is left untouched.
+            if (sermonNotesEnabled) sermonNotesBuffer = `${text} ${sermonNotesBuffer}`.trim().slice(-SERMON_NOTES_BUFFER_MAX_CHARS)
+            reportSermonNotesOutcome(message)
           })
       }, sermonNotesIntervalMs)
     : null
 
   let lastAudioFrameErrorLogTime = 0
   let suppressedAudioFrameErrors = 0
+  function reportAudioFrameFailure(err: unknown): void {
+    const now = Date.now()
+    suppressedAudioFrameErrors++
+    if (now - lastAudioFrameErrorLogTime >= 3000) {
+      lastAudioFrameErrorLogTime = now
+      const count = suppressedAudioFrameErrors
+      suppressedAudioFrameErrors = 0
+      logger.error({
+        component: "app-core",
+        event: "audio-frame.failed",
+        error: err instanceof Error ? err.message : String(err),
+        ...(count > 1 ? { metadata: { suppressedOccurrences: count - 1 } } : {}),
+      })
+    }
+  }
 
   const wsServer = new ChurchOverlayWsServer({
     host: options.host,
@@ -608,21 +744,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       )
     },
     onAudioFrame: (frame) => {
-      handleAudioFrame(frame).catch((err) => {
-        const now = Date.now()
-        suppressedAudioFrameErrors++
-        if (now - lastAudioFrameErrorLogTime >= 3000) {
-          lastAudioFrameErrorLogTime = now
-          const count = suppressedAudioFrameErrors
-          suppressedAudioFrameErrors = 0
-          logger.error({
-            component: "app-core",
-            event: "audio-frame.failed",
-            error: err instanceof Error ? err.message : String(err),
-            ...(count > 1 ? { metadata: { suppressedOccurrences: count - 1 } } : {}),
-          })
-        }
-      })
+      handleAudioFrame(frame).catch(reportAudioFrameFailure)
     },
     onRejected: (reason, role) => {
       logger.warn({ component: "ws", event: "message.rejected", metadata: { reason, role } })
@@ -657,67 +779,92 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       // media/rundown blocks below, the same "late-join sync" reasoning
       // section 60.4 already established for every other persistent
       // content type.
-      if (principalPosterCueId !== null) {
-        const posterCue = mediaLibrary?.resolve(principalPosterCueId) ?? null
-        if (posterCue) {
-          send({ id: generateUlid(), type: "poster:show", timestamp: Date.now(), payload: { cue: posterCue } })
-        }
-      }
+      const posterCue = principalPosterCueId === null ? null : mediaLibrary?.resolve(principalPosterCueId) ?? null
+      if (posterCue) send({ id: generateUlid(), type: "poster:show", timestamp: Date.now(), payload: { cue: posterCue } })
+      else send({ id: generateUlid(), type: "poster:clear", timestamp: Date.now(), payload: null })
       const payload = mediaPlayback.currentPayloadForSync()
-      if (payload) {
-        send({ id: generateUlid(), type: "media:show", timestamp: Date.now(), payload })
-      }
-      // ARCHITECTURE.md section 64.4 (reusing section 60.4's reconnect/
-      // late-join sync pattern): a viewer that connects while a rundown is
-      // showing a verse/announcement/blank scene must see it immediately.
-      // Media scenes are deliberately excluded here — the block above
-      // already resyncs mediaPlayback's actual current state without the
-      // side effect activate() has (resetting playback to position 0),
-      // which re-running scene content for a "media" scene would cause.
+      if (payload) send({ id: generateUlid(), type: "media:show", timestamp: Date.now(), payload })
+      else send({ id: generateUlid(), type: "media:clear", timestamp: Date.now(), payload: null })
       const rundownState = rundownController.currentState()
-      if (rundownState) {
-        send({ id: generateUlid(), type: "rundown:state", timestamp: Date.now(), payload: rundownState })
-        if (rundownState.interrupted) {
-          // The scene rundownController reports here is the PAUSED one —
-          // what's actually visible right now is the interrupting verse
-          // (section 64.2), so that's what a reconnecting viewer needs,
-          // not the paused scene's own content underneath it.
-          if (lastShownVerse) {
-            send({ id: generateUlid(), type: "verse:show", timestamp: Date.now(), payload: lastShownVerse })
-          }
-        } else if (rundownState.scene.kind !== "media") {
-          syncSceneContent(rundownState.scene, send).catch((err) => {
-            logger.error({
-              component: "app-core",
-              event: "rundown.viewer-sync-failed",
-              error: err instanceof Error ? err.message : String(err),
-            })
-          })
-        }
-      } else if (lastShownVerse) {
-        // ARCHITECTURE.md production audit (section 74): a real,
-        // structural gap, not just a narrow timing race — this branch
-        // did not exist at all before. A verse shown OUTSIDE any rundown
-        // (the common case: live detection/override/navigation with no
-        // rundown loaded) was never resynced to a reconnecting viewer,
-        // full stop — only the rundown-interrupt case above was covered.
-        // A dropped OBS/overlay WS connection (section 48's bounded
-        // reconnect backoff, commit 362e51d) reconnecting while a verse
-        // was showing would silently never see it again until the next
-        // detection — a plausible, previously-unfixed explanation for an
-        // intermittently "missing" verse that WAS genuinely detected.
-        send({ id: generateUlid(), type: "verse:show", timestamp: Date.now(), payload: lastShownVerse })
+      if (rundownState) send({ id: generateUlid(), type: "rundown:state", timestamp: Date.now(), payload: rundownState })
+      // Resync the authoritative displayed state rather than replaying the
+      // rundown scene. This preserves current content across a quick reconnect
+      // and clears content that changed while the viewer was disconnected.
+      if (lastShownVerse) send({ id: generateUlid(), type: "verse:show", timestamp: Date.now(), payload: lastShownVerse })
+      else send({ id: generateUlid(), type: "verse:clear", timestamp: Date.now(), payload: null })
+      if (activeAnnouncement) {
+        send({ id: generateUlid(), type: "announcement:show", timestamp: Date.now(), payload: activeAnnouncement })
+      } else {
+        send({ id: generateUlid(), type: "announcement:clear", timestamp: Date.now(), payload: null })
       }
+      if (activeCanvas) send({ id: generateUlid(), type: "canvas:show", timestamp: Date.now(), payload: activeCanvas })
+      else send({ id: generateUlid(), type: "canvas:clear", timestamp: Date.now(), payload: null })
+      if (activeDefinition && definitionExpiresAt > Date.now()) {
+        send({ id: generateUlid(), type: "definition:show", timestamp: Date.now(), payload: activeDefinition })
+      } else if (activeDefinition) {
+        activeDefinition = null
+        definitionExpiresAt = 0
+        if (definitionClearTimer) clearTimeout(definitionClearTimer)
+        definitionClearTimer = null
+        send({ id: generateUlid(), type: "definition:clear", timestamp: Date.now(), payload: null })
+      } else {
+        send({ id: generateUlid(), type: "definition:clear", timestamp: Date.now(), payload: null })
+      }
+      if (activeOutline) {
+        send({ id: generateUlid(), type: "outline:show", timestamp: Date.now(), payload: activeOutline })
+      } else send({ id: generateUlid(), type: "outline:clear", timestamp: Date.now(), payload: null })
     },
   })
+
+  // Operator-visible state of the optional AI helpers: when the circuit breaker pauses them, or a
+  // startup check finds the model or key unusable, the dashboard says so instead of every helper
+  // failing silently. Only a fixed state/reason code is broadcast (never upstream error text).
+  let aiHelpersStatus: AiHelpersStatus = { state: "ok" }
+  const aiStatusSource = options.claudeClient as Partial<AiHelpersStatusSource> | undefined
+  if (
+    aiStatusSource !== undefined &&
+    typeof aiStatusSource.subscribeStatus === "function" &&
+    typeof aiStatusSource.checkAvailability === "function"
+  ) {
+    aiStatusSource.subscribeStatus((status) => {
+      aiHelpersStatus = status
+      logger.warn({
+        component: "app-core",
+        event: status.state === "ok" ? "ai.helpers-recovered" : "ai.helpers-unavailable",
+        metadata: { state: status.state, ...(status.reason !== undefined ? { reason: status.reason } : {}) },
+      })
+      wsServer.broadcast({
+        id: generateUlid(),
+        type: "status:update",
+        timestamp: Date.now(),
+        payload: { asrHealth: currentAsrHealth(), aiHelpers: status, audioMetrics: silenceGate.getMetrics() },
+      })
+    })
+    aiStatusSource.checkAvailability().catch((err) =>
+      logger.warn({
+        component: "app-core",
+        event: "ai.availability-check-failed",
+        error: err instanceof Error ? err.message : String(err),
+      })
+    )
+  }
 
   function showVerse(verse: Verse, trigger: VerseTrigger, correlationId?: string): void {
     // The operator (override, navigation, rundown) took control: whatever is
     // detected next is intentional, never an interpreter's echo.
-    if (trigger !== "detected") interpreterEchoGuard.forget()
+    if (trigger !== "detected") {
+      interpreterEchoGuard.forget()
+      // An explicit operator/navigation/rundown choice also cancels a detection still settling.
+      dropSettleHold(`operator-${trigger}`)
+    }
     // Whatever was waiting for approval has now been dealt with (shown, overridden, rundown).
     suggestionArbiter.clearDetectedWaiting()
+    // Anything pending was just superseded by this verse; a late "Confirm"
+    // must not resurrect it. (Not done in clearVerse: the auto-clear timer
+    // ends the SHOWN verse and must not discard a verse awaiting approval.)
+    pendingVerse = null
     currentVersePosition = verse.reference
+    announcedChapter = null
     // TASK B: Update ASR prompt with current verse reference for dynamic context
     const refStr = `${verse.reference.book} ${verse.reference.chapter}:${verse.reference.verse}`
     if ("setCurrentVerseRef" in asr && typeof asr.setCurrentVerseRef === "function") {
@@ -766,6 +913,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
 
   function clearVerse(correlationId?: string): void {
     currentVersePosition = null
+    announcedChapter = null
     lastShownVerse = null
     // TASK B: Clear ASR prompt context when verse is cleared
     if ("setCurrentVerseRef" in asr && typeof asr.setCurrentVerseRef === "function") {
@@ -828,6 +976,9 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     if (transcript.state !== "final") return
     const hints = buildVolumeHints(plannedBookIds, currentVersePosition?.book ?? null)
     const inferred = applyVolumeHints(text, hints)
+    // Same stale-lookup rule as every other path that awaits a verse: a Clear
+    // or override that happens while the lookups run must not be undone.
+    const ticket = beginDisplayIntent()
     const isOnScreen = (verse: Verse): boolean =>
       currentVersePosition !== null &&
       currentVersePosition.book === verse.reference.book &&
@@ -835,7 +986,11 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       currentVersePosition.verse === verse.reference.verse
 
     if (inferred) {
-      const verses = await resolveTranscriptVerses({ ...transcript, text: inferred }, detector, index, source, cache, circuitBreaker, logger)
+      const verses = await resolveTranscriptVerses({ ...transcript, text: inferred }, detector, index, source, cache, circuitBreaker, logger, undefined, rangeDetector ?? undefined)
+      if (verses.length > 0 && isSupersededIntent(ticket)) {
+        dropStaleLookup("volume-inference", transcript.correlationId)
+        return
+      }
       for (const verse of verses) {
         if (isOnScreen(verse)) continue
         logger.info({
@@ -856,11 +1011,15 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     for (const volume of ["1", "2"] as const) {
       const candidateText = applyVolumeHints(text, allFamiliesAtVolume(volume))
       if (!candidateText) return // no bare numbered book in this text
-      const verses = await resolveTranscriptVerses({ ...transcript, text: candidateText }, detector, index, source, cache, circuitBreaker, logger)
+      const verses = await resolveTranscriptVerses({ ...transcript, text: candidateText }, detector, index, source, cache, circuitBreaker, logger, undefined, rangeDetector ?? undefined)
       candidates.push(...verses.filter((verse) => !isOnScreen(verse)))
     }
     const [first, ...others] = candidates
     if (!first) return
+    if (isSupersededIntent(ticket)) {
+      dropStaleLookup("volume-inference", transcript.correlationId)
+      return
+    }
     logger.info({
       component: "app-core",
       event: "volume.candidates",
@@ -876,7 +1035,173 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   // overrides, voice navigation and rundown scenes never pass through here.
   const interpreterEchoGuard = new InterpreterEchoGuard()
 
-  function deliverDetectedVerses(verses: readonly Verse[], transcript: TranscriptResult): void {
+  // Settle window: a detected reference (or a navigation command) whose trailing number could still
+  // grow ("verse 1" -> "verse 12") is held here instead of being shown. The next final either completes it
+  // (merged, the truncated reference is never shown) or does not (flushed as-is); a timer flushes it otherwise.
+  const referenceSettleMs = options.referenceSettleMs ?? 1000
+  type DetectionJob = { readonly detect: TranscriptResult; readonly deliver: TranscriptResult; readonly kind: "detection" | "assembled-detection" }
+  type NavigationHold = { readonly command: NavigationCommand; readonly transcript: TranscriptResult }
+  type SettleHold =
+    | { readonly kind: "detection"; readonly job: DetectionJob; readonly timer: unknown }
+    | { readonly kind: "navigation"; readonly nav: NavigationHold; readonly timer: unknown }
+  let settleHold: SettleHold | null = null
+
+  /** Discards a held reference. A `reason` means it is an outside cancel (not a flush or a merge) and is logged. */
+  function dropSettleHold(reason?: string): void {
+    if (settleHold && reason !== undefined) {
+      const held = settleHold
+      logger.info({
+        component: "app-core",
+        event: "verse.settle-dropped",
+        correlationId: held.kind === "detection" ? held.job.deliver.correlationId : held.nav.transcript.correlationId,
+        metadata: { reason, kind: held.kind, text: (held.kind === "detection" ? held.job.detect.text : held.nav.transcript.text).slice(0, 120) },
+      })
+    }
+    if (settleHold) clearAppTimeout(settleHold.timer)
+    settleHold = null
+  }
+
+  /** Timer entry point: a throw here must never become an uncaught exception. */
+  function flushSettleHoldFromTimer(): void {
+    try {
+      flushSettleHold()
+    } catch (err) {
+      logger.error({ component: "app-core", event: "verse.settle-flush-failed", error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
+  function heldText(held: SettleHold): string {
+    return held.kind === "detection" ? held.job.detect.text : held.nav.transcript.text
+  }
+
+  function flushSettleHold(): void {
+    const held = settleHold
+    if (!held) return
+    dropSettleHold()
+    if (held.kind === "detection") runDetection(held.job)
+    else {
+      handleNavigationCommands(held.nav.transcript, { onlyCommand: held.nav.command, settled: true }).catch((err) =>
+        logger.error({ component: "app-core", event: "navigation.failed", correlationId: held.nav.transcript.correlationId, error: err instanceof Error ? err.message : String(err) }),
+      )
+    }
+  }
+
+  /** The reference a navigation command would land on, resolved the same way the display path does. */
+  function resolveNavKeys(text: string, only: NavigationCommand["kind"]): string[] {
+    const keys: string[] = []
+    for (const command of navigationCommandDetector.detect(text)) {
+      if (command.kind !== only) continue
+      const position = announcedChapterFor(command)?.reference ?? currentVersePosition
+      const resolution = resolveNavigationCommand(command, position, index)
+      if (resolution.kind === "reference") keys.push(suggestionKey(resolution.reference))
+    }
+    return keys
+  }
+
+  /** The next final completes a number the held one left open: returns the merged transcript, or null. */
+  function mergeIntoSettleHold(next: TranscriptResult): { readonly transcript: TranscriptResult; readonly heldKind: SettleHold["kind"] } | null {
+    const held = settleHold
+    if (!held) return null
+    const mergedText = joinSplitNumber(heldText(held), next.text)
+    if (mergedText === null) return null
+    let producesNew: boolean
+    if (held.kind === "detection") {
+      const heldKeys = new Set(detectValidatedReferences(detector, index, held.job.detect.text).map((r) => suggestionKey(r)))
+      producesNew = detectValidatedReferences(detector, index, mergedText).some((r) => !heldKeys.has(suggestionKey(r)))
+    } else {
+      const heldKeys = new Set(resolveNavKeys(held.nav.transcript.text, held.nav.command.kind))
+      producesNew = resolveNavKeys(mergedText, held.nav.command.kind).some((key) => !heldKeys.has(key))
+    }
+    // Only a merge that yields a NEW valid reference counts; otherwise the held one stands alone.
+    if (!producesNew) return null
+    dropSettleHold()
+    logger.info({
+      component: "app-core",
+      event: "verse.settle-merged",
+      correlationId: next.correlationId,
+      metadata: { held: heldText(held), next: next.text, heldKind: held.kind },
+    })
+    return { transcript: { ...next, text: mergedText }, heldKind: held.kind }
+  }
+
+  function submitDetection(job: DetectionJob): void {
+    if (job.detect.state === "final" && referenceSettleMs > 0) {
+      const references = detectValidatedReferences(detector, index, job.detect.text)
+      if (references.length > 0 && trailingVerseCouldGrow(job.detect.text, references, index)) {
+        flushSettleHold()
+        const timer = setAppTimeout(flushSettleHoldFromTimer, referenceSettleMs)
+        unrefTimer(timer)
+        settleHold = { kind: "detection", job, timer }
+        logger.info({
+          component: "app-core",
+          event: "verse.settle-held",
+          correlationId: job.detect.correlationId,
+          metadata: { text: job.detect.text.slice(0, 120), settleMs: referenceSettleMs },
+        })
+        return
+      }
+    }
+    runDetection(job)
+  }
+
+  /** A navigation command whose number could still grow waits like a detection does. True when held. */
+  function holdNavigationIfGrowing(command: NavigationCommand, transcript: TranscriptResult, target: VerseReference): boolean {
+    if (referenceSettleMs <= 0 || transcript.state !== "final") return false
+    const number = command.kind === "goto-chapter" ? target.chapter : target.verse
+    const couldGrow = (() => {
+      const text = transcript.text
+      if (!trailingNumberEquals(text, number)) return false
+      for (let digit = 0; digit <= 9; digit++) {
+        const grown = command.kind === "goto-chapter" ? { ...target, chapter: number * 10 + digit, verse: 1 } : { ...target, verse: number * 10 + digit }
+        if (index.exists(grown)) return true
+      }
+      return false
+    })()
+    if (!couldGrow) return false
+    // The assembler already joined this same fragment into a fuller reference that is being held
+    // ("Jean chapitre 11" + "verset 1"): that hold covers it, and flushing it here would show the stub.
+    if (settleHold?.kind === "detection" && settleHold.job.deliver.correlationId === transcript.correlationId) return true
+    flushSettleHold()
+    const timer = setAppTimeout(flushSettleHoldFromTimer, referenceSettleMs)
+    unrefTimer(timer)
+    settleHold = { kind: "navigation", nav: { command, transcript }, timer }
+    logger.info({
+      component: "app-core",
+      event: "verse.settle-held",
+      correlationId: transcript.correlationId,
+      metadata: { text: transcript.text.slice(0, 120), settleMs: referenceSettleMs, path: "navigation" },
+    })
+    return true
+  }
+
+  function runDetection(job: DetectionJob): void {
+    const ticket = beginDisplayIntent()
+    // TS-08: the bare "Name N M" form is never auto-shown, whatever the confirmation mode.
+    const compactOnly = compactOnlyReferenceKeys(job.detect.text)
+    resolveTranscriptVerses(job.detect, detector, index, source, cache, circuitBreaker, logger, (reference, failure) => reportLookup(reference, failure, "detected"), rangeDetector ?? undefined)
+      .then(async (verses) => {
+        if (verses.length > 0 && isSupersededIntent(ticket)) {
+          dropStaleLookup(job.kind, job.deliver.correlationId)
+          return
+        }
+        // TS-05: a detection only claims the display slot when something was really shown. An echo-suppressed
+        // or pending (review / compact-form) detection leaves a slower, earlier operator override free to show.
+        if (deliverDetectedVerses(verses, job.deliver, compactOnly)) markIntentApplied(ticket)
+        if (verses.length === 0) await inferVolumeVerses(job.detect.text, job.deliver)
+      })
+      .catch((err) => {
+        logger.error({
+          component: "app-core",
+          event: job.kind === "detection" ? "transcript.pipeline-failed" : "transcript.assembly-failed",
+          correlationId: job.deliver.correlationId,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      })
+  }
+
+  /** Returns true when at least one verse was put on the screen (not merely offered as pending or suppressed). */
+  function deliverDetectedVerses(verses: readonly Verse[], transcript: TranscriptResult, compactOnly: ReadonlySet<string> = new Set()): boolean {
+    let shown = false
     for (const verse of verses) {
       const echo = interpreterEchoGuard.check(verse.reference, transcript.text)
       if (echo.suppress) {
@@ -890,7 +1215,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
           pendingVerse.reference.chapter === verse.reference.chapter &&
           pendingVerse.reference.verse === verse.reference.verse
         ) {
-          wsServer.broadcast({
+          wsServer.broadcastToOperators({
             id: generateUlid(),
             type: "verse:pending",
             timestamp: Date.now(),
@@ -906,11 +1231,14 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         })
         continue
       }
-      const delivery = verseConfirmationMode === "review" ? "pending" : "screen"
+      const delivery = verseConfirmationMode === "review" || compactOnly.has(suggestionKey(verse.reference)) ? "pending" : "screen"
       if (delivery === "pending") {
         suggestionArbiter.noteDetectedWaiting()
-        broadcastPendingVerse(verse, transcript.correlationId)
-      } else broadcastVerse(verse, "detected", transcript.correlationId)
+        broadcastPendingVerse({ ...verse, heard: heardSnippet(transcript.text) } as Verse, transcript.correlationId)
+      } else {
+        broadcastVerse(verse, "detected", transcript.correlationId)
+        shown = true
+      }
       const durationMs = Date.now() - transcript.timestamp
       pipelineLatency.record(durationMs)
       logger.info({
@@ -921,13 +1249,46 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         metadata: { delivery },
       })
     }
+    return shown
+  }
+
+  // AUDIT SF-03: a verse the detector, the operator or navigation asked for that cannot be looked up used to be
+  // only logged. The operator is now told (operator-only event), throttled so a repeated failure cannot spam.
+  const LOOKUP_NOTICE_THROTTLE_MS = 10_000
+  const LOOKUP_NOTICE_MAX_PER_WINDOW = 5
+  const lookupNoticeAt = new Map<string, number>()
+  let lookupNoticeWindowStart = 0
+  let lookupNoticeWindowCount = 0
+
+  function reportLookup(reference: VerseReference, failure: VerseLookupFailure | "invalid" | "superseded" | null, origin: "detected" | "override" | "navigate"): void {
+    if (failure === null) return
+    const now = Date.now()
+    const key = `${failure}|${origin}|${suggestionKey(reference)}`
+    const last = lookupNoticeAt.get(key)
+    if (last !== undefined && now - last < LOOKUP_NOTICE_THROTTLE_MS) return
+    if (now - lookupNoticeWindowStart >= LOOKUP_NOTICE_THROTTLE_MS) {
+      lookupNoticeWindowStart = now
+      lookupNoticeWindowCount = 0
+    }
+    if (lookupNoticeWindowCount >= LOOKUP_NOTICE_MAX_PER_WINDOW) return
+    lookupNoticeWindowCount += 1
+    if (lookupNoticeAt.size >= 50) lookupNoticeAt.clear()
+    lookupNoticeAt.set(key, now)
+    logger.warn({ component: "app-core", event: "verse.lookup-failed", metadata: { reference, reason: failure, origin } })
+    wsServer.broadcastToOperators({
+      id: generateUlid(),
+      type: "verse:lookup-failed",
+      timestamp: now,
+      payload: { reference: { book: reference.book.slice(0, 64), chapter: reference.chapter, verse: reference.verse }, reason: failure, origin },
+    })
   }
 
   function broadcastPendingVerse(verse: Verse, correlationId?: string): void {
     // A suggestion (quote, repair, inferred volume, AI) that takes the slot means no detection is waiting any more.
     if ((verse as Verse & { origin?: string }).origin !== undefined) suggestionArbiter.clearDetectedWaiting()
     pendingVerse = verse
-    wsServer.broadcast({ id: generateUlid(), type: "verse:pending", timestamp: Date.now(), correlationId, payload: verse })
+    // S-01: pending verses carry the heard text; operator pages only.
+    wsServer.broadcastToOperators({ id: generateUlid(), type: "verse:pending", timestamp: Date.now(), correlationId, payload: verse })
   }
 
   /**
@@ -988,6 +1349,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   }
 
   function broadcastAnnouncement(payload: { title: string; body: string }, correlationId?: string): void {
+    activeAnnouncement = payload
     wsServer.broadcast({
       id: generateUlid(),
       type: "announcement:show",
@@ -1005,7 +1367,13 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       id: generateUlid(),
       type: "status:update",
       timestamp: Date.now(),
-      payload: { ...payload, ...(echo !== null ? { echoWarning: echo } : {}), audioMetrics: silenceGate.getMetrics() },
+      payload: {
+        ...payload,
+        ...(echo !== null ? { echoWarning: echo } : {}),
+        // Every status update restates a non-ok AI state, so a dashboard that connected late still learns it.
+        ...(aiHelpersStatus.state !== "ok" ? { aiHelpers: aiHelpersStatus } : {}),
+        audioMetrics: silenceGate.getMetrics(),
+      },
     })
   }
 
@@ -1033,17 +1401,18 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
    * correction-candidate correlation below. Purely additive — the
    * existing logger.warn call at the near-miss site is unchanged.
    */
-  function recordAndBroadcastNearMiss(text: string, correlationId?: string): void {
+  function recordAndBroadcastNearMiss(text: string, correlationId?: string, suggestions: readonly VerseReference[] = []): void {
     recentNearMisses.push({ text, timestamp: Date.now() })
     if (recentNearMisses.length > RECENT_NEAR_MISS_LIMIT) {
       recentNearMisses = recentNearMisses.slice(-RECENT_NEAR_MISS_LIMIT)
     }
-    wsServer.broadcast({
+    wsServer.broadcastToOperators({
       id: generateUlid(),
       type: "detector:near-miss",
       timestamp: Date.now(),
       correlationId,
-      payload: { text },
+      // Operator-only "did you mean?" buttons; each one is sent back as an ordinary verse:override.
+      payload: suggestions.length > 0 ? { text, suggestions } : { text },
     })
   }
 
@@ -1073,6 +1442,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   }
 
   function broadcastAnnouncementClear(correlationId?: string): void {
+    activeAnnouncement = null
     wsServer.broadcast({
       id: generateUlid(),
       type: "announcement:clear",
@@ -1089,6 +1459,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
    * phase (invariant 23).
    */
   function broadcastCanvas(canvas: CanvasSceneData, correlationId?: string): void {
+    activeCanvas = canvas
     wsServer.broadcast({
       id: generateUlid(),
       type: "canvas:show",
@@ -1099,6 +1470,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   }
 
   function broadcastCanvasClear(correlationId?: string): void {
+    activeCanvas = null
     wsServer.broadcast({
       id: generateUlid(),
       type: "canvas:clear",
@@ -1176,6 +1548,8 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
    */
   function broadcastDefinition(definition: DefinitionShowPayload, correlationId?: string): void {
     if (definitionClearTimer) clearTimeout(definitionClearTimer)
+    activeDefinition = definition
+    definitionExpiresAt = Date.now() + definitionClearMs
     wsServer.broadcast({
       id: generateUlid(),
       type: "definition:show",
@@ -1185,8 +1559,36 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     })
     definitionClearTimer = setTimeout(() => {
       definitionClearTimer = null
+      activeDefinition = null
+      definitionExpiresAt = 0
       wsServer.broadcast({ id: generateUlid(), type: "definition:clear", timestamp: Date.now(), payload: null })
     }, definitionClearMs)
+  }
+
+  function broadcastOutline(outline: OutlineShowPayload, correlationId?: string): void {
+    if (outlineClearTimer) clearTimeout(outlineClearTimer)
+    activeOutline = outline
+    wsServer.broadcast({
+      id: generateUlid(),
+      type: "outline:show",
+      timestamp: Date.now(),
+      correlationId,
+      payload: outline,
+    })
+    outlineClearTimer = setTimeout(() => clearOutline(correlationId), OUTLINE_AUTO_CLEAR_MS)
+  }
+
+  function clearOutline(correlationId?: string): void {
+    if (outlineClearTimer) clearTimeout(outlineClearTimer)
+    outlineClearTimer = null
+    activeOutline = null
+    wsServer.broadcast({
+      id: generateUlid(),
+      type: "outline:clear",
+      timestamp: Date.now(),
+      correlationId,
+      payload: null,
+    })
   }
 
   function broadcastRundownState(state: RundownStatePayload, correlationId?: string): void {
@@ -1341,62 +1743,42 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     }
   }
 
-  /**
-   * A newly-connected viewer's resync for a non-media scene (media is
-   * handled independently, see onViewerConnected above). Sends directly to
-   * the one connecting viewer via `send`, never broadcasts — an existing
-   * audience mid-verse must not be interrupted just because someone else
-   * joined.
-   */
-  async function syncSceneContent(scene: RundownScene, send: (message: WsMessage) => void): Promise<void> {
-    switch (scene.kind) {
-      case "verse": {
-        const verse = await resolveVerse(scene.reference, source, cache, circuitBreaker, translationIdFor(source), logger)
-        if (verse) {
-          const payload: VerseShowPayload = { ...verse, trigger: "rundown" }
-          send({ id: generateUlid(), type: "verse:show", timestamp: Date.now(), payload })
-        } else {
-          logger.info({
-            component: "app-core",
-            event: "rundown.viewer-sync-verse-unresolved",
-            metadata: { reference: scene.reference },
-          })
-        }
-        return
-      }
-      case "announcement":
-        send({
-          id: generateUlid(),
-          type: "announcement:show",
-          timestamp: Date.now(),
-          payload: { title: scene.title, body: scene.body },
-        })
-        return
-      case "canvas":
-        send({ id: generateUlid(), type: "canvas:show", timestamp: Date.now(), payload: scene.canvas })
-        return
-      case "blank":
-        send({ id: generateUlid(), type: "verse:clear", timestamp: Date.now(), payload: null })
-        send({ id: generateUlid(), type: "announcement:clear", timestamp: Date.now(), payload: null })
-        send({ id: generateUlid(), type: "canvas:clear", timestamp: Date.now(), payload: null })
-        return
-      case "media":
-        return // handled independently above
-    }
-  }
-
-  function broadcastMicHealth(): void {
+  /** @param stateOverride "no-audio" (SF-08): the frames stopped, so the stale frame-derived state must not be shown. */
+  function broadcastMicHealth(stateOverride?: "no-audio"): void {
     micHealth.setGain(adaptiveGain.currentGain())
-    const snapshot = micHealth.snapshot(silenceGate.isCalibrating())
+    const frameSnapshot = micHealth.snapshot(silenceGate.isCalibrating())
+    const snapshot = stateOverride ? { ...frameSnapshot, state: stateOverride } : frameSnapshot
+    const dropped = transcriptionPolicy.ledger.perMinute()
+    const openValves = transcriptionPolicy.ledger.openValves()
+    const warnings = micRunning ? micDiagnostics.evaluate({ loudClosedMs: silenceGate.getLoudClosedMs(), openValves }) : []
+    // One warn line per change of the warning set (not per second), so the log shows when a deaf-looking state began.
+    const warningKey = warnings.join(",")
+    if (warningKey !== activeMicWarnings) {
+      activeMicWarnings = warningKey
+      if (warnings.length > 0) {
+        logger.warn({ component: "app-core", event: "mic.warning", metadata: { warnings, openValves, dropsPerMinute: dropped } })
+      }
+    }
     wsServer.broadcast({
       id: generateUlid(),
       type: "mic:health",
       timestamp: Date.now(),
-      payload: { ...snapshot, autoGain: adaptiveGain.isEnabled() },
+      payload: {
+        ...snapshot,
+        autoGain: adaptiveGain.isEnabled(),
+        noiseMode: transcriptionPolicy.mode,
+        gateThreshold: Math.round(silenceGate.getEffectiveThreshold()),
+        noiseFloor: Math.round(silenceGate.getNoiseFloor()),
+        dropsPerMinute: { screen: dropped.screen, segment: dropped.segment, language: dropped.language, offLanguage: dropped["off-language"] },
+        warnings,
+      },
     })
+    // A reading taken while the mic is stopped (e.g. auto-gain toggled between
+    // sessions) is stale: it must not open a dropout or start an echo episode.
+    if (!micRunning) return
     // Section 132: this reading is also what the echo watch and the service
     // health log observe. Speech "at level" means speech heard and not too quiet.
-    const now = Date.now()
+    const now = clockNow()
     serviceHealth.observeMicState(now, snapshot.state)
     const mediaPlaying = isMediaAudible(mediaPlayback.currentPayloadForSync())
     const speechAtLevel = snapshot.speechDbfs !== null && snapshot.state !== "too-quiet" && snapshot.state !== "warming-up"
@@ -1404,7 +1786,87 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     syncEchoWarning(now)
   }
 
+  function reportMicStartFailure(error: unknown): void {
+    const reason = scrubSecrets(error instanceof Error ? error.message : String(error)).slice(0, 300) || "ASR start failed"
+    logger.error({ component: "app-core", event: "mic.start-failed", error: reason })
+    asrHasError = true
+    broadcastAsrStatus({ asrHealth: "error", error: reason, micCalibrating: false })
+    // Operator-only (not in the viewer allow-list): the dashboard reverts from "running" and shows why.
+    wsServer.broadcastToOperators({ id: generateUlid(), type: "mic:start-failed", timestamp: Date.now(), payload: { reason } })
+  }
+
+  // SF-08: the wall-clock side of mic health. Frames reset the watchdog; the timer notices their absence.
+  function startMicWatchdogTimer(): void {
+    stopMicWatchdogTimer()
+    micAudioWatchdog.start(clockNow())
+    const tick = (): void => {
+      if (micAudioWatchdog.tick(clockNow()) === "no-audio") onMicNoAudio()
+    }
+    micWatchdogTimer = timers.setInterval
+      ? timers.setInterval(tick, MIC_WATCHDOG_INTERVAL_MS)
+      : (() => {
+          const handle = setInterval(tick, MIC_WATCHDOG_INTERVAL_MS)
+          handle.unref?.()
+          return handle
+        })()
+  }
+
+  function stopMicWatchdogTimer(): void {
+    micAudioWatchdog.stop()
+    if (micWatchdogTimer === null) return
+    if (timers.clearInterval) timers.clearInterval(micWatchdogTimer)
+    else clearInterval(micWatchdogTimer as ReturnType<typeof setInterval>)
+    micWatchdogTimer = null
+  }
+
+  function onMicNoAudio(): void {
+    logger.warn({ component: "app-core", event: "mic.no-audio", metadata: { silentMs: micAudioWatchdog.silentForMs(clockNow()) } })
+    // Opens one dropout in the service-health report (observeMicState) and shows "no audio" instead of the stale last state.
+    broadcastMicHealth("no-audio")
+  }
+
+  function onMicAudioRecovered(): void {
+    logger.info({ component: "app-core", event: "mic.audio-resumed" })
+    // The old window describes the audio from before the gap: start measuring afresh. The fresh
+    // reading ("warming-up") also closes the open dropout.
+    micHealth.reset()
+    micHealthAudioMs = 0
+    broadcastMicHealth()
+  }
+
+  // Bound on audio frames awaiting the ASR provider. A stalled provider
+  // (429 chain, reconnect) must not grow an unbounded pile of pending
+  // promises and buffers (AGENTS.md sections 35-36).
+  const MAX_AUDIO_FRAMES_IN_FLIGHT = 64
+  let audioFramesInFlight = 0
+  let audioFramesDropped = 0
+
   async function handleAudioFrame(frame: AudioFrame): Promise<void> {
+    // Frames that arrive while no mic session is active (after mic:stop, or
+    // before mic:start) never reach the ASR.
+    if (!micSequenceSessionActive) return
+    if (micAudioWatchdog.frame(clockNow()) === "recovered") onMicAudioRecovered()
+    if (audioFramesInFlight >= MAX_AUDIO_FRAMES_IN_FLIGHT) {
+      audioFramesDropped += 1
+      if (audioFramesDropped === 1 || audioFramesDropped % 500 === 0) {
+        logger.warn({
+          component: "app-core",
+          event: "mic.audio-frame-dropped",
+          metadata: { reason: "asr-backpressure", dropped: audioFramesDropped, inFlight: audioFramesInFlight },
+        })
+      }
+      return
+    }
+    audioFramesInFlight += 1
+    try {
+      await processAudioFrame(frame)
+    } finally {
+      audioFramesInFlight -= 1
+    }
+  }
+
+  async function processAudioFrame(frame: AudioFrame): Promise<void> {
+    if (micSequenceSessionActive) observeAudioFrameSequence(frame.sequence)
     // ARCHITECTURE.md section 9 / AGENTS.md section 11: reduce unnecessary
     // ASR requests by not forwarding obvious silence. This must never
     // silently discard SPEECH without a trace, which is exactly why the
@@ -1412,7 +1874,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     // when the mic stops, below — an operator with a "nothing is being
     // detected" complaint can see whether frames were even reaching ASR.
     const wasCalibrating = silenceGate.isCalibrating()
-    const { forwarded, utteranceEnded, rms } = silenceGate.process(frame)
+    const { forwarded, utteranceEnded, rms, speech } = silenceGate.process(frame)
     // ARCHITECTURE.md section 76: the calibration-just-finished transition
     // is only observable here, as a side effect of process() — this is
     // the one place that can see it happen and tell the dashboard.
@@ -1428,11 +1890,17 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         micThreshold: silenceGate.getThreshold(),
       })
     }
-    const isSpeech = !silenceGate.isCalibrating() && rms >= silenceGate.getThreshold()
+    // The gate's own verdict on this frame (speech-band level against its effective, noise-floor-aware threshold).
+    const isSpeech = speech
     micHealth.observe(frame, rms, isSpeech)
     micHealthAudioMs += (frame.samples.length / frame.sampleRate) * 1000
     if (forwarded) {
-      await asr.sendAudio(adaptiveGain.process(frame, rms, isSpeech))
+      micDiagnostics.observeForwarded((frame.samples.length / frame.sampleRate) * 1000)
+      try {
+        await asr.sendAudio(adaptiveGain.process(frame, rms, isSpeech))
+      } catch (err) {
+        reportAudioFrameFailure(err)
+      }
     }
     if (micHealthAudioMs >= MIC_HEALTH_INTERVAL_MS) {
       micHealthAudioMs = 0
@@ -1442,7 +1910,11 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     if (utteranceEnded) {
       // The asr is typed as AsrProvider but we know it's GroqProvider with onUtteranceEnd
       if ("onUtteranceEnd" in asr && typeof asr.onUtteranceEnd === "function") {
-        await (asr as { onUtteranceEnd: () => Promise<void> }).onUtteranceEnd()
+        try {
+          await (asr as { onUtteranceEnd: () => Promise<void> }).onUtteranceEnd()
+        } catch (err) {
+          reportAudioFrameFailure(err)
+        }
       }
     }
   }
@@ -1450,11 +1922,96 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   // Section 131: coalescing state for verse:preview (see the case below).
   let previewRunning = false
   let previewQueued: WsMessage | null = null
+  // True between a successful mic:start and mic:stop. Gates the health and echo observers.
+  let micRunning = false
+  let micSequenceSessionActive = false
+  const audioFrameSequence = new AudioFrameSequenceTracker()
+  let micSessionId: string | null = null
+  let lastSequenceAnomalyLogTime = 0
+  let suppressedSequenceAnomalyLogs = 0
+
+  function observeAudioFrameSequence(sequence: number): void {
+    const observation = audioFrameSequence.observe(sequence)
+    if (observation.kind === "in-order") return
+
+    const now = Date.now()
+    if (now - lastSequenceAnomalyLogTime < 5000) {
+      suppressedSequenceAnomalyLogs = Math.min(Number.MAX_SAFE_INTEGER, suppressedSequenceAnomalyLogs + 1)
+      return
+    }
+    lastSequenceAnomalyLogTime = now
+    logger.warn({
+      component: "app-core",
+      event: "mic.audio-sequence-anomaly",
+      correlationId: micSessionId ?? undefined,
+      metadata: {
+        kind: observation.kind,
+        expectedSequence: observation.expectedSequence,
+        receivedSequence: observation.receivedSequence,
+        suppressedOccurrences: suppressedSequenceAnomalyLogs,
+        ...observation.stats,
+      },
+    })
+    suppressedSequenceAnomalyLogs = 0
+  }
 
   function takeQueuedPreview(): WsMessage | null {
     const queued = previewQueued
     previewQueued = null
     return queued
+  }
+
+  /** Tells operators (never viewers) that a verse:navigate put nothing on screen, so "Next verse" never silently does nothing. */
+  function reportNavigateFailure(direction: string, reason: "no-position" | "boundary" | "unavailable", correlationId?: string): void {
+    wsServer.broadcastToOperators({
+      id: generateUlid(),
+      type: "verse:navigate-result",
+      timestamp: Date.now(),
+      correlationId,
+      payload: { direction, reason },
+    })
+  }
+
+  // Bible Browser (audit-notes/bible-browser.md): read-only chapter text + word search for the
+  // dashboard. Never touches display state; operator connections only.
+  const bibleBrowser = createBibleBrowser({
+    index,
+    source,
+    verseCache: cache,
+    chapterCache: options.chapterCache ?? new ChapterCache(),
+    circuitBreaker,
+    logger,
+    translationId: () => translationIdFor(source) ?? "kjv",
+    normalizeBook: (raw) => resolveQuickBook(raw) ?? raw.trim().replace(/\s+/g, " ").toLowerCase(),
+    ...(options.bibleWordSearch ? { wordSearch: options.bibleWordSearch } : {}),
+    reply: (type, payload, correlationId) =>
+      wsServer.broadcastToOperators({ id: generateUlid(), type, timestamp: Date.now(), correlationId, payload }),
+  })
+
+  // Section 146 (frontend pass): the operator's TYPED range end ("Book
+  // C:V-E") becomes a DetectedVerseRange through the same guards as a
+  // detected spoken range (section 145's detectValidatedRanges): the START
+  // verse must already be confirmed by the known-valid index (the caller
+  // checks it), the end clamps down to the last CONTIGUOUS verse the index
+  // confirms, and MAX_RANGE_VERSES caps the span so one typed line can
+  // neither flood the overlay with a wall of text nor turn into an
+  // unbounded sequence of source reads. Returns null when what is left is
+  // the plain single verse — a malformed, reversed or fully-clamped end is
+  // never an error the operator must decode.
+  function operatorTypedRange(
+    typed: TypedVerseReference,
+    reference: VerseReference,
+    knownValid: VerseIndex
+  ): DetectedVerseRange | null {
+    const end = typed.verseEnd
+    if (typeof end !== "number" || !Number.isInteger(end) || end <= reference.verse) return null
+    let endVerse = Math.min(end, reference.verse + MAX_RANGE_VERSES - 1)
+    while (endVerse > reference.verse && !knownValid.exists({ book: reference.book, chapter: reference.chapter, verse: endVerse })) {
+      endVerse -= 1
+    }
+    return endVerse > reference.verse
+      ? { book: reference.book, chapter: reference.chapter, startVerse: reference.verse, endVerse }
+      : null
   }
 
   /**
@@ -1467,18 +2024,27 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
    * shown to the operator as "no such verse".
    */
   async function answerPreview(message: WsMessage): Promise<void> {
-    const { seq, reference: typed } = message.payload as { seq: number; reference: VerseReference }
+    const { seq, reference: typed } = message.payload as { seq: number; reference: TypedVerseReference }
     const reference: VerseReference = {
       ...typed,
       book: resolveQuickBook(typed.book) ?? typed.book.trim().replace(/\s+/g, " ").toLowerCase(),
     }
     let verse: Verse | null = null
     let reason: "not-found" | "unavailable" | undefined
+    let suggestions: VerseReference[] = []
     if (!index.exists(reference)) {
       reason = "not-found"
+      suggestions = suggestNearestReferences(reference, index)
     } else {
       try {
-        verse = await resolveVerse(reference, source, cache, circuitBreaker, translationIdFor(source), logger)
+        // Section 146: a typed range ("Jean 3:16-18") previews as the JOINED
+        // range verse — exactly what Show will put on screen — through the
+        // same guarded path (clamped, capped, known-valid) as a detected
+        // range. A single reference keeps the plain resolveVerse().
+        const range = operatorTypedRange(typed, reference, index)
+        verse = range
+          ? await resolveVerseRange(range, source, cache, circuitBreaker, translationIdFor(source), logger)
+          : await resolveVerse(reference, source, cache, circuitBreaker, translationIdFor(source), logger)
       } catch (err) {
         logger.warn({
           component: "app-core",
@@ -1494,13 +2060,50 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       type: "verse:preview-result",
       timestamp: Date.now(),
       correlationId: message.correlationId,
-      payload: { seq, reference: typed, verse, ...(reason !== undefined ? { reason } : {}) },
+      payload: {
+        seq,
+        reference: typed,
+        verse,
+        ...(reason !== undefined ? { reason } : {}),
+        ...(suggestions.length > 0 ? { suggestions } : {}),
+      },
     })
   }
 
+  // mic:start and mic:stop mutate shared session state across an await
+  // (asr.start / asr.stop). Run them strictly one after another so a stop
+  // that arrives while a start is pending cannot be overtaken (AGENTS.md
+  // section 49: server state is authoritative).
+  let micCommandChain: Promise<void> = Promise.resolve()
+  function runMicCommand(task: () => Promise<void>): Promise<void> {
+    const run = micCommandChain.then(task)
+    micCommandChain = run.catch(() => undefined)
+    return run
+  }
+
   async function handleCommand(message: WsMessage, role: WsRole): Promise<void> {
+    if (message.type === "mic:start" || message.type === "mic:stop") {
+      return runMicCommand(() => handleCommandUnserialized(message, role))
+    }
+    return handleCommandUnserialized(message, role)
+  }
+
+  async function handleCommandUnserialized(message: WsMessage, role: WsRole): Promise<void> {
     switch (message.type) {
       case "mic:start":
+        // SF-09: the dashboard re-sends mic:start on every WebSocket reconnect. Starting again
+        // while the mic is live recalibrated the silence gate on live speech (~1.5 s of speech
+        // lost) and restarted the ASR. Already running: change nothing, just resync the dashboard.
+        if (micRunning) {
+          logger.info({ component: "app-core", event: "mic.start-ignored", metadata: { reason: "already-running" } })
+          const calibrating = silenceGate.isCalibrating()
+          broadcastAsrStatus({
+            asrHealth: currentAsrHealth(),
+            micCalibrating: calibrating,
+            ...(calibrating ? {} : { micThreshold: silenceGate.getThreshold() }),
+          })
+          return
+        }
         // ARCHITECTURE.md section 76: a fresh threshold for THIS room,
         // right before THIS session, rather than one fixed global
         // constant guessed from a single past measurement (section
@@ -1509,21 +2112,59 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         // forwards nothing yet would otherwise look identical to the mic
         // simply not working, the exact complaint this whole feature
         // exists to prevent a repeat of.
+        silenceGate.resetMetrics() // per-session totals; the previous session's peak must not read as this one's
         silenceGate.startCalibration()
         adaptiveGain.reset()
         micHealth.reset()
         micHealthAudioMs = 0
+        micDiagnostics.reset()
+        audioFrameSequence.reset()
+        micSessionId = generateUlid()
+        lastSequenceAnomalyLogTime = 0
+        suppressedSequenceAnomalyLogs = 0
+        micSequenceSessionActive = true
         broadcastAsrStatus({ asrHealth: currentAsrHealth(), micCalibrating: true })
-        await asr.start()
+        try {
+          // TS-11: bounded, so a hung provider cannot park mic:stop behind this start on the serial chain.
+          await withTimeout(asr.start(), asrLifecycleTimeoutMs, "ASR start", timers)
+        } catch (error) {
+          // SF-06: the dashboard already shows "listening". Put the server back to "not running"
+          // and tell the operator why; the rethrow still logs command.failed.
+          micSequenceSessionActive = false
+          micRunning = false
+          stopMicWatchdogTimer()
+          // A start that merely timed out may still complete later: release whatever it opened.
+          withTimeout(asr.stop(), asrLifecycleTimeoutMs, "ASR stop", timers).catch(() => {})
+          reportMicStartFailure(error)
+          throw error
+        }
+        micRunning = true
+        startMicWatchdogTimer()
         logger.info({ component: "app-core", event: "mic.started" })
         return
 
       case "mic:stop":
         // Section 132: nothing is being heard any more; a warning must not outlive the mic.
+        micRunning = false
+        stopMicWatchdogTimer()
+        const endedMicSessionId = micSequenceSessionActive ? micSessionId : null
+        micSequenceSessionActive = false
         serviceHealth.closeMic(Date.now())
         echoWatch.reset()
         syncEchoWarning(Date.now())
-        await asr.stop()
+        if (endedMicSessionId !== null) {
+          logger.info({
+            component: "app-core",
+            event: "mic.audio-sequence-summary",
+            correlationId: endedMicSessionId,
+            metadata: {
+              ...audioFrameSequence.snapshot(),
+              suppressedAnomalyLogs: suppressedSequenceAnomalyLogs,
+            },
+          })
+          micSessionId = null
+        }
+        await withTimeout(asr.stop(), asrLifecycleTimeoutMs, "ASR stop", timers)
         logger.info({
           component: "app-core",
           event: "mic.stopped",
@@ -1533,7 +2174,11 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
 
       case "verse:clear":
         interpreterEchoGuard.forget()
+        dropSettleHold("operator-clear")
         supersedeInFlightDisplay()
+        // The operator cleared on purpose: a pending verse must not outlive that.
+        pendingVerse = null
+        suggestionArbiter.clearDetectedWaiting()
         broadcastVerseClear(message.correlationId)
         return
 
@@ -1543,9 +2188,10 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         // never trust the operator's typed reference just because a
         // human entered it. The payload is already schema-shaped by
         // validateWsMessage (book/chapter/verse types are correct), but
-        // shape isn't existence: it still goes through resolveVerse()
-        // exactly like a detected reference would.
-        const payload = message.payload as VerseReference
+        // shape isn't existence: it still goes through the guarded
+        // resolution path exactly like a detected reference — or, since
+        // section 146, a detected RANGE — would.
+        const payload = message.payload as TypedVerseReference
         // Same book-id normalization the detector applies (trim, collapse
         // whitespace, lowercase): a typed "John" must reach the source as
         // "john", or the exact-match French source returns null and
@@ -1566,12 +2212,54 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
             correlationId: message.correlationId,
             metadata: { reference: payload, reason: "unknown-reference" },
           })
+          reportLookup(reference, "invalid", "override")
+          return
+        }
+        // Section 146 (frontend pass): the operator may type a RANGE ("Jean
+        // 3:16-18"). It resolves through the SAME guarded path as a detected
+        // range (section 145) — clamped to contiguous known-valid verses,
+        // capped, resolved verse by verse through resolveVerseDetailed — so
+        // manual entry is never a second, weaker way to verse text.
+        const range = operatorTypedRange(payload, reference, index)
+        if (range) {
+          const ticket = beginDisplayIntent()
+          // resolveVerseRange reports every verse's failure through onLookup —
+          // the same SF-03 lookup report the single path gives.
+          const verse = await resolveVerseRange(
+            range,
+            source,
+            cache,
+            circuitBreaker,
+            translationIdFor(source),
+            logger,
+            (ref, failure) => reportLookup(ref, failure, "override"),
+          )
+          if (verse && isSupersededIntent(ticket)) {
+            dropStaleLookup("override", message.correlationId)
+            reportLookup(reference, "superseded", "override") // TS-05: the operator is told, not left waiting
+            return
+          }
+          if (verse) {
+            markIntentApplied(ticket)
+            broadcastVerse(verse, "override", message.correlationId)
+            logCorrectionCandidateIfRecentNearMiss(reference, message.correlationId)
+          } else {
+            logger.info({
+              component: "app-core",
+              event: "override.rejected",
+              correlationId: message.correlationId,
+              metadata: { reference, range },
+            })
+          }
           return
         }
         const ticket = beginDisplayIntent()
-        const verse = await resolveVerse(reference, source, cache, circuitBreaker, translationIdFor(source), logger)
+        const lookup = await resolveVerseDetailed(reference, source, cache, circuitBreaker, translationIdFor(source), logger)
+        reportLookup(reference, lookup.failure, "override")
+        const verse = lookup.verse
         if (verse && isSupersededIntent(ticket)) {
           dropStaleLookup("override", message.correlationId)
+          reportLookup(reference, "superseded", "override") // TS-05: the operator is told, not left waiting
           return
         }
         if (verse) {
@@ -1608,7 +2296,51 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
             next = takeQueuedPreview()
           }
         } finally {
+          // A throw mid-loop must not leave a superseded request queued for the next burst.
+          previewQueued = null
           previewRunning = false
+        }
+        return
+      }
+
+      case "bible:chapter":
+        return bibleBrowser.handleChapter(message)
+
+      case "bible:search":
+        return bibleBrowser.handleSearch(message)
+
+      case "verse:navigate": {
+        // Bible Browser (audit-notes/bible-browser.md): the operator's next/previous verse or
+        // chapter buttons. Resolved against the SERVER's own position (ARCHITECTURE.md section
+        // 61.4, the same function voice navigation uses), then the same resolveVerse() path and
+        // "navigation" trigger. With nothing on screen there is no position: a no-op, never a guess.
+        const { direction } = message.payload as { direction: "next-verse" | "previous-verse" | "next-chapter" | "previous-chapter" }
+        const resolution = resolveNavigationCommand({ kind: direction }, currentVersePosition, index)
+        if (resolution.kind !== "reference") {
+          logger.info({
+            component: "app-core",
+            event: "navigate.no-op",
+            correlationId: message.correlationId,
+            metadata: { direction, reason: resolution.kind === "no-op" ? resolution.reason : resolution.kind },
+          })
+          reportNavigateFailure(direction, resolution.kind === "no-op" && resolution.reason === "no_current_position" ? "no-position" : "boundary", message.correlationId)
+          return
+        }
+        const ticket = beginDisplayIntent()
+        const lookup = await resolveVerseDetailed(resolution.reference, source, cache, circuitBreaker, translationIdFor(source), logger)
+        reportLookup(resolution.reference, lookup.failure, "navigate")
+        const verse = lookup.verse
+        if (verse && isSupersededIntent(ticket)) {
+          dropStaleLookup("navigation", message.correlationId)
+          reportLookup(resolution.reference, "superseded", "navigate")
+          return
+        }
+        if (verse) {
+          markIntentApplied(ticket)
+          broadcastVerse(verse, "navigation", message.correlationId)
+        } else {
+          logger.warn({ component: "app-core", event: "navigate.rejected", correlationId: message.correlationId, metadata: { reference: resolution.reference } })
+          reportNavigateFailure(direction, "unavailable", message.correlationId)
         }
         return
       }
@@ -1619,7 +2351,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         // trigger kind of its own — confirmation is how review mode
         // delivers a detection, not a different way a verse got there.
         if (pendingVerse) {
-          const { origin: _origin, suggestedBy: _suggestedBy, alternatives: _alternatives, ...verse } = pendingVerse as Verse & { origin?: string; suggestedBy?: string; alternatives?: unknown }
+          const { origin: _origin, suggestedBy: _suggestedBy, alternatives: _alternatives, heard: _heard, ...verse } = pendingVerse as Verse & { origin?: string; suggestedBy?: string; alternatives?: unknown; heard?: string }
           pendingVerse = null
           broadcastVerse(verse, "detected", message.correlationId)
         } else {
@@ -1627,6 +2359,27 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         }
         return
       }
+
+      case "verse:dismiss-pending": {
+        if (pendingVerse) {
+          logger.info({
+            component: "app-core",
+            event: "verse.pending-dismissed",
+            correlationId: message.correlationId,
+            metadata: { reference: pendingVerse.reference },
+          })
+          pendingVerse = null
+        }
+        return
+      }
+
+      case "outline:show":
+        broadcastOutline(message.payload as OutlineShowPayload, message.correlationId)
+        return
+
+      case "outline:clear":
+        clearOutline(message.correlationId)
+        return
 
       case "poster:set": {
         if (!mediaLibrary) {
@@ -1684,6 +2437,17 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         verseLayout = layout
         onVerseLayoutChanged?.(layout)
         broadcastLayout(message.correlationId)
+        return
+      }
+
+      case "asr:noise-mode": {
+        const { mode } = message.payload as { mode: unknown }
+        if (!isNoiseMode(mode)) return // the registry validates; this keeps the type honest
+        transcriptionPolicy.set(mode)
+        silenceGate.setNoiseMode(mode)
+        options.onNoiseModeChanged?.(mode)
+        logger.info({ component: "app-core", event: "asr.noise-mode", correlationId: message.correlationId, metadata: { mode } })
+        broadcastMicHealth()
         return
       }
 
@@ -1922,7 +2686,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     const to = from === "fr" ? "en" : "fr"
     const text = await liveTranslator.translate(transcript.text, from, to)
     if (!text) return
-    wsServer.broadcast({
+    wsServer.broadcastToOperators({
       id: generateUlid(),
       type: "translation:final",
       timestamp: Date.now(),
@@ -1947,7 +2711,18 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     broadcastPendingVerse({ ...verse, origin: "quote" } as Verse, transcript.correlationId)
   }
 
-  async function handleNavigationCommands(transcript: TranscriptResult): Promise<void> {
+  /** A bare verse prefers a fresh announced chapter over the last displayed position. */
+  function announcedChapterFor(command: { readonly kind: string }): typeof announcedChapter {
+    if (command.kind === "goto-bare-verse" && announcedChapter !== null && Date.now() - announcedChapter.at <= ANNOUNCED_CHAPTER_TTL_MS) {
+      return announcedChapter
+    }
+    return null
+  }
+
+  async function handleNavigationCommands(
+    transcript: TranscriptResult,
+    opts: { readonly onlyCommand?: NavigationCommand; readonly settled?: boolean } = {},
+  ): Promise<void> {
     // An explicit, valid reference in the same utterance ("Romains 8 v. 28",
     // "Psaume 23 verset 1") is already being shown by the detection path.
     // Relative navigation parsed from the same words ("verset 28") would be
@@ -1965,8 +2740,16 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     const hasExplicitReference =
       detector.detect(transcript.text).some((reference) => index.exists(reference)) ||
       volumeTexts.some((text) => text !== null && detector.detect(text).some((reference) => index.exists(reference)))
-    for (const command of navigationCommandDetector.detect(transcript.text)) {
-      if (hasExplicitReference && command.kind !== "goto-display-mode" && command.kind !== "cancel") {
+    // "Dans Esaïe 4, le verset 8": the chapter named in the sentence is the context for its bare verse.
+    // (An explicit, valid reference is shown by the detection path, which resets the context itself.)
+    if (!hasExplicitReference) {
+      const announced = extractAnnouncedChapter(transcript.text)
+      if (announced) {
+        announcedChapter = { reference: { book: announced.book, chapter: announced.chapter, verse: 1 }, at: Date.now() }
+      }
+    }
+    for (const command of opts.onlyCommand ? [opts.onlyCommand] : navigationCommandDetector.detect(transcript.text)) {
+      if (hasExplicitReference && !opts.onlyCommand && command.kind !== "goto-display-mode" && command.kind !== "cancel") {
         logger.debug({
           component: "app-core",
           event: "navigation.superseded-by-explicit-reference",
@@ -1994,7 +2777,9 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         continue
       }
 
-      const resolution = resolveNavigationCommand(command, currentVersePosition, index)
+      const chapterContext = announcedChapterFor(command)
+      const position = chapterContext?.reference ?? currentVersePosition
+      const resolution = resolveNavigationCommand(command, position, index)
 
       if (resolution.kind === "cancel") {
         supersedeInFlightDisplay()
@@ -2003,7 +2788,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       }
       if (resolution.kind === "no-op") {
         const contextless =
-          currentVersePosition === null &&
+          position === null &&
           (command.kind === "goto-bare-verse" || command.kind === "goto-bare-chapter-verse")
         logger[contextless ? "debug" : "warn"]({
           component: "app-core",
@@ -2014,26 +2799,34 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         continue
       }
 
-      // TASK 5: if this was a fallback (out-of-range chapter), broadcast a
-      // warning so the dashboard can surface it. The reference is valid (last
-      // chapter of the book) so we proceed to resolveVerse() normally.
-      if (resolution.fallback) {
-        logger.warn({
-          component: "app-core",
-          event: "navigation.fallback",
-          correlationId: transcript.correlationId,
-          metadata: { originalCommand: command, fallbackReference: resolution.reference },
-        })
-      }
+      // A number the ASR may still be completing ("verset 1" | "2") waits for the settle window first.
+      const settleable = command.kind === "goto-chapter" || command.kind === "goto-bare-verse" || command.kind === "goto-bare-chapter-verse"
+      if (settleable && !opts.settled && holdNavigationIfGrowing(command, transcript, resolution.reference)) continue
 
       // Still the full resolveVerse() pipeline (cache -> circuit breaker ->
       // source), not just the index.exists() check resolveNavigationCommand
       // already did — existence isn't the same as having real verse text
       // to display (invariant 17).
       const ticket = beginDisplayIntent()
-      const verse = await resolveVerse(resolution.reference, source, cache, circuitBreaker, translationIdFor(source), logger)
+      const lookup = await resolveVerseDetailed(resolution.reference, source, cache, circuitBreaker, translationIdFor(source), logger)
+      reportLookup(resolution.reference, lookup.failure, "navigate")
+      const verse = lookup.verse
+      if (verse && command.kind === "goto-chapter") {
+        // "In John 11 we read ..." names a chapter, not a verse: verse 1 was never spoken, so it is only
+        // ever OFFERED (the operator approves it), never put on the overlay by itself. The chapter
+        // becomes the context a following bare "verse N" resolves against.
+        announcedChapter = { reference: resolution.reference, at: Date.now() }
+        suggestionArbiter.noteDetectedWaiting()
+        broadcastPendingVerse({ ...verse, heard: heardSnippet(transcript.text) } as Verse, transcript.correlationId)
+        continue
+      }
       if (verse && isSupersededIntent(ticket)) {
         dropStaleLookup("navigation", transcript.correlationId)
+        continue
+      }
+      if (verse && command.kind === "goto-bare-verse" && chapterContext !== null) {
+        suggestionArbiter.noteDetectedWaiting()
+        broadcastPendingVerse({ ...verse, heard: heardSnippet(transcript.text) } as Verse, transcript.correlationId)
         continue
       }
       if (verse) {
@@ -2047,7 +2840,22 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   const OFF_LANGUAGE_WARN_AFTER = 5
   let consecutiveOffLanguageDrops = 0
 
-  asr.onTranscript((transcript) => {
+  // AUDIT TS-06: one malformed transcript must never throw out of the provider callback.
+  asr.onTranscript((incoming) => {
+    try {
+      handleAsrTranscript(incoming)
+    } catch (err) {
+      logger.error({
+        component: "app-core",
+        event: "transcript.handler-failed",
+        correlationId: incoming.correlationId,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
+  })
+
+  function handleAsrTranscript(transcript: TranscriptResult): void {
+    micDiagnostics.observeTranscript() // the provider is alive, whatever the guards below decide
     // French and English only (ARCHITECTURE.md section 129): an engine that
     // hallucinates Hindi/Urdu/etc. over noise or silence must never reach a
     // detector or the dashboard.
@@ -2062,17 +2870,20 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         : null
     if (offLanguage !== null) {
       serviceHealth.recordDrop(Date.now(), offLanguage, transcript.text)
+      const offNote = transcriptionPolicy.ledger.record("language", offLanguage)
       consecutiveOffLanguageDrops += 1
       // Debug for the first few; a run of drops means the mic is live but
       // nothing is being kept, which the operator must be able to see.
       const loud = consecutiveOffLanguageDrops === OFF_LANGUAGE_WARN_AFTER
-      logger[loud ? "warn" : "debug"]({
-        component: "asr",
-        event: `asr.${offLanguage}-dropped`,
-        correlationId: transcript.correlationId,
-        sequence: transcript.sequence,
-        metadata: { textPreview: transcript.text.slice(0, 40), consecutive: consecutiveOffLanguageDrops },
-      })
+      if (loud || offNote.log) {
+        logger[loud ? "warn" : "info"]({
+          component: "asr",
+          event: `asr.${offLanguage}-dropped`,
+          correlationId: transcript.correlationId,
+          sequence: transcript.sequence,
+          metadata: { textPreview: transcript.text.slice(0, 40), consecutive: consecutiveOffLanguageDrops, suppressed: offNote.suppressed },
+        })
+      }
       return
     }
     consecutiveOffLanguageDrops = 0
@@ -2163,16 +2974,41 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     // broadcast, no detection, as if nothing was heard — but still logged
     // at debug level first, so it's diagnosable, never silently invisible
     // (AGENTS.md section 11).
-    const hallucinationCheck = detectHallucination(transcript.text)
-    if (hallucinationCheck.isHallucination) {
-      logger.debug({
+    // screenTranscript() = detectHallucination() plus the noise/tongues layer
+    // (credits anywhere in the text, music symbols, syllable loops, share of
+    // real French/English words by the operator's noise mode).
+    const hallucinationCheck = screenTranscript(transcript.text, { state: transcript.state, mode: transcriptionPolicy.mode })
+    if (!hallucinationCheck.ok) {
+      screenDropCounts[hallucinationCheck.reason] = (screenDropCounts[hallucinationCheck.reason] ?? 0) + 1
+      // Counted for the operator's mic panel; the log line is info (not debug) but rate-limited so it cannot flood.
+      const note = transcriptionPolicy.ledger.record("screen", hallucinationCheck.reason)
+      if (note.log) {
+        logger.info({
+          component: "asr",
+          event: "transcript.hallucination-dropped",
+          correlationId: transcript.correlationId,
+          sequence: transcript.sequence,
+          metadata: {
+            reason: hallucinationCheck.reason,
+            mode: transcriptionPolicy.mode,
+            total: note.total,
+            suppressed: note.suppressed,
+            textPreview,
+          },
+        })
+      }
+      return
+    }
+    if (hallucinationCheck.cleaned !== undefined) {
+      // A credit clause or a music symbol was cut out of text that also held speech: continue with the rest.
+      logger.info({
         component: "asr",
-        event: "transcript.hallucination-dropped",
+        event: "transcript.screen-stripped",
         correlationId: transcript.correlationId,
         sequence: transcript.sequence,
-        metadata: { reason: hallucinationCheck.reason, textPreview },
+        metadata: { before: transcript.text.length, after: hallucinationCheck.cleaned.length },
       })
-      return
+      transcript = { ...transcript, text: hallucinationCheck.cleaned }
     }
     // ARCHITECTURE.md section 70: a production audit found that every
     // transcript was consumed internally (verse detection, media/glossary/
@@ -2182,7 +3018,8 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     // what was actually transcribed. Broadcast first, before any of the
     // async work below, so this is the fastest possible signal back to
     // the operator, not something waiting behind verse resolution.
-    wsServer.broadcast({
+    // S-01: the raw microphone transcript goes to operator pages only, never to viewer-token clients.
+    wsServer.broadcastToOperators({
       id: generateUlid(),
       type: transcript.state === "partial" ? "transcript:partial" : "transcript:final",
       timestamp: Date.now(),
@@ -2207,37 +3044,34 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       asrRateLimitedSustained = false
       broadcastAsrStatus({ asrHealth: "ok" })
     }
-    const detectionTicket = beginDisplayIntent()
-    resolveTranscriptVerses(transcript, detector, index, source, cache, circuitBreaker, logger)
-      .then(async (verses) => {
-        if (verses.length > 0 && isSupersededIntent(detectionTicket)) {
-          dropStaleLookup("detection", transcript.correlationId)
-          return
-        }
-        if (verses.length > 0) markIntentApplied(detectionTicket)
-        deliverDetectedVerses(verses, transcript)
-        if (verses.length === 0) await inferVolumeVerses(transcript.text, transcript)
-      })
-      .catch((err) => {
-        logger.error({
-          component: "app-core",
-          event: "transcript.pipeline-failed",
-          correlationId: transcript.correlationId,
-          error: err instanceof Error ? err.message : String(err),
-        })
-      })
+    // A final that only completes a number the previous final left open ("verse 1" | "2") is merged
+    // into it BEFORE anything is resolved, so the truncated verse never reaches the overlay.
+    const merge = transcript.state === "final" ? mergeIntoSettleHold(transcript) : null
+    if (transcript.state === "final" && merge === null) flushSettleHold()
+    const mergedTranscript = merge?.transcript ?? null
+    submitDetection({ detect: mergedTranscript ?? transcript, deliver: mergedTranscript ?? transcript, kind: "detection" })
 
-    if (transcript.state === "final") {
-      const currentHasReference = detector.detect(transcript.text).length > 0
-      if (currentHasReference) {
-        // This transcript already contains a complete, standalone
-        // reference — the primary detection path above already handles
-        // it. Reset rather than push: leaving an already-complete
-        // fragment in the assembler's window let a later, unrelated
-        // transcript recombine with it and re-detect the SAME reference
-        // a second time (a real regression — e.g. "next verse" spoken
-        // right after a detected reference recombined with it and
-        // re-showed the OLD verse instead of advancing to the next one).
+    if (mergedTranscript !== null) {
+      // The assembler must not re-join "verse 1" + "2" into a second, truncated detection.
+      transcriptAssembler.reset()
+    } else if (transcript.state === "final") {
+      // Innovation pass (section 145): a detected RANGE is a complete
+      // reference too — a range-tailed line must reset the assembler like
+      // any single-reference line, never sit in the fragment window waiting
+      // to be merged into the next sentence.
+      const currentHasReference =
+        detector.detect(transcript.text).length > 0 ||
+        (rangeDetector?.detectRanges(transcript.text).length ?? 0) > 0
+      const continuesAnnouncedChapter =
+        announcedChapter !== null &&
+        Date.now() - announcedChapter.at <= ANNOUNCED_CHAPTER_TTL_MS &&
+        navigationCommandDetector.detect(transcript.text).some((command) => command.kind === "goto-bare-verse")
+      if (currentHasReference || continuesAnnouncedChapter) {
+        // Reset complete references to prevent later transcript fragments
+        // from re-detecting them. A bare verse following a finalized chapter
+        // announcement also resets the assembler: AppCore resolves that
+        // continuation against the retained chapter and offers it for
+        // approval, rather than auto-detecting an assembled reference.
         transcriptAssembler.reset()
       } else {
         const assembledText = transcriptAssembler.push({
@@ -2246,25 +3080,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         })
         if (assembledText && assembledText !== transcript.text && assembledText !== lastAssembledText) {
           lastAssembledText = assembledText
-          resolveTranscriptVerses(
-            { ...transcript, text: assembledText },
-            detector,
-            index,
-            source,
-            cache,
-            circuitBreaker,
-            logger,
-          )
-            .then(async (verses) => {
-              deliverDetectedVerses(verses, transcript)
-              if (verses.length === 0) await inferVolumeVerses(assembledText, transcript)
-            })
-            .catch((err) => logger.error({
-              component: "app-core",
-              event: "transcript.assembly-failed",
-              correlationId: transcript.correlationId,
-              error: err instanceof Error ? err.message : String(err),
-            }))
+          submitDetection({ detect: { ...transcript, text: assembledText }, deliver: transcript, kind: "assembled-detection" })
         }
       }
     }
@@ -2302,7 +3118,12 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         correlationId: transcript.correlationId,
         metadata: { text: transcript.text },
       })
-      recordAndBroadcastNearMiss(transcript.text, transcript.correlationId)
+      // A reference the detector heard but the index rejected (Isaiah 4:8) offers its nearest valid
+      // verse as an operator button, never as something shown on its own.
+      const nearestSuggestions = detectorRefs
+        .flatMap((reference) => suggestNearestReferences(reference, index))
+        .slice(0, 3)
+      recordAndBroadcastNearMiss(transcript.text, transcript.correlationId, nearestSuggestions)
       suggestRepairedVerse(transcript).catch((err) => logger.warn({
         component: "app-core",
         event: "ai.repair-failed",
@@ -2339,7 +3160,9 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     // instead of either. Gated by the same transcript rule (invariant 18):
     // partial transcripts never reach NavigationCommandDetector.
     if (passesTranscriptGate(transcript)) {
-      handleNavigationCommands(transcript).catch((err) => {
+      // A held navigation completed by this fragment is navigated once, as merged.
+      const navMerged = merge?.heldKind === "navigation"
+      handleNavigationCommands(navMerged ? mergedTranscript ?? transcript : transcript, { settled: navMerged }).catch((err) => {
         logger.error({
           component: "app-core",
           event: "navigation.failed",
@@ -2386,7 +3209,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     if (sermonNotesGenerator && sermonNotesEnabled && passesTranscriptGate(transcript)) {
       sermonNotesBuffer += (sermonNotesBuffer ? " " : "") + transcript.text
     }
-  })
+  }
 
   asr.onError?.((err) => {
     logger.error({ component: "asr", event: "transcript.failed", error: err.message })
@@ -2465,6 +3288,9 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     getSessionEntries() {
       return sessionRecorder.getEntries()
     },
+    getSessionTranscriptMarkdown() {
+      return sessionRecorder.exportMarkdown()
+    },
     getServiceHealth() {
       return serviceHealth.snapshot()
     },
@@ -2483,6 +3309,12 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     },
     getPipelineLatency() {
       return pipelineLatency.snapshot()
+    },
+    getWsClientLatency() {
+      // Plain-data snapshot owned by the WS server (roles labeled, no
+      // socket references), safe to cross the Electron IPC boundary to
+      // the dashboard.
+      return wsServer.getClientLatency()
     },
     importSermonPrep(text: unknown) {
       const outcome = parseSermonPrep(text, index)
@@ -2517,7 +3349,9 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     async stop() {
       stopped = true
       if (definitionClearTimer) clearTimeout(definitionClearTimer)
+      if (outlineClearTimer) clearTimeout(outlineClearTimer)
       if (sermonNotesTimer) clearInterval(sermonNotesTimer)
+      stopMicWatchdogTimer()
       aiSuggestions?.stop()
       // ARCHITECTURE.md section 82.1: verseAutoClearMs went from a
       // narrow, poster-gated condition (rarely armed in tests) to firing
@@ -2530,6 +3364,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       if (verseAutoClearTimer) clearTimeout(verseAutoClearTimer)
       if (posterAutoClearTimer) clearTimeout(posterAutoClearTimer)
       if (mediaAutoClearTimer) clearTimeout(mediaAutoClearTimer)
+      dropSettleHold("stop")
       await asr.stop().catch((error: unknown) => {
         // Shutdown must continue, but a provider that failed to stop may leak a socket or process.
         logger.warn({

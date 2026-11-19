@@ -27,9 +27,13 @@ export type WhisperServerOptions = {
   readonly readyTimeoutMs?: number
   /** How long the post-wake /health check may take before the engine counts as hung. */
   readonly resumeHealthTimeoutMs?: number
+  /** SF-22: called once when automatic restarts are exhausted, so the dashboard stops advertising a dead backup. */
+  readonly onRestartAbandoned?: (info: { readonly attempts: number }) => void
 }
 
 const MAX_RESTART_DELAY_MS = 30_000
+/** Consecutive failed restarts before giving up loudly (~2 min of backoff at the cap). */
+const MAX_RESTART_ATTEMPTS = 8
 const RESUME_HEALTH_TIMEOUT_MS = 3_000
 /** Drivers and the network stack settle for a moment after wake (OpenWhispr waits too before re-warming). */
 export const RESUME_SETTLE_DELAY_MS = 2_000
@@ -76,6 +80,22 @@ export function watchSystemResume(
   }
 }
 
+/**
+ * How many threads the engine uses. Whisper's per-request cost is fixed (it
+ * encodes a whole 30 s window), so threads decide how much of the computer a
+ * decode takes. Measured on a 4-core/8-thread laptop (ARCHITECTURE.md section
+ * 139): 7 threads used ~72% of the machine while decoding, 4 threads ~28-37%.
+ * The engine runs next to OBS, NDI and the dashboard, so it takes half the
+ * logical cores (never fewer than 2 or more than 8; more threads scale poorly
+ * on a CPU). The old fallback default of cpus - 1 (~72% of the machine while
+ * decoding) starved the stream just when the cloud was down. Callers can still
+ * override it through WhisperServerOptions.threads.
+ */
+export function localEngineThreads(cpuCount: number): number {
+  const cores = Number.isFinite(cpuCount) ? Math.max(1, Math.floor(cpuCount)) : 1
+  return Math.max(2, Math.min(8, Math.floor(cores / 2)))
+}
+
 export class WhisperServerProcess {
   private readonly options: WhisperServerOptions
   private readonly spawnImpl: typeof spawn
@@ -85,6 +105,7 @@ export class WhisperServerProcess {
   private starting: Promise<void> | null = null
   private stopped = true
   private restartAttempts = 0
+  private restartTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(options: WhisperServerOptions) {
     this.options = options
@@ -110,6 +131,8 @@ export class WhisperServerProcess {
 
   async stop(): Promise<void> {
     this.stopped = true
+    if (this.restartTimer) clearTimeout(this.restartTimer)
+    this.restartTimer = null
     const child = this.child
     this.child = null
     this.port = 0
@@ -169,7 +192,7 @@ export class WhisperServerProcess {
 
   private async launch(): Promise<void> {
     const port = await freePort()
-    const threads = this.options.threads ?? Math.max(2, Math.min(8, cpus().length - 1))
+    const threads = this.options.threads ?? localEngineThreads(cpus().length)
     const args = this.options.buildArgs ? this.options.buildArgs(port, threads) : [
       "-m", this.options.modelPath,
       "--host", "127.0.0.1",
@@ -193,6 +216,21 @@ export class WhisperServerProcess {
     this.lowerPriority(child)
     this.child = child
     this.port = port
+    // SF-13: a failed spawn (missing/blocked executable, antivirus) emits
+    // "error". Without a listener that is an uncaught exception in main.
+    // Treat it like an exit: log, detach (waitUntilReady then fails the start)
+    // and let the bounded restart schedule decide.
+    child.once("error", (error) => {
+      if (this.child !== child) return
+      this.child = null
+      this.port = 0
+      this.options.logger?.error({
+        component: "asr",
+        event: "local-whisper.spawn-failed",
+        error: error instanceof Error ? error.message : String(error),
+      })
+      if (!this.stopped) this.scheduleRestart()
+    })
     child.once("exit", (code) => {
       if (this.child !== child) return
       this.child = null
@@ -230,12 +268,39 @@ export class WhisperServerProcess {
     }
   }
 
+  /**
+   * Schedules one bounded, backoff-aware restart. A pending timer absorbs
+   * duplicate calls (the exit handler and a failed launch can both ask). A
+   * failed restart is logged and rescheduled until MAX_RESTART_ATTEMPTS, so
+   * the offline engine never dies silently (AGENTS.md section 37, 46).
+   */
   private scheduleRestart(): void {
+    if (this.restartTimer || this.stopped) return
+    if (this.restartAttempts >= MAX_RESTART_ATTEMPTS) {
+      this.options.logger?.error({
+        component: "asr",
+        event: "local-whisper.restart-abandoned",
+        metadata: { attempts: this.restartAttempts },
+      })
+      this.options.onRestartAbandoned?.({ attempts: this.restartAttempts })
+      return
+    }
     const delay = Math.min(1000 * 2 ** this.restartAttempts, MAX_RESTART_DELAY_MS)
     this.restartAttempts += 1
-    setTimeout(() => {
-      if (!this.stopped) this.ensureStarted().catch(() => {})
-    }, delay).unref?.()
+    this.restartTimer = setTimeout(() => {
+      this.restartTimer = null
+      if (this.stopped) return
+      this.ensureStarted().catch((error: unknown) => {
+        this.options.logger?.error({
+          component: "asr",
+          event: "local-whisper.restart-failed",
+          metadata: { attempt: this.restartAttempts },
+          error: error instanceof Error ? error.message : String(error),
+        })
+        this.scheduleRestart()
+      })
+    }, delay)
+    this.restartTimer.unref?.()
   }
 
   private async waitUntilReady(child: ChildProcess, stderr: () => string): Promise<void> {

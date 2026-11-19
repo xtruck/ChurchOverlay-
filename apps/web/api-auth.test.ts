@@ -3,7 +3,14 @@ import assert from "node:assert/strict"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import express from "express"
-import { installApiGuard, isLoopbackHost, resolveWebHost, validateConfiguredTokens, MIN_CONFIGURED_TOKEN_LENGTH } from "./api-auth"
+import {
+  createApiRateLimiter,
+  installApiGuard,
+  isLoopbackHost,
+  resolveWebHost,
+  validateConfiguredTokens,
+  MIN_CONFIGURED_TOKEN_LENGTH,
+} from "./api-auth"
 
 const OPERATOR_TOKEN = "operator-secret-token-0123456789"
 
@@ -124,4 +131,120 @@ test("validateConfiguredTokens: a short token is rejected, naming the variable",
 test("validateConfiguredTokens: identical operator and viewer tokens are rejected (viewer pages would get operator rights)", () => {
   const same = "x".repeat(32)
   assert.match(validateConfiguredTokens(same, same) ?? "", /must differ/)
+})
+
+// S-03: the /api rate limiter. Loopback (the server's own machine) is
+// exempt — these middleware unit tests fake a NON-loopback socket address
+// so the sliding-window logic is exercised deterministically, then a real
+// loopback server proves the exemption end to end.
+type FakeReq = { socket: { remoteAddress: string | undefined } }
+type FakeRes = {
+  statusCode: number
+  headers: Record<string, string>
+  body: unknown
+  setHeader(name: string, value: string): void
+  status(code: number): FakeRes
+  json(payload: unknown): void
+}
+
+function fakePair(address: string | undefined): { req: FakeReq; res: FakeRes; nexted: string[] } {
+  const nexted: string[] = []
+  const res: FakeRes = {
+    statusCode: 0,
+    headers: {},
+    body: undefined,
+    setHeader(name, value) {
+      res.headers[name] = value
+    },
+    status(code) {
+      res.statusCode = code
+      return res
+    },
+    json(payload) {
+      res.body = payload
+    },
+  }
+  return { req: { socket: { remoteAddress: address } }, res, nexted }
+}
+
+test("createApiRateLimiter: requests up to the limit pass, the next one gets 429 + Retry-After", () => {
+  const limiter = createApiRateLimiter({ maxRequestsPerWindow: 3 })
+  let passed = 0
+  for (let i = 0; i < 3; i++) {
+    const { req, res } = fakePair("203.0.113.10")
+    limiter(req as never, res as never, () => passed++)
+  }
+  assert.equal(passed, 3)
+  const { req, res } = fakePair("203.0.113.10")
+  limiter(req as never, res as never, () => assert.fail("must not pass the limit"))
+  assert.equal(res.statusCode, 429)
+  assert.ok(Number(res.headers["Retry-After"]) > 0)
+  assert.deepEqual(res.body, { error: "Too many requests" })
+})
+
+test("createApiRateLimiter: the window slides — after it elapses the address is allowed again", () => {
+  const limiter = createApiRateLimiter({ maxRequestsPerWindow: 1, windowMs: 50 })
+  const first = fakePair("198.51.100.7")
+  limiter(first.req as never, first.res as never, () => undefined)
+  const second = fakePair("198.51.100.7")
+  limiter(second.req as never, second.res as never, () => assert.fail("must be limited"))
+  assert.equal(second.res.statusCode, 429)
+  // The sliding window uses Date.now(); a 50 ms window is deterministic
+  // enough for a single retry boundary check with a small sleep.
+  return new Promise<void>((resolve) => {
+    setTimeout(() => {
+      const third = fakePair("198.51.100.7")
+      limiter(third.req as never, third.res as never, () => undefined)
+      assert.equal(third.res.statusCode, 0, "the window must have slid open again")
+      resolve()
+    }, 60)
+  })
+})
+
+test("createApiRateLimiter: loopback is exempt and IPv4-mapped IPv6 flooders share one bucket", () => {
+  const limiter = createApiRateLimiter({ maxRequestsPerWindow: 1 })
+  for (let i = 0; i < 20; i++) {
+    const loop = fakePair("127.0.0.1")
+    limiter(loop.req as never, loop.res as never, () => undefined)
+    assert.equal(loop.res.statusCode, 0)
+  }
+  const first = fakePair("203.0.113.10")
+  limiter(first.req as never, first.res as never, () => undefined)
+  const mapped = fakePair("::ffff:203.0.113.10")
+  limiter(mapped.req as never, mapped.res as never, () => assert.fail("mapped IPv6 must share the IPv4 bucket"))
+  assert.equal(mapped.res.statusCode, 429)
+})
+
+test("createApiRateLimiter: maxRequestsPerWindow 0 disables it, distinct addresses are independent", () => {
+  const disabled = createApiRateLimiter({ maxRequestsPerWindow: 0 })
+  let passed = 0
+  for (let i = 0; i < 30; i++) {
+    const { req, res } = fakePair("203.0.113.10")
+    disabled(req as never, res as never, () => passed++)
+  }
+  assert.equal(passed, 30)
+
+  const limiter = createApiRateLimiter({ maxRequestsPerWindow: 1 })
+  const a = fakePair("203.0.113.10")
+  limiter(a.req as never, a.res as never, () => undefined)
+  const b = fakePair("203.0.113.11")
+  limiter(b.req as never, b.res as never, () => undefined)
+  assert.equal(b.res.statusCode, 0, "another client must not be limited by the first one")
+})
+
+test("installApiGuard: loopback /api callers are never rate limited (the app's own dashboard traffic)", async () => {
+  const app = express()
+  installApiGuard(app, OPERATOR_TOKEN, "1kb", { maxRequestsPerWindow: 1 })
+  app.get("/api/status", (_req, res) => res.json({ ok: true }))
+  const server = createServer(app)
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  try {
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+    for (let i = 0; i < 5; i++) {
+      const res = await fetch(`${base}/api/status`, { headers: { Authorization: `Bearer ${OPERATOR_TOKEN}` } })
+      assert.equal(res.status, 200, `loopback request ${i} must not be limited`)
+    }
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
 })

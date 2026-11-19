@@ -4,6 +4,7 @@ import { WebSocket } from "ws"
 import { ChurchOverlayWsServer } from "./server"
 import { encodeAudioFrame } from "../../../packages/shared/audio-frame-codec"
 import type { AudioFrame, WsMessage, WsRole } from "../../../packages/contracts"
+import type { HandshakeRateLimitOptions } from "./handshake-rate-limiter"
 
 const TOKENS = { operatorToken: "op-secret-token", viewerToken: "viewer-secret-token" }
 
@@ -24,6 +25,10 @@ async function startServer(
     maxBufferedBytes: number
     maxConnections: number
     maxCommandsPerSecond: number
+    reservedOperatorSlots: number
+    handshakeRateLimit: HandshakeRateLimitOptions
+    wsLatencySampleIntervalMs: number
+    wsLatencyCapacity: number
   }> = {}
 ): Promise<ChurchOverlayWsServer> {
   const server = new ChurchOverlayWsServer({ port: 0, tokens: TOKENS, ...overrides })
@@ -132,6 +137,37 @@ test("ChurchOverlayWsServer: a valid operator token connects and a valid command
 
     assert.equal(received[0]?.role, "operator")
     assert.equal(received[0]?.message.type, "mic:start")
+    socket.close()
+  } finally {
+    await server.close()
+  }
+})
+
+// CORRECTIF-guard (2026-11-15): broadcastWhere() now encodes its payload once
+// as a Buffer and sends it with { binary: false }. This pins the protocol
+// contract that change relies on: the frame must stay a TEXT frame, so every
+// browser page's JSON.parse(event.data) keeps working regardless of payload
+// encoding.
+test("ChurchOverlayWsServer: broadcasts arrive as TEXT frames (string payloads), never binary", async () => {
+  const server = await startServer()
+  try {
+    const socket = await connect(server.port, TOKENS.operatorToken)
+    const received: Array<{ data: unknown; isBinary: boolean }> = []
+    socket.on("message", (data, isBinary) => received.push({ data, isBinary }))
+    const message: WsMessage = {
+      id: "01TEXTFRAME",
+      type: "status:update",
+      timestamp: Date.now(),
+      payload: { ok: true },
+    }
+    server.broadcast(message)
+    await waitFor(() => received.length === 1)
+    assert.equal(received[0]?.isBinary, false, "a broadcast must travel as a text frame")
+    // Node's ws client delivers every frame as a Buffer and distinguishes the
+    // frame type via the isBinary flag (a browser delivers a string for a text
+    // frame) — what the overlay pages rely on is exactly that flag being false.
+    const payloadText = String(received[0]?.data)
+    assert.equal((JSON.parse(payloadText) as WsMessage).type, "status:update")
     socket.close()
   } finally {
     await server.close()
@@ -411,6 +447,31 @@ test("ChurchOverlayWsServer: heartbeat leaves a healthy client connected across 
   }
 })
 
+test("ChurchOverlayWsServer: a pong queued after a sweep is processed before the deferred timeout check", async () => {
+  const rejections: string[] = []
+  const server = await startServer({ heartbeatIntervalMs: 0, onRejected: (reason) => rejections.push(reason) })
+  try {
+    const socket = await connect(server.port, TOKENS.operatorToken)
+    const internals = server as unknown as {
+      aliveClients: WeakSet<WebSocket>
+      sweepDeadConnections(): void
+    }
+    internals.aliveClients.delete(socket)
+    internals.sweepDeadConnections()
+
+    // Model a pong event already queued by the socket and handled before the
+    // deferred setImmediate timeout check runs.
+    internals.aliveClients.add(socket)
+    await new Promise<void>((resolve) => setImmediate(resolve))
+
+    assert.equal(socket.readyState, WebSocket.OPEN)
+    assert.deepEqual(rejections, [])
+    socket.close()
+  } finally {
+    await server.close()
+  }
+})
+
 test("ChurchOverlayWsServer: inbound messages count as liveness, so a busy client is never dropped for a late pong", async () => {
   const rejections: string[] = []
   const server = await startServer({ heartbeatIntervalMs: 40, onRejected: (reason) => rejections.push(reason) })
@@ -557,7 +618,9 @@ test("ChurchOverlayWsServer: commands past the per-second limit are dropped and 
 
 test("ChurchOverlayWsServer: connections beyond the cap are refused and reported; earlier ones keep working", async () => {
   const rejected: string[] = []
-  const server = await startServer({ maxConnections: 2, onRejected: (reason) => rejected.push(reason) })
+  // reservedOperatorSlots: 0 keeps this test about the RAW cap only — the
+  // reserved-operator-slot semantics (default on) have their own tests below.
+  const server = await startServer({ maxConnections: 2, reservedOperatorSlots: 0, onRejected: (reason) => rejected.push(reason) })
   try {
     const a = await connect(server.port, TOKENS.viewerToken)
     const b = await connect(server.port, TOKENS.viewerToken)
@@ -600,6 +663,193 @@ test("ChurchOverlayWsServer: broadcastToOperators() reaches operator-role client
 
     operatorSocket.close()
     viewerSocket.close()
+  } finally {
+    await server.close()
+  }
+})
+
+// ---- Per-client latency tracking (diagnostics) ----------------------------
+
+test("ChurchOverlayWsServer: per-client latency is measured through ping/pong and exposed as plain, IPC-safe data", async () => {
+  // The heartbeat is disabled here so only the latency sampler produces
+  // pings — this test isolates the measurement path from liveness.
+  const server = await startServer({ heartbeatIntervalMs: 0, wsLatencySampleIntervalMs: 20 })
+  try {
+    const socket = await connect(server.port, TOKENS.viewerToken)
+    // Wait for a few sample intervals so at least one ping/pong completes.
+    await new Promise((resolve) => setTimeout(resolve, 150))
+
+    const [first] = server.getClientLatency()
+    assert.ok(first, "an admitted client must appear in the latency snapshot")
+    assert.equal(first.role, "viewer")
+    assert.equal(typeof first.lastMs, "number")
+    assert.ok((first.lastMs ?? -1) >= 0, "a measured round trip is never negative")
+    assert.ok(first.samples.length > 0, "the sliding window must hold at least one measurement")
+    assert.ok(first.samples.every((value) => value >= 0 && value <= 2000))
+    // The snapshot must be plain, structured-cloneable data: the Electron
+    // IPC handler hands it to the renderer, and a socket reference would
+    // throw a DataCloneError at that point.
+    assert.doesNotThrow(() => structuredClone(server.getClientLatency()))
+
+    // Once the connection closes, its latency entry disappears too — the
+    // snapshot can never grow past the set of live connections.
+    socket.close()
+    await waitFor(() => server.getClientLatency().length === 0)
+    assert.deepEqual(server.getClientLatency(), [])
+  } finally {
+    await server.close()
+  }
+})
+
+// S-04: live token rotation. A rotated token revokes the sessions that
+// authenticated with the OLD one (they are terminated, never left half
+// authenticated), while sessions of the OTHER role stay untouched, and a
+// client presenting the NEW token is admitted right after.
+test("ChurchOverlayWsServer.setTokens: rotating the operator token revokes operator sessions, viewers stay connected", async () => {
+  const rejected: Array<{ reason: string; role: WsRole | null }> = []
+  const server = await startServer({ onRejected: (reason, role) => rejected.push({ reason, role }) })
+  try {
+    const operator = await connect(server.port, TOKENS.operatorToken)
+    const viewer = await connect(server.port, TOKENS.viewerToken)
+
+    const operatorClosed = new Promise<void>((resolve) => operator.once("close", resolve))
+    server.setTokens({ operatorToken: "rotated-operator-token", viewerToken: TOKENS.viewerToken })
+    await operatorClosed
+    assert.equal(operator.readyState, WebSocket.CLOSED, "the operator session must be revoked")
+
+    // The viewer's session was authenticated with an unchanged token: give
+    // the sweep a tick, then prove it is still open.
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.equal(viewer.readyState, WebSocket.OPEN, "an unchanged token must not revoke its sessions")
+
+    // The new operator token is live: the old one is refused, the new one
+    // admitted, and the revocation was reported, never silent.
+    await expectConnectionRejected(server.port, TOKENS.operatorToken)
+    const reconnected = await connect(server.port, "rotated-operator-token")
+    reconnected.close()
+
+    assert.ok(
+      rejected.some((r) => r.role === "operator" && r.reason.includes("operator token rotated")),
+      "the revocation must be reported via onRejected with the operator role"
+    )
+    viewer.close()
+  } finally {
+    await server.close()
+  }
+})
+
+test("ChurchOverlayWsServer.setTokens: rotating the viewer token revokes viewers, the operator session stays up", async () => {
+  const server = await startServer()
+  try {
+    const operator = await connect(server.port, TOKENS.operatorToken)
+    const viewer = await connect(server.port, TOKENS.viewerToken)
+
+    const viewerClosed = new Promise<void>((resolve) => viewer.once("close", resolve))
+    server.setTokens({ operatorToken: TOKENS.operatorToken, viewerToken: "rotated-viewer-token" })
+    await viewerClosed
+
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.equal(operator.readyState, WebSocket.OPEN, "the operator session must survive a viewer rotation")
+    await expectConnectionRejected(server.port, TOKENS.viewerToken)
+    const reconnected = await connect(server.port, "rotated-viewer-token")
+    reconnected.close()
+    operator.close()
+  } finally {
+    await server.close()
+  }
+})
+
+test("ChurchOverlayWsServer.setTokens: identical tokens revoke nothing — a no-op rotation keeps every session", async () => {
+  const rejected: string[] = []
+  const server = await startServer({ onRejected: (reason) => rejected.push(reason) })
+  try {
+    const operator = await connect(server.port, TOKENS.operatorToken)
+    const viewer = await connect(server.port, TOKENS.viewerToken)
+
+    server.setTokens({ ...TOKENS })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.equal(operator.readyState, WebSocket.OPEN)
+    assert.equal(viewer.readyState, WebSocket.OPEN)
+    assert.deepEqual(rejected, [], "a no-op rotation must not report any revocation")
+
+    operator.close()
+    viewer.close()
+  } finally {
+    await server.close()
+  }
+})
+
+// S-03: reserved operator slots. A flood of viewers can fill the server
+// up to (cap - reserved) but never lock the operator out; an operator
+// arriving at the full cap evicts the OLDEST viewer instead of being
+// refused.
+test("ChurchOverlayWsServer: viewers cannot take the reserved operator slot, but the operator still gets in", async () => {
+  const rejected: Array<{ reason: string; role: WsRole | null }> = []
+  const server = await startServer({ maxConnections: 2, onRejected: (reason, role) => rejected.push({ reason, role }) })
+  try {
+    const firstViewer = await connect(server.port, TOKENS.viewerToken)
+    // The cap is 2 with 1 slot reserved: the SECOND viewer is refused at
+    // the handshake before it ever becomes a connection.
+    await expectConnectionRejected(server.port, TOKENS.viewerToken)
+    // The operator still gets the second slot.
+    const operator = await connect(server.port, TOKENS.operatorToken)
+
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.equal(firstViewer.readyState, WebSocket.OPEN)
+    assert.equal(operator.readyState, WebSocket.OPEN)
+    assert.ok(
+      rejected.some((r) => r.role === "viewer" && r.reason.includes("operator slots reserved")),
+      "the viewer refusal must be reported with the viewer role"
+    )
+    firstViewer.close()
+    operator.close()
+  } finally {
+    await server.close()
+  }
+})
+
+test("ChurchOverlayWsServer: an operator arriving at the full cap evicts the oldest viewer, not the newest", async () => {
+  const rejected: string[] = []
+  const server = await startServer({ maxConnections: 4, onRejected: (reason) => rejected.push(reason) })
+  try {
+    const viewerA = await connect(server.port, TOKENS.viewerToken)
+    const viewerB = await connect(server.port, TOKENS.viewerToken)
+    const viewerC = await connect(server.port, TOKENS.viewerToken)
+    // cap 4, reserved 1: the fourth VIEWER is refused (3 is the ceiling).
+    await expectConnectionRejected(server.port, TOKENS.viewerToken)
+    // Operator #4 fills the cap…
+    const operatorE = await connect(server.port, TOKENS.operatorToken)
+    // …and operator #5 evicts the OLDEST viewer (A), never B or C.
+    const operatorF = await connect(server.port, TOKENS.operatorToken)
+
+    const aClosed = new Promise<void>((resolve) => viewerA.once("close", resolve))
+    await aClosed
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.equal(viewerA.readyState, WebSocket.CLOSED, "the oldest viewer must be the one evicted")
+    assert.equal(viewerB.readyState, WebSocket.OPEN)
+    assert.equal(viewerC.readyState, WebSocket.OPEN)
+    assert.equal(operatorE.readyState, WebSocket.OPEN)
+    assert.equal(operatorF.readyState, WebSocket.OPEN)
+    assert.ok(rejected.some((r) => r.includes("viewer evicted for an arriving operator")))
+    viewerB.close()
+    viewerC.close()
+    operatorE.close()
+    operatorF.close()
+  } finally {
+    await server.close()
+  }
+})
+
+test("ChurchOverlayWsServer: reservedOperatorSlots 0 restores the raw first-come cap for viewers", async () => {
+  const server = await startServer({ maxConnections: 2, reservedOperatorSlots: 0 })
+  try {
+    const a = await connect(server.port, TOKENS.viewerToken)
+    const b = await connect(server.port, TOKENS.viewerToken)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.equal(a.readyState, WebSocket.OPEN)
+    assert.equal(b.readyState, WebSocket.OPEN, "without reserved slots viewers may fill the whole cap")
+    a.close()
+    b.close()
   } finally {
     await server.close()
   }

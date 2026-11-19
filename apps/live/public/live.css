@@ -115,11 +115,26 @@ body[data-conn="offline"] .live-pulse { background-color: var(--warn); }
 }
 
 .live-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-1);
   font-size: 13px;
   color: var(--text-muted);
   white-space: nowrap;
 }
-body[data-conn="offline"] .live-status { color: var(--warn); }
+body[data-conn="connected"] .live-status {
+  border-color: rgba(63, 207, 142, 0.45);
+  color: var(--live-ok);
+}
+body[data-conn="offline"] .live-status {
+  border-color: rgba(240, 138, 60, 0.55);
+  background: rgba(240, 138, 60, 0.08);
+  color: var(--warn);
+}
 
 .translation-control {
   display: flex;
@@ -129,21 +144,16 @@ body[data-conn="offline"] .live-status { color: var(--warn); }
   color: var(--text-muted);
 }
 
-.translation-control select {
-  min-height: 44px;
-  padding: 8px 32px 8px 12px;
+.translation-value {
+  min-height: 32px;
+  padding: 4px 10px;
   border-radius: var(--r-control);
   border: 1px solid var(--field-border);
   background-color: var(--surface-1);
   color: var(--text);
-  font: inherit;
-  font-size: 16px; /* >= 16px: iOS does not zoom on focus */
-  appearance: none;
-  -webkit-appearance: none;
-  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%), linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
-  background-position: calc(100% - 17px) 50%, calc(100% - 12px) 50%;
-  background-size: 5px 5px, 5px 5px;
-  background-repeat: no-repeat;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 /* ---------- Live verse ---------- */
@@ -255,13 +265,15 @@ body[data-conn="offline"] .live-status { color: var(--warn); }
 }
 
 /* Nothing to save or copy yet: the buttons say so instead of failing. */
-.verse-hero.empty .btn-action {
+.btn-action:disabled {
   opacity: 0.5;
+  cursor: not-allowed;
 }
+.btn-action:disabled:active { transform: none; }
 
 @media (hover: hover) {
-  .btn-action:hover { background: #ecbb5c; }
-  .btn-action.secondary:hover { background: var(--surface-3); }
+  .btn-action:not(:disabled):hover { background: #ecbb5c; }
+  .btn-action.secondary:not(:disabled):hover { background: var(--surface-3); }
 }
 
 /* ---------- Saved verses ---------- */
@@ -434,5 +446,31 @@ body[data-conn="offline"] .live-status { color: var(--warn); }
   *, *::before, *::after {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .live-status,
+  .verse-hero,
+  .saved-card,
+  .translation-control select,
+  .count-pill {
+    border-color: CanvasText;
+  }
+  .live-status {
+    background: Canvas;
+    color: CanvasText;
+  }
+  body[data-conn="connected"] .live-status { border-color: Highlight; }
+  body[data-conn="offline"] .live-status { border-color: Mark; }
+  .btn-action { border-color: ButtonBorder; }
+  .btn-action:focus-visible { outline-color: Highlight; }
+  .badge-live,
+  .saved-card-ref,
+  .btn-text { color: LinkText; }
+  .toast {
+    border-color: CanvasText;
+    background: Canvas;
+    color: CanvasText;
   }
 }

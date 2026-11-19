@@ -47,11 +47,46 @@
       timerLabel: "Sermon countdown",
       timerStop: "Pause / Stop",
       timerReset: "Reset",
+      timerPreset15: "15 min",
+      timerPreset30: "30 min",
+      timerPreset45: "45 min",
+      timerPreset60: "60 min",
+      versePresetJohn316: "John 3:16",
+      versePresetLove: "God so loved the world",
+      versePresetPsalm231: "Psalm 23:1",
+      versePresetShepherd: "The Lord is my shepherd",
+      versePresetRomans828: "Romans 8:28",
+      versePresetTogether: "All things work together",
+      versePresetPhilippians413: "Philippians 4:13",
+      versePresetStrength: "I can do all things",
+      outlinePoint1Title: "Foundational Faith",
+      outlinePoint1Text: "Point 1: Walking by Faith",
+      outlinePoint2Title: "Unconditional Love",
+      outlinePoint2Text: "Point 2: Unconditional Grace",
+      outlinePoint3Title: "Walking in Victory",
+      outlinePoint3Text: "Point 3: Overcoming in Christ",
+      outlinePoint4Title: "Call to Prayer",
+      outlinePoint4Text: "Final Exhortation & Prayer",
       alertTitle: "Message to the stage",
       alert2min: "2 minutes",
       alertWrap: "Wrap up",
       alertNursery: "Nursery",
       alertMic: "Mic check",
+      toastSent: "Sent",
+      toastOffline: "Not connected. Nothing was sent.",
+      toastBadRef: "Could not read that reference.",
+      toastShown: "On screen: {ref}",
+      toastPending: "Waiting for approval: {ref}",
+      toastNotShown: "Not shown. Check the reference.",
+      pendingTitle: "Pending verse",
+      pendingAge: "Waiting {time}",
+      pendingConfirm: "Show on screen",
+      pendingDismiss: "Dismiss",
+      alertMsg2min: "2 Minutes Remaining",
+      alertMsgWrap: "Wrap Up Now",
+      alertMsgNursery: "Nursery #104 Needed",
+      alertMsgMic: "Check Mic Level",
+      timerSermonTitle: "Sermon",
       alertPlaceholder: "Custom stage message…",
       send: "Send",
       quickVersePlaceholder: "e.g. John 3:16 or Rom 8:28",
@@ -103,11 +138,46 @@
       timerLabel: "Compte à rebours",
       timerStop: "Pause / Arrêt",
       timerReset: "Réinitialiser",
+      timerPreset15: "15 min",
+      timerPreset30: "30 min",
+      timerPreset45: "45 min",
+      timerPreset60: "60 min",
+      versePresetJohn316: "Jean 3:16",
+      versePresetLove: "Dieu a tant aimé le monde",
+      versePresetPsalm231: "Psaume 23:1",
+      versePresetShepherd: "L'Éternel est mon berger",
+      versePresetRomans828: "Romains 8:28",
+      versePresetTogether: "Toutes choses concourent au bien",
+      versePresetPhilippians413: "Philippiens 4:13",
+      versePresetStrength: "Je puis tout par Christ",
+      outlinePoint1Title: "Une foi fondamentale",
+      outlinePoint1Text: "Point 1 : Marcher par la foi",
+      outlinePoint2Title: "Un amour inconditionnel",
+      outlinePoint2Text: "Point 2 : Grâce inconditionnelle",
+      outlinePoint3Title: "Marcher dans la victoire",
+      outlinePoint3Text: "Point 3 : Vaincre en Christ",
+      outlinePoint4Title: "Appel à la prière",
+      outlinePoint4Text: "Exhortation finale et prière",
       alertTitle: "Message à la scène",
       alert2min: "2 minutes",
       alertWrap: "Conclure",
       alertNursery: "Garderie",
       alertMic: "Vérifier le micro",
+      toastSent: "Envoyé",
+      toastOffline: "Non connecté. Rien n'a été envoyé.",
+      toastBadRef: "Référence illisible.",
+      toastShown: "À l'écran : {ref}",
+      toastPending: "En attente d'approbation : {ref}",
+      toastNotShown: "Non affiché. Vérifiez la référence.",
+      pendingTitle: "Verset en attente",
+      pendingAge: "En attente depuis {time}",
+      pendingConfirm: "Afficher à l'écran",
+      pendingDismiss: "Rejeter",
+      alertMsg2min: "Il reste 2 minutes",
+      alertMsgWrap: "Conclure maintenant",
+      alertMsgNursery: "Pouponnière #104 demandée",
+      alertMsgMic: "Vérifier le niveau du micro",
+      timerSermonTitle: "Message",
       alertPlaceholder: "Message personnalisé…",
       send: "Envoyer",
       quickVersePlaceholder: "ex. Jean 3:16 ou Rom 8:28",
@@ -162,14 +232,17 @@
   // a French-language translation, so both should render French book names.
   const FRENCH_TRANSLATIONS = new Set(["ls1910", "lsg", "segond", "darby"])
   const capitalize = (book) => book.replace(/\b\w/g, (c) => c.toUpperCase())
-  function referenceText(reference, translation) {
+  // Innovation pass (ARCHITECTURE.md section 145): verseEnd on a verse:show payload
+  // (a detected range shown as one joined verse) extends the label to "Book C:V-E".
+  // A payload without verseEnd renders exactly as before.
+  function referenceText(reference, translation, verseEnd) {
     const french = FRENCH_TRANSLATIONS.has(String(translation || "").toLowerCase())
     const name = french ? FRENCH_BOOK_NAMES[reference.book] || capitalize(reference.book) : capitalize(reference.book)
-    return name + " " + reference.chapter + ":" + reference.verse
+    return name + " " + reference.chapter + ":" + reference.verse + (typeof verseEnd === "number" && verseEnd > reference.verse ? "-" + verseEnd : "")
   }
 
   function parseVerseString(str) {
-    const match = str.trim().match(/^([\d\s\w]+?)\s+(\d+)[:\s]+(\d+)$/i)
+    const match = str.trim().match(/^([\d\s\p{L}]+?)\s+(\d+)[:\s]+(\d+)$/iu)
     if (!match) return null
     return {
       book: match[1].trim().toLowerCase(),
@@ -196,6 +269,12 @@
   const onScreenStateEl = document.getElementById("on-screen-state")
   const onScreenRefEl = document.getElementById("on-screen-ref")
   const onScreenAnnounceEl = document.getElementById("on-screen-announce")
+  const pendingVerseEl = document.getElementById("pending-verse")
+  const pendingVerseRefEl = document.getElementById("pending-verse-ref")
+  const pendingVerseTextEl = document.getElementById("pending-verse-text")
+  const pendingVerseAgeEl = document.getElementById("pending-verse-age")
+  const pendingVerseConfirmBtn = document.getElementById("pending-verse-confirm-btn")
+  const pendingVerseDismissBtn = document.getElementById("pending-verse-dismiss-btn")
   const clearVerseBtn = document.getElementById("clear-verse-btn")
   const sceneListEl = document.getElementById("scene-list")
   const prevBtn = document.getElementById("prev-btn")
@@ -270,6 +349,9 @@
 
   let currentRundownState = null
   let activeWs = null
+  let pendingVerse = null
+  let pendingVerseSince = 0
+  let pendingVerseAgeTimer = null
 
   function setStatus(text, state) {
     statusTextEl.textContent = text
@@ -319,26 +401,118 @@
     sceneListEl.appendChild(chip)
   }
 
-  function sendJson(ws, message) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return
-    triggerHaptic()
-    ws.send(JSON.stringify(message))
+  // Acknowledgement toast. Only states the page can actually know: the
+  // socket was open (sent), or a verse:show / verse:pending followed a verse
+  // request. No server protocol change (AGENTS.md section 43).
+  const toastEl = document.getElementById("toast")
+  let toastTimer = null
+  function showToast(text, kind) {
+    if (!toastEl) return
+    toastEl.textContent = text
+    toastEl.className = "show " + (kind || "")
+    if (toastTimer) clearTimeout(toastTimer)
+    toastTimer = setTimeout(() => {
+      toastEl.className = ""
+      toastTimer = null
+    }, 2600)
   }
 
-  // Sends a spoken-style reference string ("Jean 3:16") the exact same way
-  // a quick-fire or preset button already does: through verse:override,
-  // which the server validates against KnownValidVerseIndex identically to
-  // any other reference (ARCHITECTURE.md section 50, AGENTS.md section 12
-  // "Manual override is still subject to validation" — no admin bypass).
-  // Uses `activeWs` (kept current by connect()/reconnect below) rather than
-  // a closed-over socket, so this one function works for quick-fire,
-  // presets, and the prepared list alike.
-  function fireVerse(refStr) {
-    const ref = parseVerseString(refStr)
-    if (!ref) return false
-    sendJson(activeWs, { id: crypto.randomUUID(), type: "verse:override", timestamp: Date.now(), payload: ref })
+  // Returns whether the message left the page; tells the operator when it did not.
+  function sendJson(ws, message) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      showToast(t("toastOffline"), "error")
+      return false
+    }
+    triggerHaptic()
+    ws.send(JSON.stringify(message))
     return true
   }
+
+  // A verse request is answered, if at all, by verse:show or verse:pending.
+  const VERSE_ACK_TIMEOUT_MS = 4000
+  let verseAckTimer = null
+  function expectVerseAck() {
+    if (verseAckTimer) clearTimeout(verseAckTimer)
+    verseAckTimer = setTimeout(() => {
+      verseAckTimer = null
+      showToast(t("toastNotShown"), "error")
+    }, VERSE_ACK_TIMEOUT_MS)
+  }
+  function resolveVerseAck(kind, ref) {
+    if (!verseAckTimer) return
+    clearTimeout(verseAckTimer)
+    verseAckTimer = null
+    showToast(t(kind, { ref }), "ok")
+  }
+
+  // ONE path for every verse button and input — quick-fire, the presets and
+  // the prepared list alike (ARCHITECTURE.md section 146): parse, toast on an
+  // unparseable reference, send through the fully-validated verse:override
+  // (ARCHITECTURE.md section 50, AGENTS.md section 12 — no admin bypass), and
+  // arm the on-screen ack so a request that never shows anything is told,
+  // not silently dropped. Until this pass the prepared list had its own copy
+  // that returned false without a toast and never armed the ack, so a typo in
+  // a prepared verse vanished without a word. Uses `activeWs` (kept current
+  // by connect()/reconnect below) rather than a closed-over socket, so it
+  // works the same across reconnects.
+  function fireVerse(refStr) {
+    const ref = parseVerseString(refStr)
+    if (!ref) {
+      showToast(t("toastBadRef"), "error")
+      return
+    }
+    if (sendJson(activeWs, { id: crypto.randomUUID(), type: "verse:override", timestamp: Date.now(), payload: ref })) expectVerseAck()
+  }
+
+  function renderPendingVerseAge() {
+    if (!pendingVerse || !pendingVerseAgeEl) return
+    pendingVerseAgeEl.textContent = t("pendingAge", { time: formatTime(Math.floor((Date.now() - pendingVerseSince) / 1000)) })
+  }
+
+  function showPendingVerse(payload, timestamp) {
+    pendingVerse = payload
+    pendingVerseSince = Number.isFinite(timestamp) && timestamp <= Date.now() ? timestamp : Date.now()
+    pendingVerseRefEl.textContent = referenceText(payload.reference, payload.translation, payload.verseEnd)
+    pendingVerseTextEl.textContent = typeof payload.heard === "string" ? payload.heard : (payload.text || "")
+    pendingVerseEl.hidden = false
+    renderPendingVerseAge()
+    if (pendingVerseAgeTimer) clearInterval(pendingVerseAgeTimer)
+    pendingVerseAgeTimer = setInterval(renderPendingVerseAge, 1000)
+  }
+
+  function clearPendingVerse() {
+    pendingVerse = null
+    pendingVerseSince = 0
+    pendingVerseEl.hidden = true
+    pendingVerseRefEl.textContent = ""
+    pendingVerseTextEl.textContent = ""
+    pendingVerseAgeEl.textContent = ""
+    if (pendingVerseAgeTimer) clearInterval(pendingVerseAgeTimer)
+    pendingVerseAgeTimer = null
+  }
+
+  function sendPendingVerseAction(type) {
+    if (!pendingVerse || !sendJson(activeWs, { id: crypto.randomUUID(), type, timestamp: Date.now(), payload: null })) return
+    clearPendingVerse()
+  }
+
+  pendingVerseConfirmBtn.addEventListener("click", () => sendPendingVerseAction("verse:confirm-pending"))
+  pendingVerseDismissBtn.addEventListener("click", () => sendPendingVerseAction("verse:dismiss-pending"))
+
+  document.addEventListener("keydown", (event) => {
+    if (!pendingVerse) return
+    if (event.key === "Escape" && !event.shiftKey) {
+      event.preventDefault()
+      sendPendingVerseAction("verse:dismiss-pending")
+      return
+    }
+    const target = event.target
+    const textEntryFocused = target instanceof Element && (target.isContentEditable || target.matches("input, textarea, select"))
+    if (event.ctrlKey && event.key === "Enter" && !event.repeat && !textEntryFocused) {
+      event.preventDefault()
+      sendPendingVerseAction("verse:confirm-pending")
+    }
+  })
 
   // A pastor's own prepared verse list ("prepare these ahead of time, tap
   // to show whenever ready during the service") — deliberately just a
@@ -485,9 +659,16 @@
       if (message.type === "rundown:state") {
         currentRundownState = message.payload
         renderSceneList()
+      } else if (message.type === "verse:pending" && message.payload?.reference) {
+        showPendingVerse(message.payload, message.timestamp)
+        resolveVerseAck("toastPending", referenceText(message.payload.reference, message.payload.translation, message.payload.verseEnd))
       } else if (message.type === "verse:show" && message.payload?.reference) {
-        renderOnScreen(referenceText(message.payload.reference, message.payload.translation))
+        clearPendingVerse()
+        const shownText = referenceText(message.payload.reference, message.payload.translation, message.payload.verseEnd)
+        renderOnScreen(shownText)
+        resolveVerseAck("toastShown", shownText)
       } else if (message.type === "verse:clear") {
+        clearPendingVerse()
         renderOnScreen(null)
       } else if (message.type === "timer:state" && message.payload) {
         if (remoteTimerClockEl) {
@@ -515,29 +696,23 @@
     document.querySelectorAll(".timer-preset-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         const min = parseInt(btn.getAttribute("data-min"), 10) || 30
-        sendJson(ws, { id: crypto.randomUUID(), type: "timer:start", timestamp: Date.now(), payload: { durationMinutes: min, title: "Sermon" } })
+        sendJson(ws, { id: crypto.randomUUID(), type: "timer:start", timestamp: Date.now(), payload: { durationMinutes: min, title: t("timerSermonTitle") } })
       })
     })
 
     document.querySelectorAll(".alert-quick-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
-        const msg = btn.getAttribute("data-msg")
-        sendJson(ws, { id: crypto.randomUUID(), type: "stage:alert", timestamp: Date.now(), payload: { message: msg } })
+        const msg = t(btn.getAttribute("data-msg-key"))
+        if (sendJson(ws, { id: crypto.randomUUID(), type: "stage:alert", timestamp: Date.now(), payload: { message: msg } })) showToast(t("toastSent"), "ok")
       })
     })
 
     sendAlertBtn.onclick = () => {
       const msg = stageAlertInput.value.trim()
       if (!msg) return
-      sendJson(ws, { id: crypto.randomUUID(), type: "stage:alert", timestamp: Date.now(), payload: { message: msg } })
+      if (!sendJson(ws, { id: crypto.randomUUID(), type: "stage:alert", timestamp: Date.now(), payload: { message: msg } })) return
+      showToast(t("toastSent"), "ok")
       stageAlertInput.value = ""
-    }
-
-    const fireVerse = (refStr) => {
-      const ref = parseVerseString(refStr)
-      if (ref) {
-        sendJson(ws, { id: crypto.randomUUID(), type: "verse:override", timestamp: Date.now(), payload: ref })
-      }
     }
 
     quickVerseBtn.onclick = () => {
@@ -555,8 +730,8 @@
     document.querySelectorAll(".outline-preset-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         const pointNumber = parseInt(btn.getAttribute("data-num"), 10) || 1
-        const title = btn.getAttribute("data-title") || ""
-        const text = btn.getAttribute("data-text") || undefined
+        const title = t(btn.getAttribute("data-title-key"))
+        const text = t(btn.getAttribute("data-text-key"))
         sendJson(ws, { id: crypto.randomUUID(), type: "outline:show", timestamp: Date.now(), payload: { pointNumber, title, text } })
       })
     })
@@ -578,8 +753,14 @@
           const data = await res.json()
           servicePackResult.style.display = "block"
           servicePackText.value = `# YouTube Description:\n${data.youtubeDescription}\n\n# Service Analytics:\nDuration: ${data.analytics?.serviceDurationMinutes}m | WPM: ${data.analytics?.speechRateWpm}\nVerses Quoted: ${data.analytics?.uniqueVersesCount}`
+        } else {
+          // A non-OK answer (expired token, server error) used to reset the
+          // button as if nothing had happened — the same silence the catch
+          // below exists to prevent. Say it (ARCHITECTURE.md section 146).
+          servicePackResult.style.display = "block"
+          servicePackText.value = t("packFailed")
         }
-      } catch (err) {
+      } catch (_err) {
         servicePackResult.style.display = "block"
         servicePackText.value = t("packFailed")
       } finally {

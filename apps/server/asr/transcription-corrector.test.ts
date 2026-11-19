@@ -130,6 +130,10 @@ test("corrector: live French ASR phonetic confusions recover Jean and Ésaïe", 
   assert.equal(result.corrections.length, 3)
 })
 
+test("corrector: book aliases that are ordinary names are not rewritten as other words", () => {
+  assert.equal(correctTranscription("Mathieu et Matieu, Phelemon et Philimon").correctedText, "Mathieu et Matieu, Phelemon et Philimon")
+})
+
 test("corrector: observed split-reference words are normalized conservatively", () => {
   const result = correctTranscription("azzain kaple vete versus 8 ezaïkat")
   assert.equal(result.correctedText, "esaie chapitre verset verset 8 esaie")

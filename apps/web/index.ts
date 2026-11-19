@@ -10,6 +10,7 @@ import { FreeApiSource } from "../server/verse/free-api-source"
 import { GetBibleVerseSource } from "../server/verse/get-bible-verse-source"
 import { LocalizedVerseSource } from "../server/verse/localized-verse-source"
 import { loadOfflineBibleData, OfflineVerseSource } from "../server/verse/offline-verse-source"
+import { createLazyBibleWordSearch } from "../server/verse/bible-word-search"
 import { OfflineFallbackVerseSource } from "../server/verse/offline-fallback-verse-source"
 import { RegexDetector } from "../server/detector/regex-detector"
 import { KnownValidVerseIndex } from "../server/verse/known-valid-verse-index"
@@ -29,9 +30,12 @@ import { analyzeSermonFlow } from "../server/ai/sermon-flow-analyzer"
 import type { DisplayMode, VerseConfirmationMode, MediaCueKind } from "../../packages/contracts"
 import { buildPageUrls, buildStatusPayload, isDisplayMode, isUiLanguage, type UiLanguage } from "./status-payload"
 import { installApiGuard, isLoopbackHost, resolveWebHost, validateConfiguredTokens } from "./api-auth"
+import { buildHealthPayload } from "./health"
+import { redactUrl } from "./redact-url"
 
 export type { UiLanguage } from "./status-payload"
 
+const PROCESS_STARTED_AT = Date.now()
 const PORT = 3000
 // Loopback unless WEB_HOST is set on purpose (ARCHITECTURE.md sections 24 and 49).
 const HOST = resolveWebHost(process.env.WEB_HOST)
@@ -121,8 +125,12 @@ async function main() {
 
   // Bible Sources
   let frenchSource: GetBibleVerseSource | OfflineFallbackVerseSource = new GetBibleVerseSource()
+  let bibleWordSearch: ReturnType<typeof createLazyBibleWordSearch> | undefined
   try {
     const offlineData = await loadOfflineBibleData()
+    bibleWordSearch = createLazyBibleWordSearch(offlineData, undefined, (error) =>
+      logger.error({ component: "server", event: "bible-word-search.failed", error: error instanceof Error ? error.message : String(error) })
+    )
     frenchSource = new OfflineFallbackVerseSource({
       primary: new GetBibleVerseSource(),
       offline: new OfflineVerseSource(offlineData),
@@ -148,7 +156,7 @@ async function main() {
     logger,
     language: whisperLanguageFor(displayMode),
   })
-  let sermonNotesGen: SermonNotesGenerator | undefined = groqApiKey
+  const sermonNotesGen: SermonNotesGenerator | undefined = groqApiKey
     ? new SermonNotesGenerator({ apiKey: groqApiKey })
     : undefined
 
@@ -175,10 +183,21 @@ async function main() {
       if (!isLoopbackHost(HOST)) {
         console.log(`WARNING: bound to ${HOST}, reachable from the network. Anyone with the page URLs below holds those tokens; use a trusted network.`)
       }
-      console.log(`Overlay URL: http://${HOST}:${PORT}${pageUrls.overlay}`)
-      console.log(`Remote URL: http://${HOST}:${PORT}${pageUrls.remote}`)
-      console.log(`Stage Display URL: http://${HOST}:${PORT}${pageUrls.stage}`)
-      console.log(`Live Companion URL: http://${HOST}:${PORT}${pageUrls.live}`)
+      // S-09: these lines land in capture-everything sinks (journald,
+      // docker logs, pasted issues), so the advertised URLs carry a
+      // masked token fingerprint by default. The real links stay
+      // available to the authenticated caller via /api/status; an
+      // operator who wants copy-paste URLs here can opt back in with
+      // CHURCHOVERLAY_PRINT_FULL_URLS=1 (a trusted-console decision).
+      const printFullUrls = process.env.CHURCHOVERLAY_PRINT_FULL_URLS === "1"
+      const display = (url: string): string => (printFullUrls ? url : redactUrl(url))
+      console.log(`Overlay URL: ${display(pageUrls.overlay)}`)
+      console.log(`Remote URL: ${display(pageUrls.remote)}`)
+      console.log(`Stage Display URL: ${display(pageUrls.stage)}`)
+      console.log(`Live Companion URL: ${display(pageUrls.live)}`)
+      if (!printFullUrls) {
+        console.log(`Tokens are masked above (fingerprint only). Set CHURCHOVERLAY_PRINT_FULL_URLS=1 to print full links, or read them from /api/status.`)
+      }
       resolve()
     })
   })
@@ -190,6 +209,7 @@ async function main() {
     detector: new RegexDetector(),
     index: new KnownValidVerseIndex(),
     source: localizedVerseSource,
+    ...(bibleWordSearch ? { bibleWordSearch } : {}),
     logger,
     server: httpServer,
     port: PORT,
@@ -233,6 +253,12 @@ async function main() {
       enableSermonNotes,
       allowPhoneRemote,
     })
+
+  // Outside /api so it needs no token: liveness only, see health.ts.
+  app.get("/healthz", (_req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store")
+    res.json(buildHealthPayload(PROCESS_STARTED_AT, Date.now(), appCoreHandle !== null))
+  })
 
   app.get("/api/status", (_req: Request, res: Response) => {
     res.json(currentStatusPayload())
@@ -397,7 +423,7 @@ async function main() {
     const entries = appCoreHandle?.getSessionEntries() || []
     const youtubeDescription = buildYouTubeDescription(entries)
     const analytics = generatePreachingAnalytics(entries)
-    const sermonSegments = entries.map((e, idx) => ({
+    const sermonSegments = entries.map((e) => ({
       timestampMs: e.timestamp,
       text: `${e.reference.book} ${e.reference.chapter}:${e.reference.verse} ${e.text}`,
     }))
@@ -484,6 +510,27 @@ async function main() {
     res.json({ success: true, emitted: text })
   })
 
+  // Page URLs carry their token in the query string (SECURITY.md), so keep it
+  // out of the Referer header and stop MIME sniffing, as the desktop static server does.
+  app.use(["/overlay", "/stage", "/live", "/remote"], (_req, res, next) => {
+    res.setHeader("Referrer-Policy", "no-referrer")
+    res.setHeader("X-Content-Type-Options", "nosniff")
+    next()
+  })
+
+  // P1-4 (S-08): the phone remote is the one CONTROL page this server
+  // exposes — clickjacking it means pressing the operator's buttons from a
+  // decoy page — so it gets the anti-framing pair (X-Frame-Options for older
+  // engines, frame-ancestors for modern ones). The display pages (/overlay,
+  // /stage, /live) stay framable on purpose: the Electron dashboard's Live
+  // view embeds the overlay from a file:// null origin, which
+  // frame-ancestors cannot express, and OBS loads them top-level.
+  app.use("/remote", (_req, res, next) => {
+    res.setHeader("X-Frame-Options", "DENY")
+    res.setHeader("Content-Security-Policy", "frame-ancestors 'none'")
+    next()
+  })
+
   // Overlay static files
   const overlayStaticDir = join(REPO_ROOT, "apps", "overlay", "public")
   app.use("/overlay", express.static(overlayStaticDir))
@@ -510,15 +557,30 @@ async function main() {
 
   const shutdown = async () => {
     logger.info({ component: "server", event: "server.stopping" })
+    // Open keep-alive or WebSocket connections must not hold the process
+    // open forever: give a clean stop a few seconds, then leave anyway.
+    setTimeout(() => process.exit(1), 5000).unref()
     if (appCoreHandle) {
       await appCoreHandle.stop().catch(() => {})
     }
     httpServer.close(() => {
       process.exit(0)
     })
+    httpServer.closeAllConnections()
   }
   process.on("SIGTERM", shutdown)
   process.on("SIGINT", shutdown)
+  process.on("unhandledRejection", (reason) => {
+    logger.error({
+      component: "server",
+      event: "process.unhandled-rejection",
+      error: reason instanceof Error ? reason.message : String(reason),
+    })
+  })
+  process.on("uncaughtException", (err) => {
+    logger.error({ component: "server", event: "process.uncaught-exception", error: err.message })
+    process.exit(1)
+  })
 }
 
 main().catch((err) => {

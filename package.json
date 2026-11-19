@@ -11,10 +11,13 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint \"apps/**/*.ts\" \"apps/**/*.js\" \"packages/**/*.ts\" \"scripts/**/*.ts\"",
     "start": "npm run build && electron .",
     "start:web": "npm run build && node dist/apps/web/index.js",
-    "test": "tsc && cd dist && node --test",
+    "test": "tsc && cd dist && node --test --test-concurrency=2",
+    "test:coverage": "tsc && cd dist && c8 --check-coverage --statements 95 --branches 85 --functions 95 --lines 95 --include \"apps/**\" --include \"packages/**\" --include \"scripts/**\" --reporter=text --reporter=lcov node --test --test-concurrency=2",
     "test:live-groq": "tsc && cd dist && node --env-file=../.env --test apps/server/asr/groq-provider.live.test.js",
+    "test:live-bible": "tsc && cd dist && node --env-file=../.env --test apps/server/verse/free-api-source.live.test.js",
     "dev:preview": "tsc && node --env-file=.env dist/scripts/dev-preview.js",
     "dry-run": "tsc && node dist/scripts/dry-run.js",
     "rebuild:native": "electron-rebuild -f -w @stagetimerio/grandiose",
@@ -22,25 +25,35 @@
     "dist": "npm run build && npm run rebuild:native && electron-builder"
   },
   "devDependencies": {
+    "@electron/fuses": "^2.1.3",
     "@electron/rebuild": "^4.2.0",
-    "@types/express": "^4.17.21",
-    "@types/node": "^22.0.0",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.20.5",
     "@types/ws": "^8.18.2",
-    "electron": "^44.5.1",
-    "electron-builder": "^26.15.3",
-    "typescript": "^5.6.0"
+    "c8": "^12.0.0",
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0",
+    "eslint": "^10.14.0",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.72.0"
   },
   "dependencies": {
-    "dotenv": "^18.0.5",
-    "express": "^4.21.2",
+    "dotenv": "^18.0.9",
+    "express": "^5.3.0",
     "ws": "^8.22.0"
   },
   "build": {
+    "afterPack": "scripts/apply-fuses.cjs",
     "appId": "com.churchoverlay.app",
     "productName": "ChurchOverlay",
     "directories": {
       "output": "release"
     },
+    "electronLanguages": [
+      "en-US",
+      "fr"
+    ],
+    "compression": "maximum",
     "asarUnpack": [
       "node_modules/@stagetimerio/grandiose/dist/**"
     ],
@@ -61,7 +74,11 @@
       "package.json",
       "!**/*.test.js",
       "!**/*.test.js.map",
-      "!**/*.map"
+      "!**/*.map",
+      "!node_modules/shelljs/**",
+      "!node_modules/fast-glob/**",
+      "!node_modules/micromatch/**",
+      "!node_modules/braces/**"
     ],
     "win": {
       "target": "nsis",
@@ -85,6 +102,16 @@
     "@stagetimerio/grandiose@0.2.0": true
   },
   "overrides": {
-    "tmp": "^0.2.7"
+    "tmp": "^0.2.7",
+    "body-parser": "^1.20.9",
+    "eslint": {
+      "minimatch": "^11.0.1"
+    },
+    "typescript-eslint": {
+      "minimatch": "^11.0.1"
+    },
+    "electron-builder": {
+      "minimatch": "^11.0.1"
+    }
   }
 }

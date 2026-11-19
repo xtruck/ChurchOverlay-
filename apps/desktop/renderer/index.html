@@ -38,6 +38,7 @@
 <title>ChurchOverlay — Operator</title>
 <link href="fonts/fonts.css" rel="stylesheet" />
 <link href="dashboard.css" rel="stylesheet" />
+<link href="bible-browser.css" rel="stylesheet" />
 </head>
 <body>
   <!--
@@ -47,6 +48,11 @@
     as one family. Decorative icons are aria-hidden; icon-only buttons
     carry an aria-label.
   -->
+  <!-- Shown only when main reports the settings file was restored/set aside or a key could not be read (audit B6). -->
+  <div id="config-recovery-banner" role="alert" style="display: none; position: fixed; top: 0; left: 0; right: 0; z-index: 10000; padding: 10px 16px; background: #3a2a05; color: #ffe3a3; border-bottom: 1px solid #e9b13f; font-size: 14px; align-items: center; gap: 12px;">
+    <span id="config-recovery-text" style="flex: 1"></span>
+    <button id="config-recovery-dismiss" type="button" class="btn-secondary" data-i18n="config.recovered.dismiss">Dismiss</button>
+  </div>
   <div id="setup-screen" class="setup-screen" style="display: none">
     <div class="setup-card glass">
       <div class="setup-brand">
@@ -68,24 +74,24 @@
         <label for="setup-groq-key" data-i18n="setup.groqKeyLabel">Groq API key</label>
         <input id="setup-groq-key" type="password" placeholder="gsk_…" autocomplete="off" />
         <label for="setup-deepgram-key" data-i18n="setup.deepgramKeyLabel">Deepgram API key (fastest display)</label>
-        <input id="setup-deepgram-key" type="password" placeholder="Deepgram key" autocomplete="off" />
+        <input id="setup-deepgram-key" type="password" data-i18n-placeholder="setup.deepgramKeyPlaceholder" placeholder="Deepgram key" autocomplete="off" />
         <label for="setup-anthropic-key" data-i18n="setup.anthropicKeyLabel">Anthropic API key (AI helpers: reference repair, bilingual notes, translation)</label>
-        <input id="setup-anthropic-key" type="password" placeholder="sk-ant-… (optional)" autocomplete="off" />
+        <input id="setup-anthropic-key" type="password" data-i18n-placeholder="setup.anthropicKeyPlaceholder" placeholder="sk-ant-… (optional)" autocomplete="off" />
         <p class="settings-hint" data-i18n="setup.anthropicKeyHint">Optional. When set, transcript text is sent to Anthropic to power these helpers.</p>
       </div>
 
       <div class="setup-section">
         <label data-i18n="setup.displayModeLabel">Verse display language</label>
         <div id="setup-display-mode" class="option-list" role="group" data-i18n-aria-label="a11y.verseDisplayLanguage">
-          <button type="button" data-mode="english" class="active" data-i18n="setup.displayMode.english">English only</button>
-          <button type="button" data-mode="french" data-i18n="setup.displayMode.french">French only</button>
-          <button type="button" data-mode="bilingual" data-i18n="setup.displayMode.bilingual">Bilingual (French + English)</button>
+          <button type="button" data-mode="english" class="active" aria-pressed="true" data-i18n="setup.displayMode.english">English only</button>
+          <button type="button" data-mode="french" aria-pressed="false" data-i18n="setup.displayMode.french">French only</button>
+          <button type="button" data-mode="bilingual" aria-pressed="false" data-i18n="setup.displayMode.bilingual">Bilingual (French + English)</button>
         </div>
 
         <label data-i18n="setup.uiLanguageLabel">Interface language</label>
         <div id="setup-ui-language" class="option-list" role="group" data-i18n-aria-label="a11y.interfaceLanguage">
-          <button type="button" data-lang="en" class="active" data-i18n="setup.uiLanguage.en">English</button>
-          <button type="button" data-lang="fr" data-i18n="setup.uiLanguage.fr">French</button>
+          <button type="button" data-lang="en" class="active" aria-pressed="true" data-i18n="setup.uiLanguage.en">English</button>
+          <button type="button" data-lang="fr" aria-pressed="false" data-i18n="setup.uiLanguage.fr">French</button>
         </div>
 
         <label for="setup-audio-profile" data-i18n="setup.audioProfileLabel">Audio responsiveness</label>
@@ -121,6 +127,7 @@
   </div>
 
   <div id="app-shell" style="display: none">
+  <a class="skip-link" href="#shell-content" data-i18n="a11y.skipToMain">Skip to main content</a>
   <header class="glass topbar">
     <div class="brand">
       <!-- ARCHITECTURE.md section 92: the default mark and title here are
@@ -202,13 +209,17 @@
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="12.5" rx="2.5"/><path d="M8.5 20.5h7M12 17v3.5"/><circle cx="12" cy="10.75" r="2"/></svg>
         <span data-i18n="nav.live">Live</span>
       </button>
-      <button type="button" id="nav-rundown" class="sidebar-nav-item" data-view="rundown" data-i18n-title="nav.rundown">
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6.5h11M9 12h11M9 17.5h11"/><circle cx="4.75" cy="6.5" r="1.25"/><circle cx="4.75" cy="12" r="1.25"/><circle cx="4.75" cy="17.5" r="1.25"/></svg>
-        <span data-i18n="nav.rundown">Rundown &amp; Scenes</span>
+      <button type="button" id="nav-bible" class="sidebar-nav-item" data-view="bible" data-i18n-title="nav.bible">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6.5C10.2 5.2 7.6 4.6 4.5 4.8v13c3.1-.2 5.7.4 7.5 1.7 1.8-1.3 4.4-1.9 7.5-1.7v-13c-3.1-.2-5.7.4-7.5 1.7Z"/><path d="M12 6.5v13"/></svg>
+        <span data-i18n="nav.bible">Bible</span>
       </button>
-      <button type="button" id="nav-media" class="sidebar-nav-item" data-view="media" data-i18n-title="nav.media">
+      <button type="button" id="nav-rundown" class="sidebar-nav-item" data-view="rundown" data-i18n-title="nav.rundown" data-i18n-aria-label="nav.rundown">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6.5h11M9 12h11M9 17.5h11"/><circle cx="4.75" cy="6.5" r="1.25"/><circle cx="4.75" cy="12" r="1.25"/><circle cx="4.75" cy="17.5" r="1.25"/></svg>
+        <span data-i18n="nav.rundownShort">Rundown</span>
+      </button>
+      <button type="button" id="nav-media" class="sidebar-nav-item" data-view="media" data-i18n-title="nav.media" data-i18n-aria-label="nav.media">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="9" cy="9.5" r="1.75"/><path d="m21 15.5-4.5-4.5L7 20"/></svg>
-        <span data-i18n="nav.media">Media Library</span>
+        <span data-i18n="nav.mediaShort">Media</span>
       </button>
       <button type="button" id="nav-overlay" class="sidebar-nav-item" data-view="overlay" data-i18n-title="nav.overlay">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3.5 8.5 4.5-8.5 4.5L3.5 8z"/><path d="m3.5 12 8.5 4.5 8.5-4.5"/><path d="m3.5 16 8.5 4.5 8.5-4.5"/></svg>
@@ -218,22 +229,22 @@
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1L3.5 8.5"/><path d="M3.5 4v4.5H8M12 7.5V12l3 2"/></svg>
         <span data-i18n="nav.history">History</span>
       </button>
-      <button type="button" id="nav-settings" class="sidebar-nav-item" data-view="settings" data-i18n-title="nav.settings">
+      <button type="button" id="nav-settings" class="sidebar-nav-item" data-view="settings" data-i18n-title="nav.settings" data-i18n-aria-label="nav.settings">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>
-        <span data-i18n="nav.settings">Settings</span>
+        <span data-i18n="nav.settingsShort">Settings</span>
       </button>
       <!-- ARCHITECTURE.md section 78: several real bugs this project
            found came down to an operator not knowing the exact phrase a
            voice command needed. Pinned below the view switchers; it opens
            a modal, not a view, so it's deliberately styled distinctly
            (outline, not a nav-item look-alike). -->
-      <button type="button" id="voice-commands-btn" class="sidebar-voice-commands-btn" data-i18n-title="voiceCommands.button">
+      <button type="button" id="voice-commands-btn" class="sidebar-voice-commands-btn" data-i18n-title="voiceCommands.button" data-i18n-aria-label="voiceCommands.button">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/></svg>
-        <span data-i18n="voiceCommands.button">Voice Commands</span>
+        <span data-i18n="voiceCommands.buttonShort">Commands</span>
       </button>
     </nav>
 
-    <div class="shell-content">
+    <div id="shell-content" class="shell-content" tabindex="-1">
       <div id="view-live" class="view active">
         <div class="view-live-grid">
           <div class="cell-override">
@@ -303,6 +314,10 @@
             <!-- ARCHITECTURE.md section 91: a final transcript with verse
                  keywords that resolved to no reference. Transient. -->
             <div id="near-miss-indicator" class="near-miss-indicator" role="status" style="display: none"></div>
+            <!-- State of the optional AI helpers: shown only while they are paused or unavailable. Fixed codes, textContent only. -->
+            <div id="ai-helpers-indicator" class="near-miss-indicator" role="status" hidden></div>
+            <!-- SF-03: shown while a verse lookup failed because the Bible source is unavailable; clears when a verse loads. -->
+            <div id="bible-source-indicator" class="near-miss-indicator" role="status" hidden></div>
           </div>
 
           <aside class="cell-side">
@@ -321,9 +336,14 @@
               <div id="verse-pending-banner" class="verse-pending-banner" style="display: none" role="group" aria-labelledby="queue-title">
                 <div class="verse-pending-label"><span data-i18n="livePreview.pendingLabel">To confirm</span></div>
                 <div id="verse-pending-origin" class="verse-pending-origin" style="display: none" data-i18n="livePreview.pendingFromQuote">Recognized from a reading — no reference was said.</div>
+                <div id="verse-pending-heard" class="verse-pending-origin" style="display: none"></div>
                 <div id="verse-pending-ref"></div>
                 <div id="verse-pending-text"></div>
-                <button id="verse-pending-confirm-btn" class="btn-primary btn-lg" aria-keyshortcuts="Control+Enter" data-i18n="livePreview.pendingConfirm">Show on screen</button>
+                <div id="verse-pending-age" class="pending-age" aria-live="off"></div>
+                <div class="pending-actions">
+                  <button id="verse-pending-confirm-btn" class="btn-primary btn-lg" aria-keyshortcuts="Control+Enter" data-i18n="livePreview.pendingConfirm">Show on screen</button>
+                  <button id="verse-pending-dismiss-btn" class="btn-secondary btn-lg" data-i18n="livePreview.pendingDismiss">Dismiss</button>
+                </div>
                 <div id="verse-pending-alternatives" class="verse-pending-alternatives"></div>
               </div>
               <div class="queue-empty empty-state">
@@ -362,21 +382,35 @@
                 <div class="mic-stat"><div class="mic-stat-label" data-i18n="latency.median">Typical</div><div id="latency-median" class="mic-stat-value">–</div></div>
                 <div class="mic-stat"><div class="mic-stat-label" data-i18n="latency.p95">Slowest 5%</div><div id="latency-p95" class="mic-stat-value">–</div></div>
               </div>
+              <div class="latency-title" data-i18n="latency.wsTitle">Network &amp; OBS Latency</div>
+              <div class="mic-stats" title="" data-i18n-title="latency.wsHint">
+                <div class="mic-stat"><div class="mic-stat-label" data-i18n="latency.wsClients">Clients</div><div id="ws-latency-clients" class="mic-stat-value">–</div></div>
+                <div class="mic-stat"><div class="mic-stat-label" data-i18n="latency.wsRoundtrip">Roundtrip</div><div id="ws-latency-roundtrip" class="mic-stat-value">–</div></div>
+                <div class="mic-stat"><div class="mic-stat-label" data-i18n="latency.wsQuality">Quality</div><div id="ws-latency-quality" class="mic-stat-value">–</div></div>
+              </div>
               <label class="switch-row" for="auto-gain-toggle">
                 <span data-i18n="micHealth.autoGain">Automatic gain</span>
                 <input id="auto-gain-toggle" type="checkbox" class="switch" checked />
               </label>
+              <label class="switch-row" for="noise-mode-select" data-i18n-title="micHealth.noiseHint" title=""><span data-i18n="micHealth.noiseMode">Noisy room / tongues</span><select id="noise-mode-select"><option value="normal" data-i18n="micHealth.noiseNormal">Normal</option><option value="noisy" data-i18n="micHealth.noiseLoud">Loud room (band, crowd)</option><option value="tongues" data-i18n="micHealth.noiseTongues">Speaking in tongues</option></select></label>
+              <div id="mic-diag" class="mic-diag" style="display: none">
+                <span id="mic-diag-stats"></span>
+                <span id="mic-diag-warn" role="alert"></span>
+              </div>
               <div id="asr-health-warning" class="asr-health-warning" role="alert" style="display: none">
                 <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 2.8 19.5h18.4z"/><path d="M12 10v4M12 17h.01"/></svg>
                 <div class="asr-health-warning-body">
                   <span id="asr-health-warning-text"></span>
-                  <button id="asr-return-primary-btn" type="button" class="btn-secondary btn-small" style="display:none">Return to main provider</button>
+                  <button id="asr-return-primary-btn" type="button" class="btn-secondary btn-small" data-i18n="asrSettings.returnPrimary" style="display:none">Return to main provider</button>
                 </div>
               </div>
               <!-- Echo warning (ARCHITECTURE.md section 132): non-blocking, operator-only, never changes a transcript. -->
               <div id="echo-warning" class="echo-warning" role="status" hidden></div>
               <div id="asr-provider-line" class="asr-provider-line"></div>
               <div id="audio-diagnostics" class="mic-diagnostics" aria-live="off"></div>
+              <div id="mic-capture-status" class="mic-diagnostics" data-state="idle" role="status" aria-live="assertive"></div>
+              <div id="audio-transport-status" class="mic-diagnostics" data-state="idle" aria-live="off"></div>
+              <div id="audio-transport-announcement" class="sr-only" role="status" aria-live="polite"></div>
             </section>
           </aside>
 
@@ -392,6 +426,8 @@
                   <button id="export-session-btn" class="btn-secondary btn-small" data-i18n="session.exportButton">Export session</button>
                   <button id="export-rehearsal-btn" class="btn-secondary btn-small" data-i18n="session.exportRehearsalButton">Export rehearsal report</button>
                   <button id="export-diagnostics-btn" class="btn-secondary btn-small" data-i18n="session.exportDiagnosticsButton">Export diagnostics</button>
+                  <button id="open-logs-btn" class="btn-secondary btn-small" data-i18n="session.openLogsButton">Open logs folder</button>
+                  <button id="export-transcript-btn" class="btn-secondary btn-small" data-i18n="session.exportTranscriptButton">Export transcript</button>
                 </div>
                 <div id="log"></div>
               </div>
@@ -447,6 +483,9 @@
           </details>
         </div>
       </div>
+
+      <!-- Bible Browser (audit-notes/bible-browser.md): built by bible-browser.js -->
+      <div id="view-bible" class="view"></div>
 
       <div id="view-rundown" class="view">
         <div class="view-head">
@@ -582,7 +621,7 @@
                     </div>
                     <div id="canvas-field-text">
                       <label for="canvas-layer-text" data-i18n="rundown.canvasEditor.textLabel">Text</label>
-                      <input id="canvas-layer-text" type="text" placeholder="Welcome" />
+                      <input id="canvas-layer-text" type="text" data-i18n-placeholder="rundown.canvasEditor.defaultTextPlaceholder" placeholder="Welcome" />
                       <label data-i18n="rundown.canvasEditor.fontLabel">Font</label>
                       <div id="canvas-layer-font" class="option-list" role="group" data-i18n-aria-label="a11y.font">
                         <button type="button" data-font="serif" data-i18n="rundown.canvasEditor.fontSerif">Serif</button>
@@ -895,6 +934,9 @@
               <h3 class="ov-group-title" data-i18n="overlay.transitionTitle">Transition</h3>
               <p class="settings-hint" data-i18n="overlay.transitionHint">How a verse appears, changes and leaves. The preview replays it when you pick a design or a transition.</p>
               <div id="ov-transitions" class="segmented ov-cards" role="group" data-i18n-aria-label="overlay.transitionTitle"></div>
+              <h3 class="ov-group-title" data-i18n="overlay.backgroundTitle">Animated background</h3>
+              <p class="settings-hint" data-i18n="overlay.backgroundHint">What plays behind the verse card. Scenes are pure CSS — no media downloads — and freeze into a still image for reduced motion.</p>
+              <div id="ov-backgrounds" class="segmented ov-cards" role="group" data-i18n-aria-label="overlay.backgroundTitle"></div>
             </div>
             <div class="card glass">
               <h2 class="card-title" data-i18n="overlay.nameTitle">Church name</h2>
@@ -924,12 +966,12 @@
             </div>
             <div class="card glass">
               <h2 class="card-title" data-i18n="overlay.placeTitle">Position and look</h2>
-              <div id="ov-target" class="segmented" role="group">
+              <div id="ov-target" class="segmented" role="group" data-i18n-aria-label="overlay.placeTitle">
                 <button type="button" data-target="name" data-i18n="overlay.target.name">Name</button>
                 <button type="button" data-target="logo" data-i18n="overlay.target.logo">Logo</button>
               </div>
               <div class="ov-place">
-                <div id="ov-anchors" class="ov-anchors" role="group" data-i18n-aria-label="overlay.anchors"><button type="button" data-anchor="6,8" aria-label="6,8"></button><button type="button" data-anchor="50,8" aria-label="50,8"></button><button type="button" data-anchor="94,8" aria-label="94,8"></button><button type="button" data-anchor="6,50" aria-label="6,50"></button><button type="button" data-anchor="50,50" aria-label="50,50"></button><button type="button" data-anchor="94,50" aria-label="94,50"></button><button type="button" data-anchor="6,92" aria-label="6,92"></button><button type="button" data-anchor="50,92" aria-label="50,92"></button><button type="button" data-anchor="94,92" aria-label="94,92"></button></div>
+                <div id="ov-anchors" class="ov-anchors" role="group" data-i18n-aria-label="overlay.anchors"><button type="button" data-anchor="6,8" data-i18n-aria-label="overlay.anchor.topLeft" aria-label="Top left"></button><button type="button" data-anchor="50,8" data-i18n-aria-label="overlay.anchor.topCenter" aria-label="Top center"></button><button type="button" data-anchor="94,8" data-i18n-aria-label="overlay.anchor.topRight" aria-label="Top right"></button><button type="button" data-anchor="6,50" data-i18n-aria-label="overlay.anchor.middleLeft" aria-label="Middle left"></button><button type="button" data-anchor="50,50" data-i18n-aria-label="overlay.anchor.center" aria-label="Center"></button><button type="button" data-anchor="94,50" data-i18n-aria-label="overlay.anchor.middleRight" aria-label="Middle right"></button><button type="button" data-anchor="6,92" data-i18n-aria-label="overlay.anchor.bottomLeft" aria-label="Bottom left"></button><button type="button" data-anchor="50,92" data-i18n-aria-label="overlay.anchor.bottomCenter" aria-label="Bottom center"></button><button type="button" data-anchor="94,92" data-i18n-aria-label="overlay.anchor.bottomRight" aria-label="Bottom right"></button></div>
                 <div class="ov-sliders">
                   <label class="ov-slider"><span data-i18n="overlay.place.x">x</span><input id="ov-x" type="range" min="0" max="100" step="0.5" /></label>
                   <label class="ov-slider"><span data-i18n="overlay.place.y">y</span><input id="ov-y" type="range" min="0" max="100" step="0.5" /></label>
@@ -963,6 +1005,7 @@
             <div id="asr-strategy-toggle" class="segmented" role="group" data-i18n-aria-label="asrSettings.title">
               <button type="button" data-asr-strategy="streaming-first" data-i18n="asrSettings.streamingFirst">Streaming first</button>
               <button type="button" data-asr-strategy="batch-first" data-i18n="asrSettings.batchFirst">Batch first</button>
+              <button type="button" data-asr-strategy="offline-first" data-i18n="asrSettings.offlineFirst">Offline first</button>
             </div>
             <p id="asr-strategy-note" class="settings-hint settings-note"></p>
           </div>
@@ -1006,6 +1049,13 @@
               <input id="obs-url" type="text" readonly />
               <button id="obs-copy-btn" class="btn-secondary btn-small" data-i18n="obs.copyButton">Copy</button>
             </div>
+            <!-- S-04: the viewer token rides in this URL — a rotation
+                 invalidates every overlay/stage/live link ever handed out,
+                 and the new URL must be re-pasted into OBS. -->
+            <div class="btn-row field-row">
+              <span id="obs-token-age" class="settings-hint token-age"></span>
+              <button id="obs-rotate-btn" class="btn-secondary btn-small" data-i18n="obs.rotateToken">Rotate viewer token</button>
+            </div>
           </div>
 
           <!-- ARCHITECTURE.md section 82: how a shown verse appears. -->
@@ -1044,7 +1094,37 @@
                 <button type="button" data-ai-provider="anthropic" data-i18n="ai.provider.anthropic">Anthropic</button>
               </div>
             </div>
-            <p id="ai-no-key-hint" class="settings-hint" data-i18n="ai.noKey" hidden>The chosen AI service has no API key. Add it in setup, or choose the other service.</p>
+            <p id="ai-no-key-hint" class="settings-hint" data-i18n="ai.noKey" hidden>The chosen AI service has no API key. Paste an Anthropic key in the field below, or choose the free service (it uses the Groq key from setup).</p>
+            <div class="ai-feature-row">
+              <div class="ai-feature-text">
+                <div class="ai-feature-name" data-i18n="ai.key.title">Anthropic API key</div>
+                <p class="settings-hint" data-i18n="ai.key.hint">Stored encrypted on this computer. Saving restarts the services for a moment.</p>
+                <input id="ai-key-input" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false" />
+              </div>
+              <div>
+                <button id="ai-key-save-btn" type="button" class="btn-secondary btn-small" data-i18n="ai.key.save">Save key</button>
+                <button id="ai-key-remove-btn" type="button" class="btn-secondary btn-small" data-i18n="ai.key.remove">Remove</button>
+              </div>
+            </div>
+            <div class="ai-feature-row">
+              <div class="ai-feature-text">
+                <div class="ai-feature-name" data-i18n="ai.groqKey.title">Groq API key</div>
+                <p class="settings-hint" data-i18n="ai.groqKey.hint">Also used for transcription. Replaces the saved key; saving restarts the services for a moment.</p>
+                <input id="ai-groq-key-input" type="password" placeholder="gsk_…" autocomplete="off" spellcheck="false" />
+              </div>
+              <div>
+                <button id="ai-groq-key-save-btn" type="button" class="btn-secondary btn-small" data-i18n="ai.key.save">Save key</button>
+              </div>
+            </div>
+            <div class="ai-feature-row">
+              <div class="ai-feature-text">
+                <div class="ai-feature-name" data-i18n="ai.status.title">Status</div>
+                <p id="ai-status-line" class="settings-hint" role="status"></p>
+              </div>
+              <div>
+                <button id="ai-test-btn" type="button" class="btn-secondary btn-small" data-i18n="ai.test.button">Test connection</button>
+              </div>
+            </div>
             <div class="ai-feature-row">
               <div class="ai-feature-text">
                 <div class="ai-feature-name" data-i18n="ai.cleanup.title">Smarter transcript cleanup</div>
@@ -1092,6 +1172,21 @@
             </div>
           </div>
 
+          <!-- Custom Bible API endpoint (for churches running custom or local Bible servers) -->
+          <div class="card glass">
+            <div class="panel-head">
+              <svg class="icon panel-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16M9 4v16"/></svg>
+              <h2 class="card-title" data-i18n="bibleApi.title">Bible API Endpoint</h2>
+            </div>
+            <p class="settings-hint" data-i18n="bibleApi.hint">Custom HTTPS endpoint for English Bible verses. Leave empty to use the default (bible-api.com).</p>
+            <label for="custom-bible-api-url" data-i18n="bibleApi.customUrlLabel">API Base URL</label>
+            <div class="btn-row field-row">
+              <input id="custom-bible-api-url" type="url" placeholder="https://bible-api.com" autocomplete="off" spellcheck="false" />
+              <button id="custom-bible-api-apply-btn" class="btn-secondary btn-small" data-i18n="bibleApi.apply">Apply</button>
+            </div>
+            <p id="custom-bible-api-status" class="settings-hint settings-note"></p>
+          </div>
+
           <div class="card glass">
             <div class="panel-head">
               <svg class="icon panel-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg>
@@ -1103,6 +1198,12 @@
               <div class="btn-row field-row">
                 <input id="remote-url" type="text" readonly />
                 <button id="remote-copy-btn" class="btn-secondary btn-small" data-i18n="remote.copyButton">Copy</button>
+              </div>
+              <!-- S-04: the operator token rides in this URL — anyone who
+                   captures it over an open WiFi controls the overlay. -->
+              <div class="btn-row field-row">
+                <span id="remote-token-age" class="settings-hint token-age"></span>
+                <button id="remote-rotate-btn" class="btn-secondary btn-small" data-i18n="remote.rotateToken">Rotate remote token</button>
               </div>
             </div>
             <div id="remote-no-lan" class="settings-hint" style="display: none" data-i18n="remote.noLan">Enabled, but no local network address was found on this machine.</div>
@@ -1121,7 +1222,7 @@
        (dashboard.js drives them); the mic and ASR items mirror the Live
        view's own mic card in short form. -->
   <footer class="statusbar">
-    <div id="status-pill" class="status-pill disconnected">
+    <div id="status-pill" class="status-pill disconnected" role="status" aria-live="polite" aria-atomic="true">
       <span class="status-dot"></span>
       <span id="status-text" data-i18n="status.connecting">connecting…</span>
     </div>
@@ -1155,7 +1256,13 @@
   </div>
 
   <script src="./i18n.js"></script>
+  <script src="./audio-stream.js"></script>
+  <script src="./mic-capture-guard.js"></script>
+  <script src="./brand-accent.js"></script>
+  <script src="./parse-reference.js"></script>
+  <script src="./reference-format.js"></script>
   <script src="./dashboard.js"></script>
   <script src="./overlay-settings.js"></script>
+  <script src="./bible-browser.js"></script>
 </body>
 </html>

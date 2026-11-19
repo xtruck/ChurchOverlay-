@@ -1,0 +1,5 @@
+# Everything in tools/ runs on the standard library. These only add convenience; install none, some or all.
+rapidfuzz>=3.9      # alias_miner: faster, better string similarity than difflib (same 0..1 scale)
+matplotlib>=3.8     # service_report --chart: latency histogram and finals-per-minute bars
+silero-vad>=5.1     # vad_eval --labels silero: a neural speech detector as the reference labels
+torch>=2.3          # required by silero-vad (large; only for the VAD experiment)

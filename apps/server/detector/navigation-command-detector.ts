@@ -1,7 +1,7 @@
 import type { NavigationCommand, NavigationCommandDetector as INavigationCommandDetector } from "../../../packages/contracts"
 import { normalizeSpokenReferences } from "./spoken-reference-normalizer"
 import { CATALOG_IDS, isCatalogBookWord, normalizeBookName, stripAccents } from "./regex-detector"
-import { BOOK_CATALOG } from "../verse/book-catalog"
+import { RANGE_TAIL } from "./range-tail"
 
 /**
  * ARCHITECTURE.md section 61.2-61.3: voice-driven verse navigation, a
@@ -62,24 +62,6 @@ const SUBSTRING_RULES: readonly SubstringRule[] = [
   { phrase: "clear the screen", command: { kind: "cancel" } },
   { phrase: "effacer l'ecran", command: { kind: "cancel" } },
   { phrase: "efface l'ecran", command: { kind: "cancel" } },
-  // ARCHITECTURE.md section 65.4 — a spoken display-mode switch. Longer,
-  // specific phrases match as a substring, same reasoning as every other
-  // substring rule above. French phrases deliberately avoid a conjugated
-  // verb ("passer"/"passons"/"passez"/"passe" would each need their own
-  // entry to catch real spoken commands) — "en français"/"en anglais" is
-  // conjugation-independent and matches all of them ("passons en
-  // français", "mets en français", "passe en français", ...).
-  { phrase: "switch to english", command: { kind: "goto-display-mode", mode: "english" } },
-  { phrase: "english only", command: { kind: "goto-display-mode", mode: "english" } },
-  { phrase: "en anglais", command: { kind: "goto-display-mode", mode: "english" } },
-  { phrase: "anglais seulement", command: { kind: "goto-display-mode", mode: "english" } },
-  { phrase: "switch to french", command: { kind: "goto-display-mode", mode: "french" } },
-  { phrase: "french only", command: { kind: "goto-display-mode", mode: "french" } },
-  { phrase: "en francais", command: { kind: "goto-display-mode", mode: "french" } },
-  { phrase: "francais seulement", command: { kind: "goto-display-mode", mode: "french" } },
-  { phrase: "switch to bilingual", command: { kind: "goto-display-mode", mode: "bilingual" } },
-  { phrase: "en bilingue", command: { kind: "goto-display-mode", mode: "bilingual" } },
-  { phrase: "mode bilingue", command: { kind: "goto-display-mode", mode: "bilingual" } },
 ]
 
 const WHOLE_UTTERANCE_RULES: readonly WholeUtteranceRule[] = [
@@ -91,7 +73,80 @@ const WHOLE_UTTERANCE_RULES: readonly WholeUtteranceRule[] = [
   { phrase: "annuler", command: { kind: "cancel" } },
   { phrase: "clear", command: { kind: "cancel" } },
   { phrase: "effacer", command: { kind: "cancel" } },
+  // Short, natural alternatives that do not repeat "verse". These are
+  // whole-utterance-only so narrative uses never move the on-air reference.
+  { phrase: "next one", command: { kind: "next-verse" } },
+  { phrase: "the next one", command: { kind: "next-verse" } },
+  { phrase: "go to the next one", command: { kind: "next-verse" } },
+  { phrase: "go to next one", command: { kind: "next-verse" } },
+  { phrase: "show me the next one", command: { kind: "next-verse" } },
+  { phrase: "go to the next best", command: { kind: "next-verse" } },
+  { phrase: "go to the nearest west", command: { kind: "next-verse" } },
+  { phrase: "previous one", command: { kind: "previous-verse" } },
+  { phrase: "the previous one", command: { kind: "previous-verse" } },
+  { phrase: "go to the previous one", command: { kind: "previous-verse" } },
+  { phrase: "go to previous one", command: { kind: "previous-verse" } },
+  { phrase: "show me the previous one", command: { kind: "previous-verse" } },
+  { phrase: "go forward one verse", command: { kind: "next-verse" } },
+  { phrase: "one verse forward", command: { kind: "next-verse" } },
+  { phrase: "go back one verse", command: { kind: "previous-verse" } },
+  { phrase: "go back a verse", command: { kind: "previous-verse" } },
+  { phrase: "one verse back", command: { kind: "previous-verse" } },
+  { phrase: "avance d'un verset", command: { kind: "next-verse" } },
+  { phrase: "avancons d'un verset", command: { kind: "next-verse" } },
+  { phrase: "un verset en avant", command: { kind: "next-verse" } },
+  { phrase: "recule d'un verset", command: { kind: "previous-verse" } },
+  { phrase: "reculons d'un verset", command: { kind: "previous-verse" } },
+  { phrase: "un verset en arriere", command: { kind: "previous-verse" } },
 ]
+
+// ARCHITECTURE.md section 65.4 — a spoken display-mode switch. AUDIT TS-01:
+// this used to match "en français"/"en anglais" as a SUBSTRING, so ordinary
+// preaching ("il parle en français", "ce mot se traduit en français", "en
+// anglais on dit grace") flipped the live display mode and persisted it. A
+// display-mode switch changes what the whole congregation sees, so it must
+// only fire when the utterance IS the command: a short imperative form,
+// anchored at the start, bounded in length, with no trailing prose. The
+// accepted forms are an explicit small list (accent-stripped, lower-case):
+//   FR: "passe en francais", "passons en anglais", "mets en bilingue",
+//       "affichage en francais", "mode bilingue", "francais seulement"
+//   EN: "switch to french", "display in english", "english only",
+//       "bilingual mode"
+// each optionally preceded by "ok"/"please"/"s'il vous plait"/"svp" or
+// followed by "please"/"s'il vous plait"/"svp".
+const MODE_COMMAND_MAX_LENGTH = 48
+const MODE_WORDS_FR = { french: "francais", english: "anglais", bilingual: "bilingue" } as const
+const MODE_WORDS_EN = { french: "french", english: "english", bilingual: "bilingual" } as const
+const MODE_POLITE = "(?:ok |please |svp |s'il vous plait |maintenant |now )?"
+const MODE_POLITE_TAIL = "(?: please| svp| s'il vous plait| maintenant| now)?"
+
+function buildModeRule(mode: "french" | "english" | "bilingual"): RegExp {
+  const fr = MODE_WORDS_FR[mode]
+  const en = MODE_WORDS_EN[mode]
+  const forms = [
+    // French: verb or noun + "en"/"mode" + language word
+    `(?:affichage|affiche|affichez|passe|passons|passez|passer|mets|mettez|mettre|bascule|basculons|basculez)(?: l'affichage)? (?:en|mode) ${fr}`,
+    `(?:mode|affichage) (?:en )?${fr}`,
+    mode === "bilingual" ? "" : `${fr} seulement`,
+    // English
+    `(?:switch|change|go|set|display|show)(?: the display)? (?:to|in) ${en}(?: mode)?`,
+    `(?:${en} mode|mode ${en})`,
+    mode === "bilingual" ? "" : `${en} only`,
+  ].filter(Boolean)
+  return new RegExp(`^${MODE_POLITE}(?:${forms.join("|")})${MODE_POLITE_TAIL}$`)
+}
+
+const MODE_COMMAND_RULES: ReadonlyArray<{ readonly regex: RegExp; readonly command: NavigationCommand }> = (
+  ["english", "french", "bilingual"] as const
+).map((mode) => ({ regex: buildModeRule(mode), command: { kind: "goto-display-mode", mode } }))
+
+// Next/previous-verse/chapter phrases are narrative when preceded by a
+// preposition ("in the next verse he says", "dans le verset suivant") and
+// "go back" is narrative when followed by "to"/"in"/... ("let's go back to
+// the beginning"). Those are descriptions, not commands.
+const NARRATIVE_PREFIX = /\b(?:in|of|from|dans|du)\s+(?:the\s+|this\s+|that\s+|le\s+|ce\s+|cet\s+)?$/
+const GO_BACK_NARRATIVE_TAIL = /^\s+(?:to|in|into|and|home|there|then|on|when|before|after|with|one|a)\b/
+const NARRATIVE_GUARDED_KINDS: ReadonlySet<string> = new Set(["next-verse", "previous-verse", "next-chapter", "previous-chapter"])
 
 // "<book> chapter <number>" — e.g. "go to Romans chapter 8". Requires the
 // literal word "chapter" and no trailing verse indicator (neither
@@ -131,9 +186,11 @@ const WHOLE_UTTERANCE_RULES: readonly WholeUtteranceRule[] = [
 // just bare "verset"/"verse"), matching SPOKEN_REFERENCE_PATTERN's own
 // keyword alternation — without it, "chapitre 1, le verset 2" could be
 // misread as a chapter-only goto instead of correctly falling through to
-// the full BOOK_CHAPTER_VERSE_PATTERN.
+// the full BOOK_CHAPTER_VERSE_PATTERN. The plural "versets"/"verses" is
+// accepted too — it used to escape the \b and misread a plural range utterance
+// ("chapitre 3 versets 16 à 18") as a chapter-only goto.
 const GOTO_CHAPTER_PATTERN =
-  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(?:[Cc]hapter|[Cc]hapitre)[\s,]+(\d{1,3})(?![\p{L}\d])(?!:\d)(?!\s*,?\s*(?:le\s+|the\s+)?(?:[Vv]erse|[Vv]erset)\b)/gu
+  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(?:[Cc]hapter|[Cc]hapitre)[\s,]+(\d{1,3})(?![\p{L}\d])(?!:\d)(?!\s*,?\s*(?:(?:[Ee]t|[Aa]nd)\s+)?(?:le\s+|the\s+)?(?:[Vv]erse|[Vv]erset)s?\b)/gu
 
 // TASK 1 + TASK 2: "<book> chapter|chapitre N[,] verse|verset M" — full
 // prose-form reference with all three components. Unlike goto-chapter (no
@@ -148,8 +205,22 @@ const GOTO_CHAPTER_PATTERN =
 // (matching SPOKEN_REFERENCE_PATTERN's own fix) plus "le verset"/"the
 // verse" tolerance — "Jean chapitre 1, le verset 2" is exactly as real and
 // common in spoken French as "Jean chapitre 1, verset 2".
-const BOOK_CHAPTER_VERSE_PATTERN =
-  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(?:[Cc]hapter|[Cc]hapitre)[\s,]+(\d{1,3})[\s,]+(?:le\s+|the\s+)?(?:[Vv]erse|[Vv]erset)[\s,]+(\d{1,3})(?![\p{L}\d])/gu
+// CORRECTIF (2026-11-15, found by the same dry-run probe that fixed
+// RegexDetector's conjunction gap): the spoken conjunction between the two
+// numbers — "Jean chapitre 3 et verset 16", "John chapter 3 and verse 16" —
+// matched nothing here, while GOTO_CHAPTER_PATTERN (whose trailing exclusion
+// now knows the conjunction too) still fired goto-chapter, so the exact
+// verse was lost to a chapter jump. The conjunction slot is only accepted
+// BETWEEN the two numbers; the keyword still anchors the reference.
+// CORRECTIF (2026-11-15, innovation pass section 145): a verse number
+// followed by a RANGE tail ("verset 5 à 7") is the range detector's
+// utterance — the same RANGE_TAIL string the single patterns suppress with
+// — so a prose range produces NO navigation command and cannot race the
+// range show (one utterance, one command).
+const BOOK_CHAPTER_VERSE_PATTERN = new RegExp(
+  String.raw`(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(?:[Cc]hapter|[Cc]hapitre)[\s,]+(\d{1,3})(?:[\s,]+(?:[Ee]t|[Aa]nd)[\s,]+|[\s,]+)(?:le\s+|the\s+)?(?:[Vv]erse|[Vv]erset)[\s,]+(\d{1,3})(?!${RANGE_TAIL}\d)(?![\p{L}\d])`,
+  "gu"
+)
 
 // ARCHITECTURE.md section 65.1: elliptical/continuation references —
 // "verse 16" or "chapter 9, verse 3" said after a book/chapter was already
@@ -165,9 +236,12 @@ const BOOK_CHAPTER_VERSE_PATTERN =
 // "Turn to chapter 9" is lowercase and passes through.
 // CORRECTIF (2026-09-23, live-observed): comma-tolerant separators plus
 // "le verset"/"the verse" tolerance, same reasoning as the two patterns
-// above.
-const BARE_CHAPTER_VERSE_PATTERN =
-  /(?<!(?:[123]\s+)?\p{Lu}[\p{L}]+\s)\b(?:[Cc]hapter|[Cc]hapitre)[\s,]+(\d{1,3})[\s,]+(?:le\s+|the\s+)?(?:[Vv]erse|[Vv]erset)[\s,]+(\d{1,3})\b/gu
+// above. The same RANGE_TAIL exclusion as BOOK_CHAPTER_VERSE_PATTERN: a
+// bare prose range ("chapitre 9, verset 3 à 5") is not a goto-bare pair.
+const BARE_CHAPTER_VERSE_PATTERN = new RegExp(
+  String.raw`(?<!(?:[123]\s+)?\p{Lu}[\p{L}]+\s)\b(?:[Cc]hapter|[Cc]hapitre)[\s,]+(\d{1,3})(?:[\s,]+(?:[Ee]t|[Aa]nd)[\s,]+|[\s,]+)(?:le\s+|the\s+)?(?:[Vv]erse|[Vv]erset)[\s,]+(\d{1,3})(?!${RANGE_TAIL}\d)\b`,
+  "gu"
+)
 
 // The lookbehind here excludes a "verse M"/"verset M" that is really the
 // tail of a "chapter N, verse M" phrase already claimed by the pattern
@@ -177,8 +251,14 @@ const BARE_CHAPTER_VERSE_PATTERN =
 // as every pattern above; "le verset"/"the verse" needs no explicit
 // handling here — the keyword match itself has no anchor to the start of
 // the phrase, so "le "/"the " before it was already ignored harmlessly.
+// CORRECTIF (2026-11-15, alongside BOOK_CHAPTER_VERSE_PATTERN's conjunction
+// slot): the lookbehind must also recognize "chapter 3 et verset" / "chapter
+// 3 and verse" tails, or one utterance would again produce BOTH a
+// goto-bare-chapter-verse and a redundant goto-bare-verse for the same
+// reference. JS lookbehinds accept variable length, so the optional
+// conjunction group is safe here.
 const BARE_VERSE_PATTERN =
-  /(?<!\b(?:[Cc]hapter|[Cc]hapitre)[\s,]+\d{1,3}[,]?\s)\b(?:[Vv]erse|[Vv]erset)[\s,]+(\d{1,3})\b/gu
+  /(?<!\b(?:[Cc]hapter|[Cc]hapitre)[\s,]+\d{1,3}[,]?\s(?:(?:[Ee]t|[Aa]nd)\s+)?)\b(?:[Vv]erse|[Vv]erset)[\s,]+(\d{1,3})\b/gu
 
 // PROD AUDIT 2026-09: "<Book> N" without any "chapitre"/"chapter" keyword —
 // e.g. the production case "Daniel 8", repeated 3 times and previously
@@ -189,9 +269,20 @@ const BARE_VERSE_PATTERN =
 // "verset M" would be claimed by BOOK_CHAPTER_VERSE_PATTERN / BARE_VERSE).
 // CORRECTIF (2026-09-23, live-observed): comma-tolerant book/number
 // separator, plus "le verset"/"the verse" in the trailing exclusion — same
-// reasoning as every pattern above.
-const BOOK_BARE_CHAPTER_PATTERN =
-  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(\d{1,3})(?!\s*:)(?![\p{L}\d])(?!\s*,?\s*(?:le\s+|the\s+)?(?:[Vv]erse|[Vv]erset)\b)/gu
+// reasoning as every pattern above. The exclusion also knows the spoken
+// conjunction ("Daniel 3 et verset 4" is a full reference for
+// BOOK_CHAPTER_VERSE_PATTERN, never a chapter-only goto).
+// CORRECTIF (2026-11-15, innovation pass section 145): the exclusion now
+// knows the plural keyword ("versets") and the shared RANGE_TAIL, and a
+// SPACE-separated second number after the chapter ("Jean 3 16-18", the
+// compact range; also the compact single "Jean 3 16") means verses, never a
+// chapter-only goto — one utterance, one command, whichever detector owns
+// it. COMMA-separated numbers stay allowed: "Abacuc, 1, 2, 3," is the
+// live-observed spoken pause enumeration (2026-09-23), not a range.
+const BOOK_BARE_CHAPTER_PATTERN = new RegExp(
+  String.raw`(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(\d{1,3})(?!\s*:)(?![\p{L}\d])(?!\s*,?\s*(?:(?:[Ee]t|[Aa]nd)\s+)?(?:le\s+|the\s+)?(?:[Vv]erse|[Vv]erset)s?\b)(?!${RANGE_TAIL}\d)(?!\s+\d{1,3})`,
+  "gu"
+)
 
 // PROD AUDIT 2026-09: near-miss guard helper for AppCore. True if any word
 // in the text normalizes to a catalog book name — lets the near-miss log
@@ -233,7 +324,18 @@ export class NavigationCommandDetector implements INavigationCommandDetector {
     const normalizedWhole = stripTrailingPunctuation(normalized)
 
     for (const rule of SUBSTRING_RULES) {
-      if (normalized.includes(rule.phrase)) commands.push(rule.command)
+      const at = normalized.indexOf(rule.phrase)
+      if (at < 0) continue
+      if (NARRATIVE_GUARDED_KINDS.has(rule.command.kind)) {
+        if (NARRATIVE_PREFIX.test(normalized.slice(0, at))) continue
+        if (rule.phrase === "go back" && GO_BACK_NARRATIVE_TAIL.test(normalized.slice(at + rule.phrase.length))) continue
+      }
+      commands.push(rule.command)
+    }
+    if (normalizedWhole.length <= MODE_COMMAND_MAX_LENGTH) {
+      for (const rule of MODE_COMMAND_RULES) {
+        if (rule.regex.test(normalizedWhole)) commands.push(rule.command)
+      }
     }
     for (const rule of WHOLE_UTTERANCE_RULES) {
       if (normalizedWhole === rule.phrase) commands.push(rule.command)

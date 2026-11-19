@@ -49,13 +49,16 @@
     --accent-rgb: 230, 194, 122;
     --ov-card-rgb: 6, 7, 10;
     --ov-card-a: 0.6;
+    --ov-content-card-a: max(var(--ov-card-a), 0.94);
     --scrim: rgba(var(--ov-card-rgb), var(--ov-card-a));
     --ov-text: #ffffff;
     --ov-text2: #f2f4f7;
     --ov-border: rgba(255, 255, 255, 0.08);
     --ov-backdrop: #0c1320;
     --ov-backdrop-2: #070b12;
-    --ov-shadow: 0 2px 10px rgba(0, 0, 0, 0.85);
+    /* em units: the halo grows with the type (the verse is 60-300px), so it
+       holds on a bright picture at the back of the room as well as up close. */
+    --ov-shadow: 0 0.03em 0.1em rgba(0, 0, 0, 0.85), 0 0 0.4em rgba(0, 0, 0, 0.4);
     /* Vespers 2 motion (MASTER.md): enter 320ms, exit faster (200ms),
        transform/opacity only. */
     --ov-ease: cubic-bezier(0.2, 0, 0, 1);
@@ -93,6 +96,362 @@
     font-feature-settings: "kern" 1, "liga" 1;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
+  }
+
+  /* Optional, local-only scenic plate. Loaded only after explicit opt-in. */
+  #nature-backdrop { position: fixed; inset: 0; z-index: 0; display: none; overflow: hidden; pointer-events: none; background: #101923; }
+  html.nature-background #nature-backdrop { display: block; }
+  #nature-background-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; }
+  #nature-background-scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(5, 10, 17, 0.2), rgba(5, 10, 17, 0.5)); }
+  html.nature-video-ready #nature-background-video { opacity: 1; }
+  html.nature-background-fallback #nature-background-scrim {
+    background: radial-gradient(ellipse at 50% 36%, rgba(177, 198, 204, 0.22), transparent 42%), linear-gradient(180deg, #536b77 0%, #263d4a 47%, #101923 100%);
+  }
+  @media (prefers-reduced-motion: reduce) { #nature-background-video { display: none; } }
+
+  /*
+    ARCHITECTURE.md section 147: animated worship scenes behind the verse card.
+    Pure CSS: no media download, every keyframe animates ONLY transform and
+    opacity (OBS composites them on the GPU), exactly one scene is displayed at
+    a time (the others are display:none and cost nothing), and under
+    prefers-reduced-motion every animation stops, leaving the scene's static
+    gradient — the same fallback contract as the nature loop above. The scene
+    is chosen server-side (overlay:style's closed background list) and applied
+    by overlay.js as html[data-scene="<id>"].
+  */
+  #scene-backdrop { position: fixed; inset: 0; z-index: 0; display: none; overflow: hidden; pointer-events: none; background: #0a0e14; }
+  html[data-scene] #scene-backdrop { display: block; }
+  .scene { position: absolute; inset: 0; display: none; }
+  /* A soft scrim on every scene (lighter than the nature plate, whose video is
+     brighter): the verse card's own palette keeps full control of legibility. */
+  .scene::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(5, 10, 17, 0.16), rgba(5, 10, 17, 0.34)); }
+
+  html[data-scene="pentecost-fire"] .scene-pentecost-fire { display: block; }
+  html[data-scene="winepress"] .scene-winepress { display: block; }
+  html[data-scene="glory-rays"] .scene-glory-rays { display: block; }
+  html[data-scene="living-water"] .scene-living-water { display: block; }
+  html[data-scene="heavenly-clouds"] .scene-heavenly-clouds { display: block; }
+
+  .scene-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+
+  /*
+    Pentecost fire — real, living flame, painted in four layers:
+    1. five teardrop flame tongues (deep red body, orange edge, a white-hot
+       <b> core), each dancing on its own beat, screen-blended so overlapping
+       fire ADDS light the way real flame does;
+    2. a coal bed and a bloom glow breathing at the base;
+    3. a rising ember storm (18 sparks, staggered size, speed and drift);
+    4. THE WARP: an animated SVG feTurbulence + feDisplacementMap filter
+       (#scene-fire-warp, its noise morphed every frame by SMIL) that makes
+       every edge of the fire writhe like real flame instead of pulsing like
+       a blob. The filter is attached only under prefers-reduced-motion:
+       no-preference (see the bottom of this block).
+  */
+  .scene-pentecost-fire {
+    background:
+      radial-gradient(130% 85% at 50% 112%, rgba(255, 122, 40, 0.30), transparent 62%),
+      linear-gradient(180deg, #120404 0%, #2a0c0c 52%, #3f1108 100%);
+  }
+  .scene-pentecost-fire .fire-warp { position: absolute; inset: 0; mix-blend-mode: screen; }
+  .scene-pentecost-fire .fire-glow {
+    position: absolute; left: -10vw; bottom: -18vh; width: 120vw; height: 66vh;
+    background: radial-gradient(50% 60% at 50% 76%, rgba(255, 148, 50, 0.55), rgba(206, 62, 16, 0.26) 55%, transparent 78%);
+    mix-blend-mode: screen;
+    animation: scene-glow-breathe 3.6s ease-in-out infinite alternate;
+  }
+  .scene-pentecost-fire .flame {
+    position: absolute; bottom: -6vh; width: 20vw; height: 60vh;
+    border-radius: 50% 50% 46% 46% / 72% 72% 28% 28%;
+    transform-origin: 50% 100%;
+    filter: blur(0.9vh);
+    mix-blend-mode: screen;
+    background: radial-gradient(58% 92% at 50% 90%,
+      rgba(255, 186, 92, 0.98), rgba(255, 126, 30, 0.88) 26%,
+      rgba(230, 62, 14, 0.66) 52%, rgba(132, 22, 10, 0.34) 72%, transparent 88%);
+    animation: scene-flame-dance 2.4s ease-in-out infinite alternate;
+  }
+  .scene-pentecost-fire .flame b {
+    position: absolute; left: 24%; bottom: 2%; width: 52%; height: 62%;
+    border-radius: 50% 50% 50% 50% / 62% 62% 38% 38%;
+    background: radial-gradient(closest-side, rgba(255, 252, 238, 0.98), rgba(255, 222, 122, 0.62) 50%, transparent 80%);
+    animation: scene-flame-core 1.3s ease-in-out infinite alternate;
+  }
+  .scene-pentecost-fire .f1 { left: -5vw; width: 20vw; height: 64vh; animation-duration: 2.6s; animation-delay: -0.4s; }
+  .scene-pentecost-fire .f2 { left: 16vw; width: 24vw; height: 82vh; animation-duration: 2.1s; animation-delay: -1.2s; background: radial-gradient(58% 92% at 50% 90%, rgba(255, 232, 158, 1), rgba(255, 158, 48, 0.9) 28%, rgba(236, 80, 18, 0.64) 54%, rgba(146, 28, 10, 0.32) 72%, transparent 88%); }
+  .scene-pentecost-fire .f3 { left: 42vw; width: 21vw; height: 72vh; animation-duration: 2.9s; animation-delay: -0.8s; }
+  .scene-pentecost-fire .f4 { left: 63vw; width: 17vw; height: 56vh; animation-duration: 2.3s; animation-delay: -1.6s; background: radial-gradient(58% 92% at 50% 90%, rgba(255, 158, 70, 0.98), rgba(238, 78, 18, 0.82) 30%, rgba(172, 38, 12, 0.58) 56%, rgba(104, 16, 8, 0.3) 74%, transparent 88%); }
+  .scene-pentecost-fire .f5 { right: -5vw; width: 19vw; height: 62vh; animation-duration: 2.5s; animation-delay: -2s; }
+  .scene-pentecost-fire .fire-bed {
+    position: absolute; left: -4vw; right: -4vw; bottom: -7vh; height: 16vh;
+    background:
+      radial-gradient(38% 88% at 18% 50%, rgba(255, 202, 104, 0.78), transparent 70%),
+      radial-gradient(30% 92% at 44% 58%, rgba(255, 148, 56, 0.82), transparent 72%),
+      radial-gradient(36% 90% at 71% 46%, rgba(255, 186, 80, 0.72), transparent 70%),
+      radial-gradient(30% 90% at 90% 56%, rgba(255, 136, 44, 0.78), transparent 74%);
+    filter: blur(1.6vh);
+    mix-blend-mode: screen;
+    animation: scene-coals 1.7s ease-in-out infinite alternate;
+  }
+  .scene-pentecost-fire .heat {
+    position: absolute; left: 0; right: 0; bottom: 28vh; height: 36vh;
+    background:
+      radial-gradient(42% 34% at 30% 82%, rgba(255, 150, 60, 0.1), transparent 72%),
+      radial-gradient(36% 28% at 62% 62%, rgba(255, 170, 80, 0.09), transparent 72%);
+    mix-blend-mode: screen;
+    animation: scene-drift-y 13s ease-in-out infinite alternate;
+  }
+  @keyframes scene-flame-dance {
+    0% { transform: scaleY(0.92) scaleX(1.04) skewX(-2deg) translateY(0.8vh); opacity: 0.85; }
+    50% { transform: scaleY(1.06) scaleX(0.97) skewX(1.6deg) translateY(-1.6vh); opacity: 1; }
+    100% { transform: scaleY(0.97) scaleX(1.05) skewX(-1deg) translateY(-0.4vh); opacity: 0.9; }
+  }
+  @keyframes scene-flame-core {
+    from { transform: scaleY(0.85) translateY(1vh); opacity: 0.75; }
+    to { transform: scaleY(1.1) translateY(-1.2vh); opacity: 1; }
+  }
+  @keyframes scene-glow-breathe {
+    from { opacity: 0.55; transform: scaleY(0.94); }
+    to { opacity: 0.95; transform: scaleY(1.06); }
+  }
+  @keyframes scene-coals {
+    from { opacity: 0.7; transform: translateY(0.6vh); }
+    to { opacity: 1; transform: translateY(-0.6vh); }
+  }
+  .scene-pentecost-fire i {
+    position: absolute; bottom: -2vh; width: 0.5vh; height: 0.5vh; border-radius: 50%;
+    background: #ffc46b; box-shadow: 0 0 1.4vh 0.3vh rgba(255, 150, 60, 0.55); opacity: 0;
+    animation: scene-ember 8.5s linear infinite;
+  }
+  @keyframes scene-ember {
+    0% { transform: translate(0, 0) scale(1); opacity: 0; }
+    8% { opacity: 1; }
+    35% { transform: translate(calc(var(--dx, 14px) * 0.6), -38vh) scale(0.92); }
+    62% { transform: translate(calc(var(--dx, 14px) * -0.4), -68vh) scale(0.8); opacity: 0.75; }
+    100% { transform: translate(var(--dx, 14px), -112vh) scale(0.45); opacity: 0; }
+  }
+
+  /*
+    Winepress — grapes are pressed and the must flows: the juice surface is
+    warped by the animated #scene-liquid-warp filter so the rolls are organic,
+    heavy drops drip from the press into the pool, rings spread where they
+    land, and the tumbling grapes now rotate as they fall.
+  */
+  .scene-winepress { background: linear-gradient(180deg, #1a0a24 0%, #2b0f33 46%, #3d1030 74%, #4a0f28 100%); }
+  .scene-winepress .liquid-warp { position: absolute; inset: 0; }
+  .scene-winepress .flow {
+    position: absolute; left: -30vw; width: 160vw; height: 38vh; bottom: -16vh; border-radius: 46%;
+    filter: blur(3vh); animation: scene-sway 26s ease-in-out infinite alternate;
+  }
+  .scene-winepress .juice1 { background: radial-gradient(closest-side, rgba(128, 22, 56, 0.75), rgba(76, 10, 40, 0.4) 62%, transparent 78%); opacity: 0.55; }
+  .scene-winepress .juice2 { bottom: -22vh; height: 32vh; opacity: 0.4; animation-duration: 34s; animation-delay: -9s; background: radial-gradient(closest-side, rgba(96, 24, 92, 0.7), rgba(56, 12, 56, 0.38) 60%, transparent 78%); }
+  .scene-winepress .pool { bottom: -30vh; height: 44vh; opacity: 0.35; animation-duration: 44s; animation-delay: -18s; background: radial-gradient(closest-side, rgba(58, 8, 30, 0.8), rgba(40, 6, 24, 0.4) 60%, transparent 80%); }
+  .scene-winepress .drip {
+    position: absolute; top: -38vh; width: 1vh; height: 34vh;
+    border-radius: 0 0 50% 50% / 0 0 16% 16%;
+    background: linear-gradient(180deg, transparent 0%, rgba(156, 26, 84, 0.4) 34%, rgba(112, 14, 58, 0.68) 78%, rgba(84, 10, 44, 0.85) 100%);
+    filter: blur(0.3vh); opacity: 0;
+    animation: scene-drip-fall 9s linear infinite;
+  }
+  .scene-winepress .ripple {
+    position: absolute; bottom: 7vh; width: 26vw; height: 3.4vh; border-radius: 50%;
+    border: 0.35vh solid rgba(232, 180, 196, 0.32);
+    filter: blur(0.5vh); opacity: 0;
+    animation: scene-ripple 7.5s ease-out infinite;
+  }
+  @keyframes scene-drip-fall {
+    0% { transform: translateY(0); opacity: 0; }
+    10% { opacity: 0.9; }
+    78% { opacity: 0.85; }
+    90% { transform: translateY(126vh); opacity: 0.5; }
+    100% { transform: translateY(132vh); opacity: 0; }
+  }
+  @keyframes scene-ripple {
+    0% { transform: scaleX(0.35); opacity: 0; }
+    25% { opacity: 0.8; }
+    100% { transform: scaleX(1.5); opacity: 0; }
+  }
+  @keyframes scene-sway {
+    from { transform: translateX(-4vw) rotate(-1.4deg); }
+    to { transform: translateX(4vw) rotate(1.4deg); }
+  }
+  .scene-winepress i {
+    position: absolute; top: -8vh; width: 2.4vh; height: 2.4vh; border-radius: 50%; opacity: 0;
+    background: radial-gradient(circle at 35% 30%, #8a4a9e, #47134e 66%, #2c0b31);
+    animation: scene-grape 19s linear infinite;
+  }
+  @keyframes scene-grape {
+    0% { transform: translate(0, 0) rotate(0deg) scale(1); opacity: 0; }
+    8% { opacity: 0.9; }
+    50% { transform: translate(calc(var(--dx, 10px) * 0.7), 52vh) rotate(38deg) scale(0.96); opacity: 0.8; }
+    82% { opacity: 0.6; }
+    100% { transform: translate(var(--dx, 10px), 116vh) rotate(90deg) scale(0.9); opacity: 0; }
+  }
+
+  /*
+    Glory rays — a slow conic fan of light turns above the frame, individual
+    beams sway on their own timing, the source glow breathes, and dust motes
+    fall through the light with drifting, twinkling paths.
+  */
+  .scene-glory-rays {
+    background:
+      radial-gradient(90% 55% at 50% -8%, rgba(255, 214, 150, 0.30), transparent 60%),
+      linear-gradient(180deg, #39404f 0%, #232936 48%, #101319 100%);
+  }
+  .scene-glory-rays .fan {
+    position: absolute; left: 50%; top: -170vh; width: 240vh; height: 240vh; margin-left: -120vh;
+    border-radius: 50%;
+    background: conic-gradient(from 0deg,
+      rgba(255, 226, 180, 0.05) 0deg, transparent 12deg,
+      rgba(255, 226, 180, 0.045) 24deg, transparent 40deg,
+      rgba(255, 226, 180, 0.04) 55deg, transparent 74deg,
+      rgba(255, 226, 180, 0.05) 90deg, transparent 108deg,
+      rgba(255, 226, 180, 0.04) 126deg, transparent 146deg,
+      rgba(255, 226, 180, 0.045) 164deg, transparent 182deg,
+      rgba(255, 226, 180, 0.04) 203deg, transparent 224deg,
+      rgba(255, 226, 180, 0.05) 246deg, transparent 266deg,
+      rgba(255, 226, 180, 0.04) 288deg, transparent 310deg,
+      rgba(255, 226, 180, 0.045) 333deg, transparent 360deg);
+    filter: blur(3vh);
+    mix-blend-mode: screen;
+    animation: scene-fan-turn 90s linear infinite;
+  }
+  .scene-glory-rays .glow {
+    position: absolute; left: 50%; top: -20vh; width: 70vw; height: 55vh; transform: translateX(-50%);
+    background: radial-gradient(closest-side, rgba(255, 226, 180, 0.4), rgba(255, 214, 150, 0.14) 58%, transparent 78%);
+    filter: blur(2vh); animation: scene-breathe 9.5s ease-in-out infinite alternate;
+  }
+  .scene-glory-rays .ray {
+    position: absolute; top: -14vh; left: 50%; width: 12vw; height: 118vh; filter: blur(1.4vh);
+    background: linear-gradient(180deg, rgba(255, 226, 180, 0.2), rgba(255, 226, 180, 0.07) 55%, transparent 80%);
+    animation: scene-ray 17s ease-in-out infinite alternate;
+  }
+  .scene-glory-rays .r1 { left: 8%; --tilt: -10deg; width: 15vw; }
+  .scene-glory-rays .r2 { left: 24%; --tilt: -13deg; width: 10vw; animation-duration: 21s; animation-delay: -8s; }
+  .scene-glory-rays .r3 { left: 40%; --tilt: -8deg; width: 11vw; animation-duration: 15s; animation-delay: -4s; }
+  .scene-glory-rays .r4 { left: 55%; --tilt: -15deg; width: 14vw; animation-duration: 23s; animation-delay: -12s; }
+  .scene-glory-rays .r5 { left: 70%; --tilt: -10deg; width: 7vw; animation-duration: 26s; animation-delay: -3s; }
+  .scene-glory-rays .r6 { left: 84%; --tilt: -13deg; width: 9vw; animation-duration: 29s; animation-delay: -17s; }
+  .scene-glory-rays .mote {
+    position: absolute; top: -4vh; width: 0.5vh; height: 0.5vh; border-radius: 50%;
+    background: rgba(255, 238, 206, 0.9); box-shadow: 0 0 1vh 0.2vh rgba(255, 226, 180, 0.5);
+    opacity: 0;
+    animation: scene-mote 16s linear infinite;
+  }
+  @keyframes scene-fan-turn {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  @keyframes scene-ray {
+    from { transform: translateX(-50%) rotate(calc(var(--tilt, 0deg) - 2.2deg)); opacity: 0.5; }
+    to { transform: translateX(-50%) rotate(calc(var(--tilt, 0deg) + 2.2deg)); opacity: 0.9; }
+  }
+  @keyframes scene-mote {
+    0% { transform: translate(0, 0); opacity: 0; }
+    12% { opacity: 0.75; }
+    50% { transform: translate(calc(var(--dx, 20px) * 0.5), 48vh); opacity: 0.45; }
+    88% { opacity: 0.55; }
+    100% { transform: translate(var(--dx, 20px), 108vh); opacity: 0; }
+  }
+  @keyframes scene-breathe {
+    from { opacity: 0.55; }
+    to { opacity: 0.95; }
+  }
+
+  /*
+    Living water — baptismal bands roll beneath a surface warped by the
+    animated #scene-liquid-warp filter, light glints slide across the water,
+    and bubbles rise slowly through the deep.
+  */
+  .scene-living-water { background: linear-gradient(180deg, #06222c 0%, #053440 52%, #042630 78%, #031a22 100%); }
+  .scene-living-water .liquid-warp { position: absolute; inset: 0; }
+  .scene-living-water .wave {
+    position: absolute; left: -30vw; width: 160vw; height: 30vh; bottom: -14vh; border-radius: 48%;
+    filter: blur(2.6vh); animation: scene-sway 30s ease-in-out infinite alternate;
+  }
+  .scene-living-water .w1 { background: radial-gradient(closest-side, rgba(24, 116, 128, 0.7), rgba(12, 78, 92, 0.38) 62%, transparent 78%); opacity: 0.55; }
+  .scene-living-water .w2 { bottom: -20vh; height: 26vh; opacity: 0.42; animation-duration: 40s; animation-delay: -11s; background: radial-gradient(closest-side, rgba(30, 140, 148, 0.6), rgba(14, 88, 96, 0.34) 60%, transparent 78%); }
+  .scene-living-water .w3 { bottom: -26vh; height: 34vh; opacity: 0.3; animation-duration: 50s; animation-delay: -25s; background: radial-gradient(closest-side, rgba(16, 96, 110, 0.75), rgba(8, 60, 72, 0.4) 60%, transparent 80%); }
+  .scene-living-water .shimmer {
+    position: absolute; width: 46vw; height: 20vh; border-radius: 50%; filter: blur(3vh);
+    background: radial-gradient(closest-side, rgba(190, 240, 244, 0.22), transparent 75%);
+    animation: scene-drift-y 18s ease-in-out infinite alternate;
+  }
+  .scene-living-water .s1 { left: 8vw; top: 34vh; }
+  .scene-living-water .s2 { right: 6vw; top: 52vh; animation-duration: 24s; animation-delay: -9s; }
+  .scene-living-water .glint {
+    position: absolute; bottom: 12vh; width: 30vw; height: 1.2vh; border-radius: 50%;
+    background: linear-gradient(90deg, transparent, rgba(200, 240, 244, 0.5), transparent);
+    filter: blur(0.6vh); mix-blend-mode: screen; opacity: 0;
+    animation: scene-glint 9s ease-in-out infinite;
+  }
+  .scene-living-water .bubble {
+    position: absolute; bottom: -3vh; width: 0.8vh; height: 0.8vh; border-radius: 50%; opacity: 0;
+    background: radial-gradient(circle at 35% 30%, rgba(226, 248, 250, 0.85), rgba(150, 214, 222, 0.4) 60%, transparent 75%);
+    animation: scene-bubble 11s linear infinite;
+  }
+  @keyframes scene-glint {
+    0%, 100% { transform: scaleX(0.6); opacity: 0; }
+    40% { opacity: 0.85; }
+    60% { transform: scaleX(1.1); opacity: 0.7; }
+  }
+  @keyframes scene-bubble {
+    0% { transform: translate(0, 0) scale(0.9); opacity: 0; }
+    10% { opacity: 0.7; }
+    55% { transform: translate(calc(var(--dx, 12px) * 0.5), -52vh) scale(1); opacity: 0.5; }
+    100% { transform: translate(var(--dx, 12px), -96vh) scale(0.85); opacity: 0; }
+  }
+  @keyframes scene-drift-y {
+    from { transform: translateY(-2.5vh) scale(0.96); opacity: 0.5; }
+    to { transform: translateY(2.5vh) scale(1.05); opacity: 0.85; }
+  }
+
+  /*
+    Heavenly clouds — dawn clouds drift through at several depths while two
+    light shafts sweep slowly across the sky and the sun glow breathes.
+  */
+  .scene-heavenly-clouds { background: linear-gradient(180deg, #5d4a6e 0%, #a8788e 26%, #e7b78e 52%, #8a5f4a 78%, #2e1e28 100%); }
+  .scene-heavenly-clouds .shaft {
+    position: absolute; top: -12vh; width: 9vw; height: 120vh; transform-origin: 50% 0%;
+    background: linear-gradient(180deg, rgba(255, 232, 190, 0.3), rgba(255, 232, 190, 0.08) 50%, transparent 80%);
+    filter: blur(2vh); mix-blend-mode: screen;
+    animation: scene-shaft 26s ease-in-out infinite alternate;
+  }
+  .scene-heavenly-clouds .glow {
+    position: absolute; left: 50%; top: 24vh; width: 60vw; height: 44vh; transform: translateX(-50%);
+    background: radial-gradient(closest-side, rgba(255, 214, 150, 0.42), rgba(255, 190, 130, 0.16) 58%, transparent 78%);
+    filter: blur(2.4vh); animation: scene-breathe 11s ease-in-out infinite alternate;
+  }
+  .scene-heavenly-clouds .cloud {
+    position: absolute; height: 22vh; border-radius: 50%; filter: blur(2.6vh);
+    background: radial-gradient(closest-side, rgba(255, 244, 230, 0.5), rgba(255, 220, 190, 0.22) 60%, transparent 78%);
+    animation: scene-drift-x linear infinite;
+  }
+  @keyframes scene-shaft {
+    from { transform: rotate(calc(var(--tilt, 8deg) - 3deg)) translateX(-2vw); opacity: 0.4; }
+    to { transform: rotate(calc(var(--tilt, 8deg) + 3deg)) translateX(2vw); opacity: 0.85; }
+  }
+  @keyframes scene-drift-x {
+    from { transform: translateX(-64vw); }
+    to { transform: translateX(164vw); }
+  }
+
+  /* The turbulence displacement (the warp that makes flames LICK and liquid
+     surfaces roll) is an SVG paint effect driven by SMIL, not a composited
+     transform, so it is attached only when motion is allowed. Under
+     prefers-reduced-motion the filter is never applied and every scene
+     freezes into its static gradient — the same contract as the video above. */
+  @media (prefers-reduced-motion: no-preference) {
+    .scene-pentecost-fire .fire-warp, .scene-pentecost-fire .heat { filter: url(#scene-fire-warp); }
+    .scene-winepress .liquid-warp, .scene-living-water .liquid-warp { filter: url(#scene-liquid-warp); }
+  }
+
+  /* Reduced motion: every scene freezes into its static gradient. */
+  @media (prefers-reduced-motion: reduce) {
+    #scene-backdrop .flame, #scene-backdrop .flame b, #scene-backdrop .fire-glow, #scene-backdrop .fire-bed,
+    #scene-backdrop .heat, #scene-backdrop i, #scene-backdrop .flow, #scene-backdrop .ripple, #scene-backdrop .drip,
+    #scene-backdrop .glow, #scene-backdrop .ray, #scene-backdrop .fan, #scene-backdrop .mote,
+    #scene-backdrop .wave, #scene-backdrop .shimmer, #scene-backdrop .glint, #scene-backdrop .bubble,
+    #scene-backdrop .cloud, #scene-backdrop .shaft { animation: none; }
   }
 
   /*
@@ -170,7 +529,7 @@
   #status.status-hidden { opacity: 0; visibility: hidden; transition: opacity var(--ov-exit) var(--ov-ease), visibility 0s linear var(--ov-exit); }
 
   /*
-    Lower-third base: bottom-anchored inside a ~7% title-safe margin.
+    Lower-third base: full-width lower-screen band with generous interior padding;
     Exit (200ms, accelerate) is faster than enter (320ms, decelerate);
     only opacity/transform animate, so nothing reflows on air.
   */
@@ -196,6 +555,19 @@
     /* The container only fades and lifts a little: the card, the words and
        the reference carry the choreography (see "Section 133" below). */
     transition: opacity 380ms var(--vc-ease-out), transform 800ms var(--vc-ease-out);
+  }
+  /* A broadcast lower-third spans the frame's lower band so scripture can
+     use large type while keeping the live picture visible above it. */
+  #verse:not(.fullscreen) { bottom: 0; align-items: stretch; padding: 0 0 2vh; }
+  #verse:not(.fullscreen) #verse-card.no-card { background: transparent; border-color: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  #verse:not(.fullscreen) #verse-card {
+    width: 100%; max-width: none; max-height: 52vh;
+    padding: clamp(18px, 2.6vh, 34px) clamp(22px, 4vw, 68px);
+    background: linear-gradient(180deg, rgba(var(--ov-card-rgb), calc(0.42 + var(--ov-card-a) * 0.52)), rgba(var(--ov-card-rgb), calc(0.54 + var(--ov-card-a) * 0.44)));
+  }
+  @media (max-width: 640px) {
+    #verse:not(.fullscreen) { padding: 0 0 10px; }
+    #verse:not(.fullscreen) #verse-card { max-height: 58vh; padding: 16px 18px; }
   }
   #verse.vc-fade.visible { transition: opacity var(--vc-fade) ease-out, transform var(--vc-fade) ease-out; }
   #verse.vc-cut, #verse.vc-cut #verse-text, #verse.vc-cut #verse-secondary-text { transition: none; }
@@ -235,7 +607,8 @@
     }
   }
 
-  #verse-text {
+  #verse-text,
+  #verse-secondary-text {
     color: var(--ov-text);
     text-shadow: var(--ov-shadow);
     font-family: "Instrument Serif", Georgia, "Times New Roman", serif;
@@ -270,7 +643,7 @@
     inset: 0;
     bottom: 0;
     justify-content: center;
-    padding: 4vh 6vw;
+    padding: 2vh 2.5vw;
     overflow: hidden;
   }
   #verse.fullscreen #verse-card {
@@ -279,7 +652,7 @@
     height: auto;
     max-height: 100%;
     min-height: 0;
-    padding: clamp(24px, 5vh, 72px) clamp(24px, 5vw, 96px);
+    padding: clamp(16px, 3vh, 48px) clamp(16px, 3vw, 64px);
     justify-content: center;
     border-radius: 0;
     border: none;
@@ -302,7 +675,16 @@
       radial-gradient(90% 60% at 50% 125%, rgba(46, 78, 128, 0.28), transparent 70%),
       linear-gradient(180deg, var(--ov-backdrop), var(--ov-backdrop-2));
   }
-  #verse.fullscreen #verse-text { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5); line-height: 1.28; max-width: 26em; }
+  html.nature-background #verse.fullscreen { background: linear-gradient(180deg, rgba(3, 8, 14, 0.34), rgba(3, 8, 14, 0.58)); }
+  /* Scenes need a LIGHT veil only (the bright nature video gets a heavier
+     one): the fullscreen verse gradient is opaque and would otherwise hide the
+     scene completely. The veil keeps the brightest scene areas readable while
+     the animation shows through; the palette's card keeps its computed
+     contrast on top of that. */
+  html[data-scene] #verse.fullscreen { background: linear-gradient(180deg, rgba(3, 8, 14, 0.18), rgba(3, 8, 14, 0.42)); }
+  /* Fullscreen is read from the back of the room: no narrow measure, the type
+     fills the frame (overlay.js picks the largest size that fits). */
+  #verse.fullscreen :is(#verse-text, #verse-secondary-text) { line-height: 1.28; max-width: 100%; }
   /* The full-bleed backdrop never slides: it only fades, so the frame edge
      never shows video through a moving gap. The words inside still settle
      (see .reveal below). */
@@ -320,31 +702,25 @@
 
   /*
     Bilingual mode (ARCHITECTURE.md section 63.4): present only when a
-    verse:show payload carries `secondary` — French (primary, above, in
-    #verse-text) stays in the existing styling; English (secondary) is
-    visually subordinate: smaller, italic, slightly less opaque. Hidden
-    entirely (not just empty) for single-language mode, so it takes no
+    verse:show payload carries `secondary`. Both blocks are typeset the same
+    (family, weight, size, leading, shadow, reveal); the ONLY difference
+    between the languages is that English is italic and French upright, set
+    from each block's data-language, never from its primary/secondary slot
+    (see "Language-driven typography" near the end of this stylesheet).
+    Hidden entirely (not just empty) for single-language mode, so it takes no
     layout space at all.
   */
+  /* Typography (colour, family, weight, size, leading, shadow, balance) comes
+     from the shared rule on #verse-text above and from each design's own
+     typographic rule, which every design applies to BOTH blocks. Only the
+     spacing and the hairline between the languages belong to this block. */
   #verse-secondary-text {
     display: none;
-    color: var(--ov-text2);
-    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
-    font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
-    font-style: italic;
-    font-weight: 500;
-    font-size: clamp(14px, 1.8vw, 24px);
-    line-height: 1.45;
-    text-align: center;
     margin-top: 12px;
     padding-top: 12px;
     border-top: 1px solid rgba(255, 255, 255, 0.14);
-    max-width: 40em;
-    text-wrap: pretty;
-    text-wrap: balance;
   }
   #verse-secondary-text.visible { display: block; }
-
   #verse-ref-row {
     display: flex;
     align-items: center;
@@ -364,14 +740,15 @@
     text-shadow: var(--ov-shadow);
     font-family: "Instrument Serif", Georgia, serif;
     font-style: italic;
-    font-size: clamp(18px, 2.1vw, 34px);
+    font-size: var(--ref-size);
     font-weight: 400;
     letter-spacing: 0.02em;
     font-variant-numeric: lining-nums;
-    white-space: nowrap;
+    text-align: center;
+    text-wrap: balance;
   }
+  .vc-ref-part { white-space: nowrap; }
   #verse.fullscreen #verse-ref-row { margin-top: clamp(18px, 3vh, 40px); }
-  #verse.fullscreen #verse-reference { font-size: clamp(22px, 2.5vw, 48px); }
   #verse.fullscreen #verse-ref-row::before,
   #verse.fullscreen #verse-ref-row::after { width: clamp(28px, 4vw, 72px); }
 
@@ -404,16 +781,16 @@
     border-top: 6px solid var(--accent);
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
   }
-  #verse-card.tpl-banner #verse-text,
+  #verse-card.tpl-banner :is(#verse-text, #verse-secondary-text),
   #verse-card.tpl-banner #verse-reference {
     font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
     font-style: normal;
     font-weight: 600;
   }
   /* Sans at display sizes wants tighter tracking and leading than the serif. */
-  #verse-card.tpl-banner #verse-text { letter-spacing: -0.005em; line-height: 1.3; }
+  #verse-card.tpl-banner :is(#verse-text, #verse-secondary-text) { letter-spacing: -0.005em; line-height: 1.3; }
   #verse-card.tpl-banner #verse-reference {
-    font-size: clamp(14px, 1.5vw, 24px);
+    font-size: var(--ref-size);
     letter-spacing: 0.12em;
     text-transform: uppercase;
   }
@@ -432,17 +809,17 @@
     backdrop-filter: none;
     padding: 12px 24px;
   }
-  #verse-card.tpl-minimal #verse-text {
+  #verse-card.tpl-minimal :is(#verse-text, #verse-secondary-text) {
     font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
     font-weight: 500;
     letter-spacing: -0.005em;
     line-height: 1.3;
     /* No card: a tight edge shadow for crispness plus a wide soft halo for
        legibility over bright video. */
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85), 0 3px 18px rgba(0, 0, 0, 0.75);
+    text-shadow: 0 0.02em 0.04em rgba(0, 0, 0, 0.85), 0 0.04em 0.3em rgba(0, 0, 0, 0.75), 0 0 0.8em rgba(0, 0, 0, 0.45);
   }
   #verse-card.tpl-minimal #verse-reference {
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85), 0 2px 12px rgba(0, 0, 0, 0.7);
+    text-shadow: 0 0.02em 0.04em rgba(0, 0, 0, 0.85), 0 0.04em 0.3em rgba(0, 0, 0, 0.7), 0 0 0.8em rgba(0, 0, 0, 0.4);
   }
   #verse-card.tpl-minimal #verse-ref-row::before,
   #verse-card.tpl-minimal #verse-ref-row::after { display: none; }
@@ -457,7 +834,7 @@
   #verse-card.tpl-elegant #verse-reference {
     letter-spacing: 0.06em;
   }
-  #verse-card.tpl-elegant #verse-text { line-height: 1.4; }
+  #verse-card.tpl-elegant :is(#verse-text, #verse-secondary-text) { line-height: 1.4; }
   #verse-card.tpl-elegant #verse-ref-row::before,
   #verse-card.tpl-elegant #verse-ref-row::after { width: 44px; opacity: 0.8; }
   #verse.fullscreen #verse-card.tpl-elegant {
@@ -530,7 +907,7 @@
   #verse-card.no-card #verse-text,
   #verse-card.no-card #verse-reference,
   #verse-card.no-card #verse-secondary-text {
-    text-shadow: 0 2px 3px rgba(0, 0, 0, 0.9), 0 0 18px rgba(0, 0, 0, 0.75);
+    text-shadow: 0 0.025em 0.05em rgba(0, 0, 0, 0.9), 0 0 0.3em rgba(0, 0, 0, 0.8), 0 0 0.8em rgba(0, 0, 0, 0.5);
   }
 
   /* ===================================================================
@@ -554,7 +931,7 @@
      OBS's CEF); keyframes are mostly from-only, so each lands exactly on the
      element's own resting style: text is fully legible the moment it settles.
      =================================================================== */
-  #verse-text .vc-w { display: inline-block; max-width: 100%; }
+  :is(#verse-text, #verse-secondary-text) .vc-w { display: inline-block; max-width: 100%; }
   .vc-dropcap, #verse-ornament { display: none; }
   #verse-card {
     --rv-dx: 0em;
@@ -562,6 +939,12 @@
     --rv-blur: 7px;
     --rv-scale: 1;
     --rv-ease: var(--vc-ease-out);
+    /* The reference is a fixed share of the verse type (overlay.js sets
+       --vc-font), so it stays readable at 300px verse type as at 60px, and
+       never drops below ~3.2% of the frame height (34px at 1080p) even under
+       a long passage's small type. */
+    --ref-k: 0.34;
+    --ref-size: clamp(3.2vh, calc(var(--vc-font, 44px) * var(--ref-k)), 11vh);
     --card-dx: 0px;
     --card-dy: 16px;
     --card-s: 0.985;
@@ -604,10 +987,6 @@
   #verse.vc-enter .vc-w,
   #verse.vc-swap-in .vc-w {
     animation: vc-word-in calc(var(--vc-word-dur, 560) * 1ms) var(--rv-ease) calc(var(--d, 0) * 1ms) both;
-  }
-  #verse.vc-enter #verse-secondary-text,
-  #verse.vc-swap-in #verse-secondary-text {
-    animation: vc-rise-in calc(var(--vc-word-dur, 560) * 1ms) var(--vc-ease-out) calc(var(--vc-sec-delay, 0) * 1ms) both;
   }
   #verse.vc-enter #verse-ref-row,
   #verse.vc-swap-in #verse-ref-row {
@@ -705,7 +1084,7 @@
     backdrop-filter: none;
     background: linear-gradient(0deg, rgba(var(--ov-card-rgb), 0.97) 0%, rgba(var(--ov-card-rgb), 0.82) 38%, rgba(var(--ov-card-rgb), 0.45) 70%, rgba(var(--ov-card-rgb), 0) 100%);
   }
-  #verse-card.tpl-cinema #verse-text { letter-spacing: 0.006em; line-height: 1.3; max-width: 30em; }
+  #verse-card.tpl-cinema :is(#verse-text, #verse-secondary-text) { letter-spacing: 0.006em; line-height: 1.3; max-width: 30em; }
   #verse-card.tpl-cinema #verse-ref-row { margin-top: 16px; gap: 18px; }
   #verse-card.tpl-cinema #verse-ref-row::before,
   #verse-card.tpl-cinema #verse-ref-row::after { width: 64px; opacity: 0.55; }
@@ -713,7 +1092,7 @@
     font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
     font-style: normal;
     font-weight: 500;
-    font-size: clamp(12px, 1.15vw, 21px);
+    font-size: var(--ref-size);
     letter-spacing: 0.32em;
     text-transform: uppercase;
   }
@@ -723,9 +1102,9 @@
     background: radial-gradient(50% 60% at 50% 70%, rgba(var(--accent-rgb), 0.26), rgba(var(--accent-rgb), 0.08) 55%, transparent 75%);
     animation: vc-sweep 1100ms var(--vc-ease-inout) 60ms both;
   }
-  #verse.fullscreen[data-card="cinema"] { padding: var(--lb-h) 6vw; }
+  #verse.fullscreen[data-card="cinema"] { padding: var(--lb-h) 3vw; }
   #verse.fullscreen #verse-card.tpl-cinema { background: transparent; padding: 2vh 4vw; }
-  #verse.fullscreen #verse-card.tpl-cinema #verse-reference { font-size: clamp(14px, 1.4vw, 28px); }
+  #verse.fullscreen #verse-card.tpl-cinema #verse-reference { font-size: var(--ref-size); }
 
   /* ---------------------------------------------------------------
      New design 2: manuscript. An illuminated page: a framed leaf with a
@@ -768,7 +1147,7 @@
     text-align: left;
     text-wrap: pretty;
   }
-  #verse-card.tpl-manuscript #verse-text { line-height: 1.36; }
+  #verse-card.tpl-manuscript :is(#verse-text, #verse-secondary-text) { line-height: 1.36; }
   #verse-card.tpl-manuscript #verse-secondary-text { border-top-color: rgba(var(--accent-rgb), 0.3); }
   #verse-card.tpl-manuscript .vc-dropcap {
     display: block;
@@ -806,7 +1185,7 @@
   #verse-card.tpl-manuscript #verse-ref-row::after { display: none; }
   #verse-card.tpl-manuscript #verse-reference {
     font-style: normal;
-    font-size: clamp(13px, 1.3vw, 23px);
+    font-size: var(--ref-size);
     letter-spacing: 0.18em;
     text-transform: uppercase;
   }
@@ -834,7 +1213,7 @@
     box-shadow: 0 30px 90px rgba(0, 0, 0, 0.4);
   }
   #verse.fullscreen #verse-card.tpl-manuscript::before { inset: 10px; }
-  #verse.fullscreen #verse-card.tpl-manuscript #verse-reference { font-size: clamp(16px, 1.7vw, 34px); }
+  #verse.fullscreen #verse-card.tpl-manuscript #verse-reference { font-size: var(--ref-size); }
   #verse.fullscreen #verse-card.tpl-manuscript #verse-ornament { width: min(380px, 40%); margin-top: clamp(20px, 3.5vh, 44px); }
 
   /* ---------------------------------------------------------------
@@ -881,7 +1260,7 @@
     from { opacity: 0; transform: scale(0.6); }
   }
   #verse.vc-enter #verse-card.tpl-stained::before { animation: vc-bloom 1200ms var(--vc-ease-out) both, vc-breathe 9s ease-in-out 1200ms infinite alternate; }
-  #verse-card.tpl-stained #verse-text { line-height: 1.38; }
+  #verse-card.tpl-stained :is(#verse-text, #verse-secondary-text) { line-height: 1.38; }
   #verse-card.tpl-stained #verse-ref-row::before,
   #verse-card.tpl-stained #verse-ref-row::after { width: 52px; opacity: 0.8; }
   #verse-card.tpl-stained #verse-ref-row::before { background: linear-gradient(90deg, transparent, var(--accent)); }
@@ -942,7 +1321,7 @@
   #verse.vc-swap-in #verse-card.tpl-poster::before { animation: vc-quote-in 900ms var(--vc-ease-out) both; }
   #verse-card.tpl-poster #verse-text,
   #verse-card.tpl-poster #verse-secondary-text { text-align: left; text-wrap: pretty; max-width: 26em; }
-  #verse-card.tpl-poster #verse-text { line-height: 1.12; letter-spacing: -0.012em; }
+  #verse-card.tpl-poster :is(#verse-text, #verse-secondary-text) { line-height: 1.12; letter-spacing: -0.012em; }
   #verse-card.tpl-poster #verse-secondary-text { border-top: none; padding-top: 0; margin-top: 14px; max-width: 46em; }
   #verse-card.tpl-poster #verse-ref-row { margin-top: 20px; }
   #verse-card.tpl-poster #verse-ref-row::before { width: 44px; height: 3px; opacity: 1; }
@@ -951,14 +1330,14 @@
     font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
     font-style: normal;
     font-weight: 600;
-    font-size: clamp(13px, 1.3vw, 22px);
+    font-size: var(--ref-size);
     letter-spacing: 0.2em;
     text-transform: uppercase;
   }
   #verse.fullscreen[data-card="poster"] { align-items: flex-start; padding: 6vh 7vw; }
   #verse.fullscreen #verse-card.tpl-poster { width: auto; max-width: 100%; background: transparent; padding-left: calc(var(--vc-font, 100px) * 1.6 + 2vw); padding-right: 2vw; }
   #verse.fullscreen #verse-card.tpl-poster::before { font-size: calc(var(--vc-font, 100px) * 4.6); }
-  #verse.fullscreen #verse-card.tpl-poster #verse-reference { font-size: clamp(16px, 1.6vw, 30px); }
+  #verse.fullscreen #verse-card.tpl-poster #verse-reference { font-size: var(--ref-size); }
   #verse.fullscreen[data-card="poster"]::before {
     content: "";
     position: absolute;
@@ -1009,6 +1388,12 @@
     letter-spacing: -0.008em;
     line-height: 1.3;
   }
+  #verse-card.tpl-split #verse-secondary-text {
+    font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+    font-weight: 500;
+    letter-spacing: -0.008em;
+    line-height: 1.3;
+  }
   #verse-card.tpl-split #verse-secondary-text { grid-column: 3; grid-row: 2; text-align: left; text-wrap: pretty; border-top: none; padding-top: 0; margin-top: 10px; }
   #verse-card.tpl-split #verse-ornament {
     display: block;
@@ -1029,7 +1414,7 @@
     font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
     font-style: normal;
     font-weight: 600;
-    font-size: clamp(16px, 1.9vw, 34px);
+    font-size: var(--ref-size);
     line-height: 1.15;
     letter-spacing: 0.005em;
   }
@@ -1047,7 +1432,7 @@
     border-radius: 3px;
     background: rgba(var(--ov-card-rgb), calc(var(--ov-card-a) * 0.55));
   }
-  #verse.fullscreen #verse-card.tpl-split #verse-reference { font-size: clamp(22px, 3vw, 64px); }
+  #verse.fullscreen #verse-card.tpl-split #verse-reference { font-size: var(--ref-size); }
 
   /* ---------------------------------------------------------------
      New design 6: bold. High energy without noise: heavy left-set sans,
@@ -1090,7 +1475,7 @@
   #verse.vc-swap-in #verse-card.tpl-bold::before { animation: vc-wipe 520ms cubic-bezier(0.7, 0, 0.2, 1) 60ms both; }
   #verse-card.tpl-bold #verse-text,
   #verse-card.tpl-bold #verse-secondary-text { text-align: left; text-wrap: pretty; }
-  #verse-card.tpl-bold #verse-text {
+  #verse-card.tpl-bold :is(#verse-text, #verse-secondary-text) {
     font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
     font-weight: 700;
     letter-spacing: -0.02em;
@@ -1109,7 +1494,7 @@
     font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
     font-style: normal;
     font-weight: 700;
-    font-size: clamp(13px, 1.3vw, 22px);
+    font-size: var(--ref-size);
     letter-spacing: 0.14em;
     text-transform: uppercase;
   }
@@ -1122,7 +1507,246 @@
     background: rgba(var(--ov-card-rgb), calc(var(--ov-card-a) * 0.55));
   }
   #verse.fullscreen #verse-card.tpl-bold::before { height: 12px; }
-  #verse.fullscreen #verse-card.tpl-bold #verse-reference { font-size: clamp(16px, 1.6vw, 30px); }
+  #verse.fullscreen #verse-card.tpl-bold #verse-reference { font-size: var(--ref-size); }
+
+  /* ---------------------------------------------------------------
+     Section 133 follow-up: halo. A quiet, centered focal light with a
+     restrained surface scrim for dependable contrast over live video.
+     The light bloom settles before the verse is left perfectly still.
+     --------------------------------------------------------------- */
+  #verse-card.tpl-halo {
+    --rv-dy: 0.28em;
+    --rv-blur: 8px;
+    --card-dy: 10px;
+    --card-s: 0.985;
+    --card-dur: 860ms;
+    max-width: 1180px;
+    padding: clamp(26px, 4vh, 54px) clamp(28px, 5vw, 82px) clamp(24px, 3.5vh, 44px);
+    border: 1px solid rgba(var(--accent-rgb), 0.34);
+    border-radius: 28px;
+    background:
+      radial-gradient(ellipse 78% 120% at 50% 0%, rgba(var(--accent-rgb), 0.1), transparent 74%),
+      linear-gradient(180deg, rgba(var(--ov-card-rgb), calc(0.34 + var(--ov-card-a) * 0.58)), rgba(var(--ov-card-rgb), calc(0.45 + var(--ov-card-a) * 0.5)));
+    box-shadow: 0 24px 80px rgba(var(--ov-card-rgb), 0.38), inset 0 1px 0 rgba(var(--ov-text2-rgb), 0.12);
+  }
+  #verse-card.tpl-halo::before {
+    content: "";
+    position: absolute;
+    inset: -16% -8%;
+    z-index: -1;
+    pointer-events: none;
+    border-radius: 50%;
+    background: radial-gradient(ellipse at 50% 48%, rgba(var(--accent-rgb), 0.25), rgba(var(--accent-rgb), 0.08) 38%, transparent 72%);
+    transform-origin: center;
+  }
+  @keyframes vc-halo-bloom { from { opacity: 0; transform: scale(0.82); } }
+  #verse.vc-enter #verse-card.tpl-halo::before,
+  #verse.vc-swap-in #verse-card.tpl-halo::before { animation: vc-halo-bloom 980ms var(--vc-ease-out) both; }
+  #verse-card.tpl-halo :is(#verse-text, #verse-secondary-text) { max-width: 28em; line-height: 1.3; }
+  #verse-card.tpl-halo #verse-secondary-text { margin-top: 14px; border-top-color: rgba(var(--accent-rgb), 0.28); }
+  #verse-card.tpl-halo #verse-ref-row { margin-top: 24px; gap: 16px; }
+  #verse-card.tpl-halo #verse-ref-row::before,
+  #verse-card.tpl-halo #verse-ref-row::after { width: clamp(26px, 4vw, 62px); opacity: 0.72; }
+  #verse-card.tpl-halo #verse-reference {
+    font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+    font-style: normal;
+    font-weight: 600;
+    font-size: var(--ref-size);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+  #verse.fullscreen #verse-card.tpl-halo {
+    width: auto;
+    max-width: min(90%, 1400px);
+    padding: clamp(36px, 7vh, 88px) clamp(36px, 7vw, 120px) clamp(30px, 5vh, 64px);
+    border: 1px solid rgba(var(--accent-rgb), 0.4);
+    border-radius: 32px;
+    background:
+      radial-gradient(ellipse 78% 120% at 50% 0%, rgba(var(--accent-rgb), 0.1), transparent 74%),
+      linear-gradient(180deg, rgba(var(--ov-card-rgb), calc(0.34 + var(--ov-card-a) * 0.58)), rgba(var(--ov-card-rgb), calc(0.45 + var(--ov-card-a) * 0.5)));
+    box-shadow: 0 30px 100px rgba(var(--ov-card-rgb), 0.42), inset 0 1px 0 rgba(var(--ov-text2-rgb), 0.12);
+  }
+
+  /* ---------------------------------------------------------------
+     Section 133 follow-up: signal. A broadcast-ready lower-third strip,
+     left keyed, with the citation as a clear lead-in above the verse.
+     --------------------------------------------------------------- */
+  #verse[data-card="signal"]:not(.fullscreen) { align-items: stretch; padding: 0 4%; }
+  #verse-card.tpl-signal {
+    --rv-dx: -0.22em;
+    --rv-dy: 0.12em;
+    --rv-blur: 4px;
+    --card-dx: -22px;
+    --card-dy: 0px;
+    --card-s: 1;
+    --card-dur: 620ms;
+    width: 100%;
+    max-width: 1480px;
+    align-items: flex-start;
+    padding: clamp(22px, 3vh, 38px) clamp(24px, 4vw, 58px);
+    border: 1px solid var(--ov-border);
+    border-left: 8px solid var(--accent);
+    border-radius: 4px 18px 18px 4px;
+    background:
+      linear-gradient(90deg, rgba(var(--accent-rgb), 0.08), transparent 36%),
+      linear-gradient(180deg, rgba(var(--ov-card-rgb), calc(0.32 + var(--ov-card-a) * 0.6)), rgba(var(--ov-card-rgb), calc(0.42 + var(--ov-card-a) * 0.52)));
+    box-shadow: 0 18px 52px rgba(var(--ov-card-rgb), 0.4);
+  }
+  #verse-card.tpl-signal::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    pointer-events: none;
+    background: linear-gradient(90deg, var(--accent), rgba(var(--accent-rgb), 0.16) 58%, transparent);
+    transform-origin: 0 50%;
+  }
+  @keyframes vc-signal-rule { from { transform: scaleX(0); opacity: 0; } }
+  #verse.vc-enter #verse-card.tpl-signal::before,
+  #verse.vc-swap-in #verse-card.tpl-signal::before { animation: vc-signal-rule 560ms var(--vc-ease-out) both; }
+  #verse-card.tpl-signal #verse-text,
+  #verse-card.tpl-signal #verse-secondary-text { max-width: 42em; text-align: left; text-wrap: pretty; }
+  #verse-card.tpl-signal :is(#verse-text, #verse-secondary-text) {
+    font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+    font-weight: 600;
+    letter-spacing: -0.012em;
+    line-height: 1.24;
+  }
+  #verse-card.tpl-signal #verse-secondary-text { margin-top: 10px; padding-top: 10px; border-top-color: rgba(var(--ov-text2-rgb), 0.22); }
+  #verse-card.tpl-signal #verse-ref-row { order: -1; margin: 0 0 12px; gap: 0; }
+  #verse-card.tpl-signal #verse-ref-row::before,
+  #verse-card.tpl-signal #verse-ref-row::after { display: none; }
+  #verse-card.tpl-signal #verse-reference {
+    padding: 0.28em 0.7em 0.24em;
+    border: 1px solid rgba(var(--accent-rgb), 0.62);
+    border-radius: 3px;
+    font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
+    font-style: normal;
+    font-size: var(--ref-size);
+    font-weight: 600;
+    letter-spacing: 0.075em;
+    text-transform: uppercase;
+  }
+  #verse.fullscreen #verse-card.tpl-signal {
+    width: auto;
+    max-width: min(94%, 1480px);
+    border: 1px solid var(--ov-border);
+    border-left: 8px solid var(--accent);
+    border-radius: 4px 18px 18px 4px;
+    background:
+      linear-gradient(90deg, rgba(var(--accent-rgb), 0.08), transparent 36%),
+      linear-gradient(180deg, rgba(var(--ov-card-rgb), calc(0.32 + var(--ov-card-a) * 0.6)), rgba(var(--ov-card-rgb), calc(0.42 + var(--ov-card-a) * 0.52)));
+    box-shadow: 0 24px 72px rgba(var(--ov-card-rgb), 0.4);
+  }
+  @media (max-width: 640px) {
+    #verse-card.tpl-signal { padding: 18px 20px; border-left-width: 5px; }
+    #verse.fullscreen #verse-card.tpl-signal { padding: 22px 22px; border-left-width: 5px; }
+  }
+
+  /* ---------------------------------------------------------------
+     Section 133 follow-up: folio. A precise archival page: inset frame,
+     ragged-right serif text and a quiet mono citation, without a drop cap.
+     --------------------------------------------------------------- */
+  #verse-card.tpl-folio {
+    --rv-dx: 0;
+    --rv-dy: 0.18em;
+    --rv-blur: 5px;
+    --card-dy: 12px;
+    --card-s: 0.99;
+    --card-dur: 760ms;
+    max-width: 1120px;
+    align-items: stretch;
+    padding: clamp(30px, 4.5vh, 60px) clamp(30px, 5vw, 78px) clamp(24px, 3.5vh, 44px);
+    border: 1px solid rgba(var(--ov-border-rgb), 0.95);
+    border-radius: 6px;
+    background:
+      linear-gradient(135deg, rgba(var(--accent-rgb), 0.06), transparent 46%),
+      linear-gradient(180deg, rgba(var(--ov-card-rgb), calc(0.32 + var(--ov-card-a) * 0.62)), rgba(var(--ov-card-rgb), calc(0.44 + var(--ov-card-a) * 0.5)));
+    box-shadow: 0 22px 66px rgba(var(--ov-card-rgb), 0.4);
+  }
+  #verse-card.tpl-folio::before {
+    content: "";
+    position: absolute;
+    inset: 9px;
+    z-index: -1;
+    pointer-events: none;
+    border: 1px solid rgba(var(--accent-rgb), 0.3);
+    border-radius: 2px;
+    transform-origin: center;
+  }
+  @keyframes vc-folio-frame { from { opacity: 0; transform: scale(0.985); } }
+  #verse.vc-enter #verse-card.tpl-folio::before,
+  #verse.vc-swap-in #verse-card.tpl-folio::before { animation: vc-folio-frame 760ms var(--vc-ease-out) both; }
+  #verse-card.tpl-folio #verse-text,
+  #verse-card.tpl-folio #verse-secondary-text { align-self: stretch; max-width: none; text-align: left; text-wrap: pretty; }
+  #verse-card.tpl-folio :is(#verse-text, #verse-secondary-text) { line-height: 1.4; }
+  #verse-card.tpl-folio #verse-secondary-text { margin-top: 16px; border-top-color: rgba(var(--accent-rgb), 0.28); }
+  #verse-card.tpl-folio #verse-ref-row { align-self: flex-end; margin-top: 22px; gap: 0; }
+  #verse-card.tpl-folio #verse-ref-row::before,
+  #verse-card.tpl-folio #verse-ref-row::after { display: none; }
+  #verse-card.tpl-folio #verse-reference {
+    padding: 0.32em 0.72em;
+    border: 1px solid rgba(var(--accent-rgb), 0.42);
+    color: var(--ov-text2);
+    font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
+    font-style: normal;
+    font-size: var(--ref-size);
+    font-weight: 500;
+    letter-spacing: 0.08em;
+  }
+  #verse.fullscreen #verse-card.tpl-folio {
+    width: auto;
+    max-width: min(90%, 1340px);
+    padding: clamp(38px, 7vh, 92px) clamp(38px, 6vw, 96px) clamp(30px, 5vh, 64px);
+    border: 1px solid rgba(var(--ov-border-rgb), 0.95);
+    border-radius: 6px;
+    background:
+      linear-gradient(135deg, rgba(var(--accent-rgb), 0.06), transparent 46%),
+      linear-gradient(180deg, rgba(var(--ov-card-rgb), calc(0.32 + var(--ov-card-a) * 0.62)), rgba(var(--ov-card-rgb), calc(0.44 + var(--ov-card-a) * 0.5)));
+  }
+  @media (max-width: 640px) {
+    #verse-card.tpl-halo { padding: 24px 22px 20px; border-radius: 22px; }
+    #verse.fullscreen #verse-card.tpl-halo { padding: 28px 24px 24px; }
+    #verse-card.tpl-folio { padding: 28px 26px 22px; }
+    #verse-card.tpl-folio::before { inset: 6px; }
+    #verse.fullscreen #verse-card.tpl-folio { padding: 30px 28px 24px; }
+  }
+
+  /* Fullscreen is read from the back of the room: whatever width a design gave
+     its card (a 1400px page, a 90% pane), the card may use the whole safe area.
+     The auto-fit (overlay.js measureFit) then picks the type size from the real
+     box, so a long verse and a short one both fill the frame. Placed after
+     every design so it wins ties at equal specificity. */
+  #verse.fullscreen #verse-card[class] { max-width: 100%; }
+  /* Same for the lower-third band: no ~60-character measure. On a sanctuary
+     screen a narrow column of type is wasted space; the auto-fit already keeps
+     the block inside the band's height. */
+  #verse:not(.fullscreen) :is(#verse-text, #verse-secondary-text) { max-width: 100%; }
+
+  /* Designs that set the reference as a small letter-spaced label ask for a
+     smaller share of the verse type than the classic caption-style line. */
+  #verse-card.tpl-banner, #verse-card.tpl-manuscript, #verse-card.tpl-poster,
+  #verse-card.tpl-halo, #verse-card.tpl-signal { --ref-k: 0.24; }
+  #verse-card.tpl-cinema, #verse-card.tpl-bold, #verse-card.tpl-folio { --ref-k: 0.22; }
+  #verse-card.tpl-split { --ref-k: 0.38; }
+
+  /* ---------------------------------------------------------------
+     Language-driven typography. The ONLY visual difference between French and
+     English is that English is italic and French is upright, wherever the
+     language sits (primary or secondary block, single or bilingual, the
+     reference parts too). Keyed off data-language, set by overlay.js from the
+     translation id. Last in the file so it wins over every design's own
+     font-style (the sans designs declare "normal"). The sans designs have no
+     italic face, so the browser slants Instrument Sans: acceptable, and it
+     keeps one family per design for both languages.
+     --------------------------------------------------------------- */
+  #verse-card :is(#verse-text, #verse-secondary-text)[data-language="en"] { font-style: italic; }
+  #verse-card :is(#verse-text, #verse-secondary-text)[data-language="fr"] { font-style: normal; }
+  #verse-card #verse-reference .vc-ref-part[data-language="en"] { font-style: italic; }
+  #verse-card #verse-reference .vc-ref-part[data-language="fr"] { font-style: normal; }
 
   /* No card (clear-text palettes) still wins over every design, including
      the new ones declared after the original .no-card rule ([class] only
@@ -1136,7 +1760,10 @@
     backdrop-filter: none;
   }
   #verse-card.tpl-stained.no-card::before,
-  #verse-card.tpl-manuscript.no-card::before { display: none; }
+  #verse-card.tpl-manuscript.no-card::before,
+  #verse-card.tpl-halo.no-card::before,
+  #verse-card.tpl-signal.no-card::before,
+  #verse-card.tpl-folio.no-card::before { display: none; }
   #verse-card.tpl-bold.no-card #verse-reference { text-shadow: none; }
 
   @media (prefers-reduced-motion: reduce) {
@@ -1231,10 +1858,12 @@
     flex-direction: column;
     align-items: center;
     gap: 14px;
-    max-width: 1000px;
+    max-width: min(1000px, 86vw);
+    max-height: 88vh;
+    overflow-y: auto;
     padding: 36px 52px;
     border-radius: 20px;
-    background: linear-gradient(180deg, var(--scrim), rgba(6, 7, 10, 0.46));
+    background: rgba(var(--ov-card-rgb), var(--ov-content-card-a));
     box-shadow: 0 12px 48px rgba(0, 0, 0, 0.35);
     border: 1px solid rgba(255, 255, 255, 0.08);
   }
@@ -1245,20 +1874,19 @@
     }
   }
   #announcement-title {
-    color: var(--accent);
-    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.85);
+    color: var(--ov-text);
     font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
-    font-size: clamp(20px, 2.6vw, 34px);
+    font-size: clamp(36px, 5.4vh, 72px);
     font-weight: 700;
     text-align: center;
   }
   #announcement-body {
-    color: #ffffff;
-    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.85);
+    color: var(--ov-text2);
     font-family: "Instrument Serif", Georgia, "Times New Roman", serif;
-    font-size: clamp(18px, 2.4vw, 30px);
-    line-height: 1.45;
+    font-size: clamp(28px, 4.2vh, 60px);
+    line-height: 1.25;
     text-align: center;
+    overflow-wrap: anywhere;
   }
 
   /*
@@ -1274,7 +1902,7 @@
     left: 5%;
     bottom: 9%;
     z-index: 2;
-    max-width: 440px;
+    max-width: min(640px, 42vw);
     opacity: 0;
     pointer-events: none;
     transform: translate3d(0, 10px, 0);
@@ -1287,7 +1915,9 @@
     gap: 6px;
     padding: 16px 22px;
     border-radius: 14px;
-    background: linear-gradient(180deg, var(--scrim), rgba(6, 7, 10, 0.46));
+    max-height: 72vh;
+    overflow-y: auto;
+    background: rgba(var(--ov-card-rgb), var(--ov-content-card-a));
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
     border: 1px solid rgba(255, 255, 255, 0.08);
   }
@@ -1298,20 +1928,19 @@
     }
   }
   #definition-term {
-    color: var(--accent);
-    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.85);
+    color: var(--ov-text);
     font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
-    font-size: 13px;
+    font-size: clamp(20px, 2.4vh, 30px);
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
   }
   #definition-body {
-    color: #ffffff;
-    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+    color: var(--ov-text2);
     font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
-    font-size: 15px;
-    line-height: 1.5;
+    font-size: clamp(22px, 3.4vh, 44px);
+    line-height: 1.3;
+    overflow-wrap: anywhere;
   }
 
   /*
@@ -1373,10 +2002,12 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    max-width: 950px;
+    max-width: min(1100px, 88vw);
+    max-height: 42vh;
+    overflow-y: auto;
     padding: 22px 38px;
     border-radius: 18px;
-    background: linear-gradient(180deg, var(--scrim), rgba(6, 7, 10, 0.52));
+    background: rgba(var(--ov-card-rgb), var(--ov-content-card-a));
     box-shadow: 0 12px 48px rgba(0, 0, 0, 0.4);
     border: 1px solid rgba(var(--accent-rgb), 0.25);
   }
@@ -1392,33 +2023,160 @@
     border-radius: 999px;
     background: rgba(var(--accent-rgb), 0.16);
     border: 1px solid rgba(var(--accent-rgb), 0.4);
-    color: var(--accent);
+    color: var(--ov-text2);
     font-family: "Instrument Sans", -apple-system, sans-serif;
-    font-size: clamp(11px, 1.2vw, 15px);
+    font-size: clamp(20px, 2.2vh, 28px);
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     margin-bottom: 8px;
   }
   #outline-title {
-    color: #ffffff;
-    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.85);
+    color: var(--ov-text);
     font-family: "Instrument Serif", Georgia, serif;
-    font-size: clamp(24px, 3.2vw, 42px);
+    font-size: clamp(32px, 4.4vh, 58px);
     font-weight: 400;
     line-height: 1.2;
     text-align: center;
   }
   #outline-text {
-    color: rgba(255, 255, 255, 0.85);
+    color: var(--ov-text2);
     font-family: "Instrument Sans", -apple-system, sans-serif;
-    font-size: clamp(14px, 1.6vw, 20px);
+    font-size: clamp(22px, 3.4vh, 44px);
     margin-top: 6px;
     text-align: center;
+    overflow-wrap: anywhere;
   }
 </style>
 </head>
 <body>
+  <div id="nature-backdrop" aria-hidden="true"><video id="nature-background-video" autoplay muted loop playsinline preload="none" tabindex="-1"></video><div id="nature-background-scrim"></div></div>
+  <!-- The two animated turbulence filters behind the living scenes.
+       feTurbulence + feDisplacementMap with SMIL-morphed baseFrequency is
+       what turns the painted gradients into LIVING matter: fire tongues
+       writhe like real flame and liquid surfaces roll. The filters are
+       ATTACHED to their scene layers only under prefers-reduced-motion:
+       no-preference (see the CSS above); an undisplayed scene costs nothing. -->
+  <svg class="scene-defs" aria-hidden="true" focusable="false">
+    <defs>
+      <filter id="scene-fire-warp" x="-30%" y="-30%" width="160%" height="160%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.012 0.052" numOctaves="2" seed="11" result="n">
+          <animate attributeName="baseFrequency" dur="6s" repeatCount="indefinite"
+            values="0.012 0.052;0.019 0.064;0.009 0.041;0.015 0.058;0.012 0.052"/>
+        </feTurbulence>
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="44" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+      <filter id="scene-liquid-warp" x="-25%" y="-25%" width="150%" height="150%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.008 0.024" numOctaves="2" seed="4" result="n">
+          <animate attributeName="baseFrequency" dur="11s" repeatCount="indefinite"
+            values="0.008 0.024;0.011 0.031;0.006 0.019;0.008 0.024"/>
+        </feTurbulence>
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="30" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+    </defs>
+  </svg>
+  <div id="scene-backdrop" aria-hidden="true">
+    <div class="scene scene-pentecost-fire">
+      <div class="fire-warp">
+        <div class="fire-glow"></div>
+        <div class="flame f1"><b></b></div>
+        <div class="flame f2"><b></b></div>
+        <div class="flame f3"><b></b></div>
+        <div class="flame f4"><b></b></div>
+        <div class="flame f5"><b></b></div>
+        <div class="fire-bed"></div>
+      </div>
+      <div class="heat"></div>
+      <i style="left:3%; width:0.8vh; height:0.8vh; --dx:22px; animation-duration:8.5s; animation-delay:-2.1s;"></i>
+      <i style="left:8%; --dx:-26px; animation-duration:7.2s; animation-delay:-5.6s;"></i>
+      <i style="left:13%; --dx:30px; animation-duration:9.4s; animation-delay:-0.9s;"></i>
+      <i style="left:19%; width:0.7vh; height:0.7vh; --dx:-18px; animation-duration:6.8s; animation-delay:-3.8s;"></i>
+      <i style="left:25%; --dx:34px; animation-duration:10.2s; animation-delay:-6.4s;"></i>
+      <i style="left:31%; width:0.9vh; height:0.9vh; --dx:-24px; animation-duration:7.6s; animation-delay:-1.7s;"></i>
+      <i style="left:38%; --dx:26px; animation-duration:8.8s; animation-delay:-4.9s;"></i>
+      <i style="left:44%; width:0.7vh; height:0.7vh; --dx:-32px; animation-duration:6.5s; animation-delay:-0.4s;"></i>
+      <i style="left:50%; --dx:24px; animation-duration:9.8s; animation-delay:-3.2s;"></i>
+      <i style="left:57%; width:0.9vh; height:0.9vh; --dx:-20px; animation-duration:7.9s; animation-delay:-5.1s;"></i>
+      <i style="left:63%; --dx:32px; animation-duration:8.2s; animation-delay:-2.8s;"></i>
+      <i style="left:69%; --dx:-28px; animation-duration:9.1s; animation-delay:-7.3s;"></i>
+      <i style="left:75%; width:0.7vh; height:0.7vh; --dx:20px; animation-duration:7.4s; animation-delay:-4.4s;"></i>
+      <i style="left:81%; --dx:-22px; animation-duration:8.6s; animation-delay:-1.1s;"></i>
+      <i style="left:87%; width:0.9vh; height:0.9vh; --dx:28px; animation-duration:10.6s; animation-delay:-6.8s;"></i>
+      <i style="left:92%; --dx:-30px; animation-duration:7.8s; animation-delay:-3.6s;"></i>
+      <i style="left:96%; width:0.7vh; height:0.7vh; --dx:18px; animation-duration:9.3s; animation-delay:-5.9s;"></i>
+      <i style="left:47%; --dx:-14px; animation-duration:11.4s; animation-delay:-8.4s;"></i>
+    </div>
+    <div class="scene scene-winepress">
+      <div class="liquid-warp">
+        <div class="flow juice1"></div><div class="flow juice2"></div>
+      </div>
+      <div class="drip" style="left:14%; height:30vh; animation-duration:9s;"></div>
+      <div class="drip" style="left:27%; height:38vh; animation-duration:12s; animation-delay:-4s;"></div>
+      <div class="drip" style="left:41%; height:26vh; animation-duration:8s; animation-delay:-1.5s;"></div>
+      <div class="drip" style="left:56%; height:34vh; animation-duration:10.5s; animation-delay:-7s;"></div>
+      <div class="drip" style="left:70%; height:30vh; animation-duration:9.5s; animation-delay:-2.5s;"></div>
+      <div class="drip" style="left:84%; height:36vh; animation-duration:11.5s; animation-delay:-6s;"></div>
+      <div class="flow pool"></div>
+      <div class="ripple" style="left:20%; animation-duration:7.5s;"></div>
+      <div class="ripple" style="left:44%; animation-duration:9.5s; animation-delay:-3s;"></div>
+      <div class="ripple" style="left:64%; animation-duration:8s; animation-delay:-5s;"></div>
+      <i style="left:7%; --dx:14px; animation-duration:16s; animation-delay:-4s;"></i>
+      <i style="left:18%; --dx:-10px; animation-duration:22s; animation-delay:-12s;"></i>
+      <i style="left:30%; --dx:18px; animation-duration:19s; animation-delay:-7s;"></i>
+      <i style="left:44%; --dx:-16px; animation-duration:26s; animation-delay:-20s;"></i>
+      <i style="left:57%; --dx:12px; animation-duration:17.5s; animation-delay:-2.5s;"></i>
+      <i style="left:68%; --dx:-12px; animation-duration:24s; animation-delay:-15s;"></i>
+      <i style="left:80%; --dx:16px; animation-duration:20s; animation-delay:-9s;"></i>
+      <i style="left:91%; --dx:-14px; animation-duration:18s; animation-delay:-5.5s;"></i>
+      <i style="left:24%; --dx:8px; animation-duration:21s; animation-delay:-9s;"></i>
+      <i style="left:63%; --dx:-8px; animation-duration:23.5s; animation-delay:-17s;"></i>
+    </div>
+    <div class="scene scene-glory-rays">
+      <div class="fan"></div>
+      <div class="glow"></div>
+      <div class="ray r1"></div><div class="ray r2"></div><div class="ray r3"></div><div class="ray r4"></div>
+      <div class="ray r5"></div><div class="ray r6"></div>
+      <div class="mote" style="left:6%; --dx:26px; animation-duration:17s; animation-delay:-2s;"></div>
+      <div class="mote" style="left:15%; --dx:-20px; animation-duration:21s; animation-delay:-9s;"></div>
+      <div class="mote" style="left:24%; --dx:32px; animation-duration:15s; animation-delay:-6s;"></div>
+      <div class="mote" style="left:33%; --dx:-26px; animation-duration:19s; animation-delay:-13s;"></div>
+      <div class="mote" style="left:43%; --dx:22px; animation-duration:23s; animation-delay:-4s;"></div>
+      <div class="mote" style="left:53%; --dx:-30px; animation-duration:16s; animation-delay:-11s;"></div>
+      <div class="mote" style="left:62%; --dx:28px; animation-duration:20s; animation-delay:-7s;"></div>
+      <div class="mote" style="left:71%; --dx:-24px; animation-duration:18s; animation-delay:-15s;"></div>
+      <div class="mote" style="left:80%; --dx:30px; animation-duration:22s; animation-delay:-5s;"></div>
+      <div class="mote" style="left:89%; --dx:-28px; animation-duration:14s; animation-delay:-10s;"></div>
+    </div>
+    <div class="scene scene-living-water">
+      <div class="liquid-warp">
+        <div class="wave w1"></div><div class="wave w2"></div><div class="wave w3"></div>
+      </div>
+      <div class="shimmer s1"></div><div class="shimmer s2"></div>
+      <div class="glint" style="left:12%; animation-duration:9s;"></div>
+      <div class="glint" style="left:52%; animation-duration:12s; animation-delay:-4s;"></div>
+      <div class="glint" style="left:74%; animation-duration:10s; animation-delay:-7s;"></div>
+      <div class="bubble" style="left:9%; --dx:16px; animation-duration:11s; animation-delay:-3s;"></div>
+      <div class="bubble" style="left:22%; --dx:-12px; animation-duration:13s; animation-delay:-8s;"></div>
+      <div class="bubble" style="left:36%; --dx:14px; animation-duration:10s; animation-delay:-1s;"></div>
+      <div class="bubble" style="left:49%; --dx:-16px; animation-duration:14s; animation-delay:-6s;"></div>
+      <div class="bubble" style="left:61%; --dx:12px; animation-duration:12s; animation-delay:-9s;"></div>
+      <div class="bubble" style="left:73%; --dx:-14px; animation-duration:15s; animation-delay:-4s;"></div>
+      <div class="bubble" style="left:85%; --dx:18px; animation-duration:10.5s; animation-delay:-11s;"></div>
+      <div class="bubble" style="left:94%; --dx:-10px; animation-duration:12.5s; animation-delay:-2s;"></div>
+    </div>
+    <div class="scene scene-heavenly-clouds">
+      <div class="glow"></div>
+      <div class="shaft" style="left:18%; --tilt:-14deg; animation-duration:24s;"></div>
+      <div class="shaft" style="left:64%; --tilt:12deg; animation-duration:31s; animation-delay:-13s;"></div>
+      <div class="cloud" style="top:6vh; width:46vw; animation-duration:78s; animation-delay:-12s; opacity:0.55;"></div>
+      <div class="cloud" style="top:16vh; width:60vw; animation-duration:96s; animation-delay:-48s; opacity:0.4;"></div>
+      <div class="cloud" style="top:30vh; width:38vw; animation-duration:66s; animation-delay:-30s; opacity:0.5;"></div>
+      <div class="cloud" style="top:44vh; width:54vw; animation-duration:110s; animation-delay:-70s; opacity:0.35;"></div>
+      <div class="cloud" style="top:12vh; width:30vw; animation-duration:58s; animation-delay:-22s; opacity:0.6;"></div>
+      <div class="cloud" style="top:52vh; width:44vw; animation-duration:72s; animation-delay:-18s; opacity:0.5;"></div>
+      <div class="cloud" style="top:24vh; width:70vw; animation-duration:126s; animation-delay:-88s; opacity:0.3;"></div>
+    </div>
+  </div>
   <div id="status" class="status-hidden" role="status">connecting…</div>
   <div id="brand-name" class="brand-item"></div>
   <img id="brand-logo" class="brand-item" alt="" />

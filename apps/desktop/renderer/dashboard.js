@@ -72,6 +72,68 @@
     })
   }
 
+  let lastAudioTransportAnnouncementState = "idle"
+  function renderAudioTransportStatus() {
+    if (!audioTransportStatusEl) return
+    const metrics = audioFrameSender.snapshot()
+    const dropped = metrics.droppedDisconnected + metrics.droppedBackpressure + metrics.sendFailures
+    let key
+    let state
+    switch (metrics.lastOutcome) {
+      case "disconnected":
+        key = "mic.audioTransport.disconnected"
+        state = "disconnected"
+        break
+      case "backpressure":
+        key = "mic.audioTransport.backpressure"
+        state = "backpressure"
+        break
+      case "send-failed":
+        key = "mic.audioTransport.sendFailed"
+        state = "error"
+        break
+      case "sent":
+        key = "mic.audioTransport.sending"
+        state = dropped > 0 || metrics.captureGaps > 0 ? "degraded" : "sending"
+        break
+      default:
+        key = "mic.audioTransport.idle"
+        state = "idle"
+    }
+    const lines = []
+    if (micRunning || metrics.framesReceived > 0) {
+      lines.push(t(key, { sent: metrics.framesSent, dropped }))
+    } else {
+      lines.push(t("mic.audioTransport.idle"))
+    }
+    if (metrics.captureGaps > 0) {
+      lines.push(t("mic.audioTransport.gaps", { count: metrics.captureGaps }))
+    }
+    audioTransportStatusEl.dataset.state = state
+    audioTransportStatusEl.textContent = lines.join(" · ")
+    if (state !== lastAudioTransportAnnouncementState) {
+      lastAudioTransportAnnouncementState = state
+      const announcementKey = {
+        sending: "mic.audioTransport.announce.sending",
+        degraded: "mic.audioTransport.announce.degraded",
+        disconnected: "mic.audioTransport.announce.disconnected",
+        backpressure: "mic.audioTransport.announce.backpressure",
+        error: "mic.audioTransport.announce.error",
+      }[state]
+      const announcementEl = document.getElementById("audio-transport-announcement")
+      if (announcementEl && announcementKey) announcementEl.textContent = t(announcementKey)
+    }
+  }
+
+  window.addEventListener("churchoverlay:languagechange", () => {
+    renderAudioTransportStatus()
+    const announcementEl = document.getElementById("audio-transport-announcement")
+    if (announcementEl && lastAudioTransportAnnouncementState !== "idle") {
+      const key = "mic.audioTransport.announce." + lastAudioTransportAnnouncementState
+      announcementEl.textContent = t(key)
+    }
+  })
+
   function encodeAudioFrame(samples, sequence) {
     const buffer = new ArrayBuffer(4 + samples.length * 2)
     const view = new DataView(buffer)
@@ -103,6 +165,11 @@
   let lastFinalTranscriptId = null
   const nearMissIndicatorEl = document.getElementById("near-miss-indicator")
   const audioDiagnosticsEl = document.getElementById("audio-diagnostics")
+  const audioTransportStatusEl = document.getElementById("audio-transport-status")
+  const audioFrameSender = globalThis.ChurchOverlayAudioStream.createAudioFrameSender()
+  let micRunning = false
+  let serverMicMayBeRunning = false
+  let lastAudioTransportRenderAt = 0
   const referenceInput = document.getElementById("reference")
   const showBtn = document.getElementById("show-btn")
   const clearBtn = document.getElementById("clear-btn")
@@ -148,6 +215,8 @@
   const versePendingTextEl = document.getElementById("verse-pending-text")
   const versePendingRefEl = document.getElementById("verse-pending-ref")
   const versePendingConfirmBtn = document.getElementById("verse-pending-confirm-btn")
+  const versePendingDismissBtn = document.getElementById("verse-pending-dismiss-btn")
+  const versePendingAgeEl = document.getElementById("verse-pending-age")
   const setupDisplayModeEl = document.getElementById("setup-display-mode")
   const setupUiLanguageEl = document.getElementById("setup-ui-language")
   const setupAllowPhoneRemoteEl = document.getElementById("setup-allow-phone-remote")
@@ -160,6 +229,7 @@
   const livePreviewEl = document.getElementById("live-preview")
   const tallyChipEl = document.getElementById("tally-chip")
   const versePendingOriginEl = document.getElementById("verse-pending-origin")
+  const versePendingHeardEl = document.getElementById("verse-pending-heard")
   const micHealthEl = document.getElementById("mic-health")
   const micHealthTextEl = document.getElementById("mic-health-text")
   const micStatSpeechEl = document.getElementById("mic-stat-speech")
@@ -179,6 +249,11 @@
   const remoteToggleBtn = document.getElementById("remote-toggle-btn")
   const obsUrlInput = document.getElementById("obs-url")
   const obsCopyBtn = document.getElementById("obs-copy-btn")
+  // S-04: per-token rotation buttons and age lines (viewer = OBS panel, operator = remote panel).
+  const obsRotateBtn = document.getElementById("obs-rotate-btn")
+  const obsTokenAgeEl = document.getElementById("obs-token-age")
+  const remoteRotateBtn = document.getElementById("remote-rotate-btn")
+  const remoteTokenAgeEl = document.getElementById("remote-token-age")
   const ndiToggleBtn = document.getElementById("ndi-toggle-btn")
   const ndiStatusEl = document.getElementById("ndi-status")
   // ARCHITECTURE.md section 109: the output reports stats and an error/retry state, so the operator
@@ -225,6 +300,7 @@
   const exportSessionBtn = document.getElementById("export-session-btn")
   const exportRehearsalBtn = document.getElementById("export-rehearsal-btn")
   const exportDiagnosticsBtn = document.getElementById("export-diagnostics-btn")
+  const exportTranscriptBtn = document.getElementById("export-transcript-btn")
   const generateServiceSummaryBtn = document.getElementById("generate-service-summary-btn")
   const serviceSummaryResultEl = document.getElementById("service-summary-result")
   const sermonNotesToggleEl = document.getElementById("sermon-notes-toggle")
@@ -236,6 +312,7 @@
     history: document.getElementById("view-history"),
     overlay: document.getElementById("view-overlay"),
     settings: document.getElementById("view-settings"),
+    bible: document.getElementById("view-bible"),
   }
   const sermonNotesFeedEl = document.getElementById("sermon-notes-feed")
   const mediaNowPlayingEl = document.getElementById("media-now-playing")
@@ -308,6 +385,9 @@
   let ndiEnabled = false
   let currentNdiStatus = { state: "disabled" }
   let allowPhoneRemoteEnabled = false
+  // S-04: whether the trusted-network warning was already acknowledged
+  // (persisted in config); refreshed from get-startup-status on load.
+  let remoteWarningAcked = false
 
   // ARCHITECTURE.md section 64.5's authoring UI. `rundown:state` broadcasts
   // only the CURRENT scene (ARCHITECTURE.md section 64.4), not the whole
@@ -361,9 +441,13 @@
     const body = document.createElement("span")
     body.className = "log-text"
     body.textContent = text
+    // Very long entries stay readable on hover (the row itself wraps).
+    if (typeof text === "string" && text.length > 120) body.title = text
     line.append(time, body)
     logEl.prepend(line)
-    while (logEl.children.length > 50) logEl.removeChild(logEl.lastChild)
+    // Bounded DOM; 200 lines (not 50) now that telemetry no longer fills it, and
+    // off-screen lines are skipped by content-visibility in the stylesheet.
+    while (logEl.children.length > 200) logEl.removeChild(logEl.lastChild)
   }
 
   // Bounded (AGENTS.md section 36): at most MAX_TOASTS on screen, and an
@@ -444,39 +528,15 @@
     statusPillEl.className = "status-pill " + state
   }
 
-  function capitalize(book) {
-    return book.replace(/\b\w/g, (c) => c.toUpperCase())
-  }
+  // P1-2 (ARCHITECTURE.md section 149): the PURE reference formatting (book
+  // tables, capitalize, the "Book C:V-E" formatters) lives in its own
+  // unit-tested globalThis module (reference-format.js, the
+  // parse-reference.js convention — no build step). Only the
+  // display-mode-aware wrapper stays here, because it reads dashboard state
+  // (the mode toggle) and can never be a pure function.
+  const { capitalize, FRENCH_BOOK_NAMES, FRENCH_TRANSLATIONS, rangeSuffix, formatReference, formatBilingualReference } =
+    globalThis.ChurchOverlayReferenceFormat
 
-  // ARCHITECTURE.md section 72: same table as overlay.js's own copy
-  // (duplicated, not shared — no build step, same precedent as
-  // float32ToInt16/reconnect-backoff between these two files) — used so
-  // the pending-verse-confirmation banner's reference line matches what
-  // the overlay itself will show once confirmed.
-  const FRENCH_BOOK_NAMES = {
-    genesis: "Genèse", exodus: "Exode", leviticus: "Lévitique", numbers: "Nombres",
-    deuteronomy: "Deutéronome", joshua: "Josué", judges: "Juges", ruth: "Ruth",
-    "1 samuel": "1 Samuel", "2 samuel": "2 Samuel", "1 kings": "1 Rois", "2 kings": "2 Rois",
-    "1 chronicles": "1 Chroniques", "2 chronicles": "2 Chroniques", ezra: "Esdras",
-    nehemiah: "Néhémie", esther: "Esther", job: "Job", psalm: "Psaumes",
-    proverbs: "Proverbes", ecclesiastes: "Ecclésiaste", "song of solomon": "Cantique des Cantiques",
-    isaiah: "Ésaïe", jeremiah: "Jérémie", lamentations: "Lamentations", ezekiel: "Ézéchiel",
-    daniel: "Daniel", hosea: "Osée", joel: "Joël", amos: "Amos", obadiah: "Abdias",
-    jonah: "Jonas", micah: "Michée", nahum: "Nahum", habakkuk: "Habacuc",
-    zephaniah: "Sophonie", haggai: "Aggée", zechariah: "Zacharie", malachi: "Malachie",
-    matthew: "Matthieu", mark: "Marc", luke: "Luc", john: "Jean", acts: "Actes",
-    romans: "Romains", "1 corinthians": "1 Corinthiens", "2 corinthians": "2 Corinthiens",
-    galatians: "Galates", ephesians: "Éphésiens", philippians: "Philippiens",
-    colossians: "Colossiens", "1 thessalonians": "1 Thessaloniciens",
-    "2 thessalonians": "2 Thessaloniciens", "1 timothy": "1 Timothée", "2 timothy": "2 Timothée",
-    titus: "Tite", philemon: "Philémon", hebrews: "Hébreux", james: "Jacques",
-    "1 peter": "1 Pierre", "2 peter": "2 Pierre", "1 john": "1 Jean", "2 john": "2 Jean",
-    "3 john": "3 Jean", jude: "Jude", revelation: "Apocalypse",
-  }
-
-  function formatReference(ref) {
-    return capitalize(ref.book) + " " + ref.chapter + ":" + ref.verse
-  }
 
   function currentDisplayMode() {
     const active = displayModeToggleEl.querySelector("button.active")
@@ -486,19 +546,14 @@
   /** The reference as the congregation will read it: French names in French mode. */
   function formatDisplayedReference(verse) {
     const ref = verse.reference
-    if (verse.secondary) return formatBilingualReference(ref)
+    if (verse.secondary) return formatBilingualReference(ref, verse.verseEnd)
     // Same rule as the overlay: the translation says the language.
-    if (["ls1910", "lsg", "segond"].includes(String(verse.translation || "").toLowerCase()) || currentDisplayMode() === "french") {
-      return (FRENCH_BOOK_NAMES[ref.book] || capitalize(ref.book)) + " " + ref.chapter + ":" + ref.verse
+    if (FRENCH_TRANSLATIONS.has(String(verse.translation || "").toLowerCase()) || currentDisplayMode() === "french") {
+      return (FRENCH_BOOK_NAMES[ref.book] || capitalize(ref.book)) + " " + ref.chapter + ":" + ref.verse + rangeSuffix(ref, verse.verseEnd)
     }
-    return formatReference(ref)
+    return formatReference(ref, verse.verseEnd)
   }
 
-  function formatBilingualReference(ref) {
-    const frenchName = FRENCH_BOOK_NAMES[ref.book]
-    const frenchRef = (frenchName || capitalize(ref.book)) + " " + ref.chapter + ":" + ref.verse
-    return frenchRef + " · " + formatReference(ref)
-  }
 
   // ARCHITECTURE.md section 69: the embedded overlay-preview-frame iframe
   // now shows what's actually live (a real, independent WS connection —
@@ -515,7 +570,6 @@
   // wins"; this mirrors that on the display side too).
   function showPendingVerse(verse) {
     versePendingTextEl.textContent = verse.text
-    const ref = verse.reference
     versePendingRefEl.textContent = formatDisplayedReference(verse)
     // A verse recognised from a reading (no reference spoken) is always a
     // suggestion, even in auto mode — say why it is waiting.
@@ -527,13 +581,24 @@
       versePendingOriginEl.dataset.i18n = originKey // stays right if the UI language changes
       versePendingOriginEl.textContent = t(originKey)
     }
+    // What the preacher actually said: lets the operator judge a detection at a glance.
+    const heard = typeof verse.heard === "string" ? verse.heard.trim() : ""
+    versePendingHeardEl.style.display = heard ? "block" : "none"
+    versePendingHeardEl.textContent = heard ? t("livePreview.pendingHeard", { text: heard }) : ""
     renderPendingAlternatives(verse)
     versePendingBannerEl.style.display = "flex"
     livePreviewEl.classList.add("has-pending")
     globalPendingBtn.style.display = ""
+    pendingStartedAt = Date.now()
+    renderPendingAge()
+    if (pendingAgeTimer !== null) clearInterval(pendingAgeTimer)
+    pendingAgeTimer = setInterval(renderPendingAge, 1000)
     // One sentence in an always-present live region (the banner itself is not announced).
     const waiting = t("livePreview.pendingLabel") + ": " + versePendingRefEl.textContent
-    pendingAnnounceEl.textContent = waiting + ". " + t("livePreview.pendingConfirm") + " (Ctrl+Enter)"
+    pendingAnnounceEl.textContent = ""
+    requestAnimationFrame(() => {
+      pendingAnnounceEl.textContent = waiting + ". " + t("livePreview.pendingConfirm") + " (Ctrl+Enter)"
+    })
     globalPendingBtn.setAttribute("aria-label", waiting)
   }
 
@@ -566,18 +631,38 @@
     }
   }
 
+  let pendingStartedAt = null
+  let pendingAgeTimer = null
+  function renderPendingAge() {
+    if (!versePendingAgeEl || pendingStartedAt === null) return
+    const elapsed = Math.floor((Date.now() - pendingStartedAt) / 1000)
+    const age = Math.floor(elapsed / 60) + ":" + String(elapsed % 60).padStart(2, "0")
+    versePendingAgeEl.textContent = t("livePreview.pendingAge", { time: age })
+  }
+
   function clearPendingVerse() {
+    if (pendingAgeTimer !== null) clearInterval(pendingAgeTimer)
+    pendingAgeTimer = null
+    pendingStartedAt = null
     versePendingBannerEl.style.display = "none"
     livePreviewEl.classList.remove("has-pending")
     globalPendingBtn.style.display = "none"
     pendingAnnounceEl.textContent = ""
+    if (versePendingAgeEl) versePendingAgeEl.textContent = ""
     globalPendingBtn.removeAttribute("aria-label")
+  }
+
+  function dismissPendingVerse() {
+    if (!sendJson({ id: crypto.randomUUID(), type: "verse:dismiss-pending", timestamp: Date.now(), payload: null })) return
+    log(t("livePreview.pendingDismissed"), "sent")
+    clearPendingVerse()
   }
 
   versePendingConfirmBtn.addEventListener("click", () => {
     sendJson({ id: crypto.randomUUID(), type: "verse:confirm-pending", timestamp: Date.now(), payload: null })
     log(t("log.sentVerseConfirmPending"), "sent")
   })
+  versePendingDismissBtn.addEventListener("click", dismissPendingVerse)
 
   // ASR/transcription health (status:update) — see ARCHITECTURE.md's
   // action-registry comment: a real producer now exists (AppCore
@@ -595,8 +680,62 @@
 
   window.addEventListener("churchoverlay:languagechange", renderEchoWarning)
 
+  // The optional AI helpers (cleanup, translate, copilot, notes) pause themselves after repeated
+  // failures, or are found unusable at startup. Say so, with a fixed message per reason; the server
+  // never sends provider error text here. Absent aiHelpers means "no change".
+  const aiHelpersIndicatorEl = document.getElementById("ai-helpers-indicator")
+  let aiHelpersStatus = { state: "ok" }
+  function renderAiHelpersStatus() {
+    renderAiStatusLine() // the Settings status line mirrors the same server state
+    if (!aiHelpersIndicatorEl) return
+    const { state, reason } = aiHelpersStatus
+    aiHelpersIndicatorEl.hidden = state === "ok"
+    if (state === "ok") {
+      aiHelpersIndicatorEl.textContent = ""
+      return
+    }
+    const key =
+      reason === "auth"
+        ? "ai.helpers.auth"
+        : reason === "model-unavailable"
+          ? "ai.helpers.model"
+          : reason === "rate-limited"
+            ? "ai.helpers.rateLimited"
+            : "ai.helpers.paused"
+    aiHelpersIndicatorEl.textContent = t(key)
+  }
+  window.addEventListener("churchoverlay:languagechange", renderAiHelpersStatus)
+
+  // SF-03: a verse that was asked for but could not be looked up (the server sends verse:lookup-failed to the
+  // operator only). A toast says which verse; a persistent indicator says the Bible source is degraded, and
+  // clears by itself the next time a verse loads (verse:show or verse:pending). textContent only.
+  const bibleSourceIndicatorEl = document.getElementById("bible-source-indicator")
+  let bibleSourceDegraded = false
+  function renderBibleSourceIndicator() {
+    if (!bibleSourceIndicatorEl) return
+    bibleSourceIndicatorEl.hidden = !bibleSourceDegraded
+    bibleSourceIndicatorEl.textContent = bibleSourceDegraded ? t("verse.source.degraded") : ""
+  }
+  function setBibleSourceDegraded(degraded) {
+    if (bibleSourceDegraded === degraded) return
+    bibleSourceDegraded = degraded
+    renderBibleSourceIndicator()
+  }
+  function handleVerseLookupFailed(payload) {
+    if (!payload || !payload.reference) return
+    const reason = payload.reason
+    const key = reason === "unavailable" ? "verse.lookupFailed.unavailable" : reason === "invalid" ? "verse.lookupFailed.invalid" : reason === "superseded" ? "verse.lookupFailed.superseded" : "verse.lookupFailed.notFound"
+    log(t(key, { reference: formatReference(payload.reference) }), "error")
+    if (reason === "unavailable") setBibleSourceDegraded(true)
+  }
+  window.addEventListener("churchoverlay:languagechange", renderBibleSourceIndicator)
+
   function handleStatusUpdate(payload) {
     if (!payload) return
+    if (payload.aiHelpers !== undefined && payload.aiHelpers !== null && typeof payload.aiHelpers.state === "string") {
+      aiHelpersStatus = payload.aiHelpers
+      renderAiHelpersStatus()
+    }
     if (payload.echoWarning !== undefined) {
       echoReason = payload.echoWarning === null ? null : payload.echoWarning.reason
       renderEchoWarning()
@@ -672,22 +811,12 @@
       brandMarkEl.textContent = initials || "CO"
     }
     if (accentColor) {
-      document.documentElement.style.setProperty("--accent", accentColor)
-      // Any church colour must stay readable as a button background:
-      // pick dark or light ink from the colour's own relative luminance.
-      document.documentElement.style.setProperty("--accent-ink", relativeLuminance(accentColor) > 0.35 ? "#1c1405" : "#ffffff")
+      const accent = window.BrandAccent.clampBrandAccent(accentColor)
+      if (accent) {
+        document.documentElement.style.setProperty("--accent", accent.color)
+        document.documentElement.style.setProperty("--accent-ink", accent.ink)
+      }
     }
-  }
-
-  function relativeLuminance(hex) {
-    const match = /^#?([0-9a-f]{6})$/i.exec(hex || "")
-    if (!match) return 1
-    const value = parseInt(match[1], 16)
-    const channel = (shift) => {
-      const c = ((value >> shift) & 255) / 255
-      return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
-    }
-    return 0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0)
   }
 
   // ---- Congregation-screen tally ----------------------------------------
@@ -755,6 +884,41 @@
     micStatNoiseEl.textContent = formatDb(payload.noiseDbfs)
     micStatGainEl.textContent = payload.autoGain ? "+" + Math.round(payload.gainDb) + " dB" : t("micHealth.gainOff")
     autoGainToggleEl.checked = payload.autoGain
+    const noiseModeSelectEl = document.getElementById("noise-mode-select")
+    if (noiseModeSelectEl && payload.noiseMode && noiseModeSelectEl.value !== payload.noiseMode) {
+      noiseModeSelectEl.value = payload.noiseMode
+    }
+    renderMicDiagnostics(payload)
+  }
+  // What the gate and the guards are doing, so a deaf app is visibly different from a quiet room.
+  function renderMicDiagnostics(payload) {
+    const diagEl = document.getElementById("mic-diag")
+    if (!diagEl) return
+    const drops = payload.dropsPerMinute
+    if (typeof payload.gateThreshold !== "number" || !drops) {
+      diagEl.style.display = "none"
+      return
+    }
+    diagEl.style.display = ""
+    document.getElementById("mic-diag-stats").textContent = t("micHealth.diagStats", {
+      threshold: payload.gateThreshold,
+      floor: payload.noiseFloor,
+      screen: drops.screen,
+      segment: drops.segment,
+      language: drops.language,
+      offLanguage: drops.offLanguage,
+    })
+    const warnings = Array.isArray(payload.warnings) ? payload.warnings : []
+    const warnEl = document.getElementById("mic-diag-warn")
+    warnEl.textContent = warnings.map((code) => t("micHealth.warn." + code)).join(" ")
+    diagEl.dataset.warn = warnings.length > 0 ? "true" : "false"
+  }
+  const noiseModeSelectInitEl = document.getElementById("noise-mode-select")
+  if (noiseModeSelectInitEl) {
+    noiseModeSelectInitEl.addEventListener("change", () => {
+      sendJson({ id: crypto.randomUUID(), type: "asr:noise-mode", timestamp: Date.now(), payload: { mode: noiseModeSelectInitEl.value } })
+      log(t("log.noiseMode") + ": " + noiseModeSelectInitEl.value, "sent")
+    })
   }
   autoGainToggleEl.addEventListener("change", () => {
     sendJson({ id: crypto.randomUUID(), type: "mic:auto-gain", timestamp: Date.now(), payload: { enabled: autoGainToggleEl.checked } })
@@ -767,6 +931,9 @@
   const latencyLastEl = document.getElementById("latency-last")
   const latencyMedianEl = document.getElementById("latency-median")
   const latencyP95El = document.getElementById("latency-p95")
+  const wsLatencyClientsEl = document.getElementById("ws-latency-clients")
+  const wsLatencyRoundtripEl = document.getElementById("ws-latency-roundtrip")
+  const wsLatencyQualityEl = document.getElementById("ws-latency-quality")
   function formatLatency(ms) {
     if (typeof ms !== "number") return "–"
     return ms < 1000 ? Math.round(ms) + " ms" : (ms / 1000).toFixed(1) + " s"
@@ -781,6 +948,46 @@
         latencyP95El.textContent = formatLatency(snapshot && snapshot.p95Ms)
       })
       .catch((err) => console.error("pipeline latency unavailable", err))
+    if (window.churchOverlay && window.churchOverlay.getWsClientLatency) {
+      window.churchOverlay
+        .getWsClientLatency()
+        .then((clients) => {
+          if (!Array.isArray(clients) || clients.length === 0) {
+            if (wsLatencyClientsEl) wsLatencyClientsEl.textContent = "0"
+            if (wsLatencyRoundtripEl) wsLatencyRoundtripEl.textContent = "–"
+            if (wsLatencyQualityEl) {
+              wsLatencyQualityEl.textContent = "–"
+              wsLatencyQualityEl.style.color = ""
+            }
+            return
+          }
+          if (wsLatencyClientsEl) wsLatencyClientsEl.textContent = String(clients.length)
+          const measured = clients.filter((c) => typeof c.lastMs === "number")
+          if (measured.length === 0) {
+            if (wsLatencyRoundtripEl) wsLatencyRoundtripEl.textContent = "–"
+            if (wsLatencyQualityEl) {
+              wsLatencyQualityEl.textContent = "–"
+              wsLatencyQualityEl.style.color = ""
+            }
+            return
+          }
+          const avgMs = measured.reduce((acc, c) => acc + (c.lastMs || 0), 0) / measured.length
+          if (wsLatencyRoundtripEl) wsLatencyRoundtripEl.textContent = formatLatency(avgMs)
+          if (wsLatencyQualityEl) {
+            if (avgMs < 50) {
+              wsLatencyQualityEl.textContent = t("latency.qualityGood")
+              wsLatencyQualityEl.style.color = "var(--color-success, #22c55e)"
+            } else if (avgMs < 200) {
+              wsLatencyQualityEl.textContent = t("latency.qualityFair")
+              wsLatencyQualityEl.style.color = "var(--color-warning, #eab308)"
+            } else {
+              wsLatencyQualityEl.textContent = t("latency.qualitySlow")
+              wsLatencyQualityEl.style.color = "var(--color-danger, #ef4444)"
+            }
+          }
+        })
+        .catch((err) => console.error("ws client latency unavailable", err))
+    }
   }
   setInterval(refreshLatency, 5000)
 
@@ -1097,7 +1304,120 @@
         button.disabled = !hasKey
       })
     })
+    if (aiTestBtnEl) aiTestBtnEl.disabled = !hasKey || aiTesting
+    renderAiStatusLine()
   }
+
+  // Operator-facing AI status: off / needs key / key refused / rate limited / working. Built only
+  // from fixed codes (server state + the test result), never provider error text.
+  const aiStatusLineEl = document.getElementById("ai-status-line")
+  const aiTestBtnEl = document.getElementById("ai-test-btn")
+  const aiKeyInputEl = document.getElementById("ai-key-input")
+  const aiKeySaveBtnEl = document.getElementById("ai-key-save-btn")
+  const aiKeyRemoveBtnEl = document.getElementById("ai-key-remove-btn")
+  let aiTesting = false
+  let aiTestResult = null // { ok: true, at: Date } | { ok: false, reason }
+  const AI_FAILURE_KEYS = {
+    auth: "ai.status.auth",
+    "model-unavailable": "ai.status.model",
+    "rate-limited": "ai.status.rateLimited",
+    "repeated-failures": "ai.status.paused",
+    timeout: "ai.status.timeout",
+    network: "ai.status.network",
+    empty: "ai.status.empty",
+  }
+  function renderAiStatusLine() {
+    if (!aiStatusLineEl) return
+    let key = "ai.status.ready"
+    let params
+    if (!asrStatus || !asrStatus.aiProvider) key = "ai.status.noProvider"
+    else if (!asrStatus.aiReady) key = "ai.status.noKey"
+    else if (aiTesting) key = "ai.status.testing"
+    else if (aiTestResult && aiTestResult.ok) {
+      key = "ai.status.working"
+      params = { time: aiTestResult.at.toLocaleTimeString() }
+    } else if (aiTestResult && !aiTestResult.ok) key = AI_FAILURE_KEYS[aiTestResult.reason] || "ai.status.failed"
+    else if (aiHelpersStatus.state !== "ok") key = AI_FAILURE_KEYS[aiHelpersStatus.reason] || "ai.status.paused"
+    aiStatusLineEl.textContent = t(key, params)
+  }
+  function resetAiTestState() {
+    aiTestResult = null
+    aiHelpersStatus = { state: "ok" } // the server restates a non-ok state after the restart
+    renderAiHelpersStatus()
+  }
+  if (aiTestBtnEl) {
+    aiTestBtnEl.addEventListener("click", () => {
+      if (aiTesting) return
+      aiTesting = true
+      aiTestBtnEl.disabled = true
+      renderAiStatusLine()
+      window.churchOverlay
+        .testAiConnection()
+        .then((result) => {
+          aiTestResult = result && result.ok ? { ok: true, at: new Date() } : { ok: false, reason: (result && result.reason) || "failed" }
+        })
+        .catch(() => {
+          aiTestResult = { ok: false, reason: "failed" }
+        })
+        .finally(() => {
+          aiTesting = false
+          aiTestBtnEl.disabled = !(asrStatus && asrStatus.aiReady)
+          renderAiStatusLine()
+        })
+    })
+  }
+  function saveAiKey(value, successKey) {
+    if (!aiKeySaveBtnEl) return
+    const confirmationKey = value ? "ai.key.confirmSave" : "ai.key.confirmRemove"
+    if (!window.confirm(t(confirmationKey))) return
+    aiKeySaveBtnEl.disabled = true
+    if (aiKeyRemoveBtnEl) aiKeyRemoveBtnEl.disabled = true
+    window.churchOverlay
+      .setAiKey(value)
+      .then((result) => {
+        if (!result || !result.ok) {
+          log(t(result && result.error === "empty" ? "ai.key.empty" : "ai.key.invalid"), "error", { toast: true })
+          return
+        }
+        aiKeyInputEl.value = ""
+        resetAiTestState()
+        renderAsrStatus(result.status)
+        log(t(successKey), "sent", { toast: true })
+      })
+      .catch((err) => log(t("ai.toggleFailed", { error: err.message }), "error"))
+      .finally(() => {
+        aiKeySaveBtnEl.disabled = false
+        if (aiKeyRemoveBtnEl) aiKeyRemoveBtnEl.disabled = false
+      })
+  }
+  // Groq key: replace-only (it is also the transcription key). Never echoed back; the field is cleared on success.
+  const aiGroqKeyInputEl = document.getElementById("ai-groq-key-input")
+  const aiGroqKeySaveBtnEl = document.getElementById("ai-groq-key-save-btn")
+  if (aiGroqKeyInputEl && aiGroqKeySaveBtnEl) {
+    aiGroqKeySaveBtnEl.addEventListener("click", () => {
+      if (!window.confirm(t("ai.groqKey.confirmSave"))) return
+      aiGroqKeySaveBtnEl.disabled = true
+      window.churchOverlay
+        .setGroqKey(aiGroqKeyInputEl.value)
+        .then((result) => {
+          if (!result || !result.ok) {
+            log(t(result && result.error === "empty" ? "ai.key.empty" : "ai.groqKey.invalid"), "error", { toast: true })
+            return
+          }
+          aiGroqKeyInputEl.value = ""
+          resetAiTestState()
+          renderAsrStatus(result.status)
+          log(t("ai.groqKey.saved"), "sent", { toast: true })
+        })
+        .catch((err) => log(t("ai.toggleFailed", { error: err.message }), "error"))
+        .finally(() => {
+          aiGroqKeySaveBtnEl.disabled = false
+        })
+    })
+  }
+  if (aiKeySaveBtnEl && aiKeyInputEl) aiKeySaveBtnEl.addEventListener("click", () => saveAiKey(aiKeyInputEl.value, "ai.key.saved"))
+  if (aiKeyRemoveBtnEl) aiKeyRemoveBtnEl.addEventListener("click", () => saveAiKey("", "ai.key.removed"))
+  window.addEventListener("churchoverlay:languagechange", renderAiStatusLine)
 
   function renderAsrStatus(status) {
     asrStatus = status || null
@@ -1105,16 +1425,24 @@
     renderAiAvailability(asrStatus.aiReady)
     renderAiProvider(asrStatus)
     const both = asrStatus.hasGroq && asrStatus.hasDeepgram
+    // Offline first (ARCHITECTURE.md section 139) only works while the local engine is ready.
+    const offlineFirst = asrStatus.strategy === "offline-first"
+    const localReady = Boolean(asrStatus.localActive)
     setActiveOption(asrStrategyToggleEl, "asrStrategy", asrStatus.strategy)
     asrStrategyToggleEl.querySelectorAll("button").forEach((button) => {
-      button.disabled = !both
+      // Streaming/batch need both cloud keys; offline-first needs a ready local engine (or is already on, so it can be turned off).
+      button.disabled = button.dataset.asrStrategy === "offline-first" ? !(localReady || offlineFirst) : !both
     })
-    asrStrategyNoteEl.textContent = both ? "" : t("asrSettings.needsBothKeys")
+    if (offlineFirst && !localReady) asrStrategyNoteEl.textContent = t("asrSettings.offlineFirstUnavailable")
+    else if (offlineFirst) asrStrategyNoteEl.textContent = t("asrSettings.offlineFirstNote")
+    else asrStrategyNoteEl.textContent = both ? "" : t("asrSettings.needsBothKeys")
     let provider
     if (!asrStatus.hasDeepgram) provider = t("asrSettings.providerGroq")
     else if (!asrStatus.hasGroq) provider = t("asrSettings.providerDeepgram")
-    else provider = asrStatus.strategy === "streaming-first" ? t("asrSettings.providerStreamingFirst") : t("asrSettings.providerBatchFirst")
-    if (asrStatus.localActive) provider += t("asrSettings.plusOffline")
+    else provider = asrStatus.strategy === "batch-first" ? t("asrSettings.providerBatchFirst") : t("asrSettings.providerStreamingFirst")
+    // The provider line names what is really carrying audio: local first only while it is ready.
+    if (offlineFirst && localReady) provider = t("asrSettings.providerOfflineFirst")
+    else if (localReady) provider += t("asrSettings.plusOffline")
     asrProviderLineEl.textContent = provider
     statusbarAsrTextEl.textContent = provider
   }
@@ -1122,6 +1450,7 @@
     button.addEventListener("click", () => {
       const strategy = button.dataset.asrStrategy
       if (!asrStatus || strategy === asrStatus.strategy) return
+      if (micRunning && !window.confirm(t("asrSettings.confirmChange"))) return
       asrStrategyToggleEl.querySelectorAll("button").forEach((b) => (b.disabled = true))
       asrStrategyNoteEl.textContent = t("asrSettings.restarting")
       window.churchOverlay
@@ -1139,15 +1468,43 @@
 
   let nearMissHideTimer = null
   const NEAR_MISS_DISPLAY_MS = 6000
-  function showNearMiss(text) {
+  // "Did you mean?" buttons: server-computed, already-valid candidates. Textual
+  // content only (never innerHTML). Picking one is an ordinary verse:override, so
+  // it is validated and looked up like a typed reference (AGENTS.md section 50).
+  function suggestionLabel(reference) {
+    return formatDisplayedReference({ reference })
+  }
+  function appendSuggestionButtons(container, suggestions, onPick) {
+    if (!Array.isArray(suggestions) || suggestions.length === 0) return
+    const label = document.createElement("span")
+    label.className = "suggestion-label"
+    label.textContent = t("suggest.didYouMean")
+    container.appendChild(label)
+    for (const reference of suggestions) {
+      const button = document.createElement("button")
+      button.type = "button"
+      button.className = "suggestion-chip"
+      button.textContent = suggestionLabel(reference)
+      button.addEventListener("click", () => onPick(reference))
+      container.appendChild(button)
+    }
+  }
+
+  function showNearMiss(text, suggestions) {
     if (!nearMissIndicatorEl || !text) return
     nearMissIndicatorEl.textContent = t("mic.nearMiss", { text })
+    const hasSuggestions = Array.isArray(suggestions) && suggestions.length > 0
+    appendSuggestionButtons(nearMissIndicatorEl, suggestions, (reference) => {
+      sendJson({ id: crypto.randomUUID(), type: "verse:override", timestamp: Date.now(), payload: reference })
+      log(t("log.sentVerseOverride", { reference: JSON.stringify(reference) }), "sent")
+      nearMissIndicatorEl.style.display = "none"
+    })
     nearMissIndicatorEl.style.display = "block"
     if (nearMissHideTimer) clearTimeout(nearMissHideTimer)
     nearMissHideTimer = setTimeout(() => {
       nearMissHideTimer = null
       nearMissIndicatorEl.style.display = "none"
-    }, NEAR_MISS_DISPLAY_MS)
+    }, hasSuggestions ? NEAR_MISS_DISPLAY_MS * 3 : NEAR_MISS_DISPLAY_MS)
   }
 
   // One icon per MediaCueKind (apps/server/media's own "kind" discriminant,
@@ -2329,6 +2686,7 @@
       log(t("rundown.builder.emptyRundownError"), "error")
       return
     }
+    if (!window.confirm(t("rundown.builder.confirmLoad"))) return
     const rundown = { id: crypto.randomUUID(), title: t("rundown.defaultTitle"), scenes: draftScenes.slice() }
     loadedRundownId = rundown.id
     loadedRundownScenes = draftScenes.slice()
@@ -2667,31 +3025,13 @@
     log(t("log.sentMediaClear"), "sent")
   })
 
-  // Deliberately similar to, but NOT required to stay byte-for-byte in
-  // sync with, RegexDetector's REFERENCE_PATTERN in
-  // apps/server/detector/regex-detector.ts — unlike float32ToInt16/
-  // encodeAudioFrame above, a mismatch here is not a correctness risk:
-  // this only decides whether the manual-override input field accepts
-  // what the operator typed, then sends it as a plain payload. The
-  // server-side resolveVerse()/KnownValidVerseIndex path re-validates
-  // it exactly like a detected reference regardless of what this parser
-  // let through (see app-core.ts's verse:override handler, ARCHITECTURE.md
-  // section 36). Intentionally looser than the server pattern (e.g. it
-  // doesn't require the book name to start with a capital letter), since
-  // rejecting a typo-free field here isn't a security boundary.
-  function parseReference(text) {
-    // Unicode letters so "Gen\u00e8se 1:1" and multi-word names ("Song of Solomon 2:1") parse; the server re-validates.
-    // Quick entry: "jn 3 16", "1co 13 4", "gen 1:1" all work. The chapter and verse are
-    // separated by a space, colon, dot or comma; the book may be a shortcut (the server
-    // resolves it, see apps/server/detector/quick-book.ts).
-    const match = /^\s*((?:[123]\s*)?\p{L}[\p{L}.'\u2019 ]*?)\s*(\d{1,3})(?:\s+|\s*[:.,]\s*)(\d{1,3})\s*$/u.exec(text)
-    if (!match) return null
-    return {
-      book: match[1].trim().replace(/\s+/g, " ").toLowerCase(),
-      chapter: Number.parseInt(match[2], 10),
-      verse: Number.parseInt(match[3], 10),
-    }
-  }
+  // Section 146 (frontend pass): the typed-reference parser lives in its
+  // own module (parse-reference.js, loaded before this file) so it is
+  // unit-testable there — it now also accepts a range tail ("Jean 3:16-18",
+  // "jn 3 16 18"), which the server resolves through the same guarded path
+  // as a detected range. The "deliberately not byte-for-byte in sync with
+  // RegexDetector" reasoning moved with it.
+  const parseReference = globalThis.ChurchOverlayParseReference.parseReference
 
   // Media tiles and rundown scene chips are non-<button> elements (a
   // <div> grid tile, a chip with several independently-clickable actions
@@ -2711,12 +3051,41 @@
     })
   }
 
-  function sendJson(message) {
+  function sendJson(message, { reportDisconnected = true } = {}) {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
-      log(t("log.notConnected"), "error")
-      return
+      if (reportDisconnected) log(t("log.notConnected"), "error")
+      return false
     }
-    ws.send(JSON.stringify(message))
+    try {
+      ws.send(JSON.stringify(message))
+      return true
+    } catch (err) {
+      log(t("log.connectionError"), "error", { toast: false })
+      console.error("WebSocket send failed", err)
+      return false
+    }
+  }
+
+  // Bible Browser bridge (bible-browser.js, loaded after this file): the only door that view
+  // has to the operator WebSocket. It can send commands and listen to what the server pushes;
+  // it never sees the token or the socket itself.
+  const bridgeListeners = new Set()
+  function notifyBridge(message) {
+    for (const listener of bridgeListeners) {
+      try {
+        listener(message)
+      } catch (err) {
+        console.error("Bible Browser listener failed", err)
+      }
+    }
+  }
+  window.ChurchOverlayBridge = {
+    send: (message) => sendJson(message, { reportDisconnected: false }),
+    isConnected: () => Boolean(ws && ws.readyState === WebSocket.OPEN),
+    subscribe: (listener) => {
+      bridgeListeners.add(listener)
+      return () => bridgeListeners.delete(listener)
+    },
   }
 
   referenceInput.addEventListener("keydown", (event) => {
@@ -2730,7 +3099,16 @@
     const reference = parseReference(referenceInput.value)
     if (!reference) {
       document.getElementById("reference-field").classList.add("invalid")
+      // Explain next to the box (the toast alone vanishes before a hurried operator reads it).
+      showReferenceHint(t("reference.formatHint"))
       log(t("log.parseError", { text: referenceInput.value }), "error")
+      return
+    }
+    // The server already answered this exact text with "not-found": say so
+    // here rather than send a command it will silently reject.
+    if (previewNotFoundSeq !== null && previewNotFoundSeq === previewSeq) {
+      document.getElementById("reference-field").classList.add("invalid")
+      log(t("preview.notFound"), "error")
       return
     }
     sendJson({ id: crypto.randomUUID(), type: "verse:override", timestamp: Date.now(), payload: reference })
@@ -2742,7 +3120,70 @@
     log(t("log.sentVerseClear"), "sent")
   })
 
+  // ---- B2 / SF-02: honest microphone capture --------------------------------
+  // "Listening" is shown ONLY while audio frames are really arriving. Device
+  // loss, a suspended AudioContext, a muted or silent track and a stalled
+  // worklet each get their own visible state; lost capture is re-acquired a
+  // bounded number of times. The decisions live in mic-capture-guard.js
+  // (unit-tested); this block owns the DOM, the timers and the media objects.
+  const micGuard = globalThis.ChurchOverlayMicGuard
+  const micWatchdog = micGuard.createMicWatchdog()
+  const micRecovery = micGuard.createRecoveryPolicy()
+  const micCaptureStatusEl = document.getElementById("mic-capture-status")
+  const MIC_WANTED_KEY = "churchoverlay.micWanted"
+  const MIC_WATCH_INTERVAL_MS = 1000
+  const MIC_SUSPENDED_ESCALATE_MS = 8000
+  let micWanted = false // the operator pressed Start and has not pressed Stop
+  let micGeneration = 0 // bumped on every release: callbacks of an old capture become no-ops
+  let micCaptureState = "idle"
+  let micCaptureParams = {}
+  let micWatchTimer = null
+  let micRecoverTimer = null
+  let micAcquiring = false
+  let micGaveUp = false
+  let micBadSince = null
+  let micSequenceOffset = 0
+  let micLastSequence = -1
+  let micDeviceChangeTimer = null
+
+  // Read once at load, then cleared: only a crash-reload (main says so) may turn it into a restart.
+  let micWantedAtLoad = false
+  try {
+    micWantedAtLoad = localStorage.getItem(MIC_WANTED_KEY) === "1"
+    localStorage.removeItem(MIC_WANTED_KEY)
+  } catch {
+    // Storage unavailable: the microphone simply is not auto-resumed after a reload.
+  }
+
+  function setMicWanted(wanted) {
+    micWanted = wanted
+    try {
+      if (wanted) localStorage.setItem(MIC_WANTED_KEY, "1")
+      else localStorage.removeItem(MIC_WANTED_KEY)
+    } catch {
+      // Best effort only (see micWantedAtLoad).
+    }
+  }
+
+  function renderMicCaptureState(state, params) {
+    micCaptureState = state
+    micCaptureParams = params || {}
+    micVisualEl.classList.toggle("active", state === "live")
+    micVisualEl.classList.toggle("lost", state !== "idle" && state !== "live" && state !== "starting")
+    if (!micCaptureStatusEl) return
+    if (state === "idle") {
+      micCaptureStatusEl.dataset.state = "idle"
+      micCaptureStatusEl.textContent = ""
+      return
+    }
+    micCaptureStatusEl.dataset.state = state === "live" ? "ok" : state === "starting" ? "idle" : "error"
+    micCaptureStatusEl.textContent = t("mic.state." + state, micCaptureParams)
+  }
+
+  window.addEventListener("churchoverlay:languagechange", () => renderMicCaptureState(micCaptureState, micCaptureParams))
+
   function releaseMic() {
+    micGeneration++
     if (mediaStream) {
       mediaStream.getTracks().forEach((track) => track.stop())
       mediaStream = null
@@ -2753,43 +3194,98 @@
     }
   }
 
-  async function startMic() {
-    // Disable at once: a double click used to open two streams.
-    if (micStartBtn.disabled) return
-    micStartBtn.disabled = true
+  function describeMicError(err) {
+    const info = micGuard.classifyMicError(err)
+    const detail = err && err.message ? err.message : info.name || "unknown"
+    return { info, text: t("mic.error." + info.kind, { error: detail }) }
+  }
+
+  // Opens the device and the worklet. Resolves { ok: true } or { ok: false, error } /
+  // { ok: false, cancelled: true } (the operator pressed Stop meanwhile). `beforeConnect`
+  // runs just before audio starts to flow (startMic uses it to send mic:start first).
+  async function acquireMic(beforeConnect) {
+    const generation = ++micGeneration
+    let stream
     try {
       // ARCHITECTURE.md section 8.3's recommended baseline.
-      mediaStream = await navigator.mediaDevices.getUserMedia({
+      stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       })
     } catch (err) {
-      log(t("log.micPermissionDenied", { error: err.message }), "error")
-      micStartBtn.disabled = false
-      return
+      return { ok: false, error: err }
+    }
+    const abandon = () => stream.getTracks().forEach((track) => track.stop())
+    if (generation !== micGeneration || !micWanted) {
+      abandon()
+      return { ok: false, cancelled: true }
     }
 
+    let context
     let source
     let workletNode
     try {
       // Requesting the canonical sample rate directly lets the browser
       // handle resampling from the device's native rate (ARCHITECTURE.md
       // section 8.1) — this codebase does not implement its own resampler.
-      audioContext = new AudioContext({ sampleRate: CANONICAL_SAMPLE_RATE })
-      await audioContext.audioWorklet.addModule("./pcm-worklet-processor.js")
-      source = audioContext.createMediaStreamSource(mediaStream)
-      workletNode = new AudioWorkletNode(audioContext, "pcm-capture-processor")
+      context = new AudioContext({ sampleRate: CANONICAL_SAMPLE_RATE })
+      await context.audioWorklet.addModule("./pcm-worklet-processor.js")
+      source = context.createMediaStreamSource(stream)
+      workletNode = new AudioWorkletNode(context, "pcm-capture-processor")
     } catch (err) {
       // Any failure after getUserMedia used to leave the microphone open and
-      // the start button dead; release everything and let the operator retry.
-      releaseMic()
-      micStartBtn.disabled = false
-      log(t("log.micPermissionDenied", { error: err.message }), "error")
-      return
+      // the start button dead; release everything and let the caller decide.
+      abandon()
+      if (context) context.close().catch(() => {})
+      return { ok: false, error: err }
+    }
+    if (generation !== micGeneration || !micWanted) {
+      abandon()
+      context.close().catch(() => {})
+      return { ok: false, cancelled: true }
     }
 
+    mediaStream = stream
+    audioContext = context
+    micWatchdog.start(Date.now())
+
+    const track = stream.getAudioTracks()[0]
+    if (track) {
+      track.addEventListener("ended", () => {
+        if (generation !== micGeneration) return
+        micWatchdog.trackEnded()
+        log(t("log.micTrackEnded"), "error", { toast: false })
+        micWatchTick()
+      })
+      track.addEventListener("mute", () => {
+        if (generation !== micGeneration) return
+        micWatchdog.trackMuted(true)
+        micWatchTick()
+      })
+      track.addEventListener("unmute", () => {
+        if (generation !== micGeneration) return
+        micWatchdog.trackMuted(false)
+        micWatchTick()
+      })
+      if (track.muted) micWatchdog.trackMuted(true)
+    }
+    context.addEventListener("statechange", () => {
+      if (generation !== micGeneration) return
+      micWatchdog.contextState(context.state)
+      // Wake from sleep / OS policy: a suspended context is resumable without reopening the device.
+      if (context.state === "suspended") context.resume().catch(() => {})
+      micWatchTick()
+    })
+    micWatchdog.contextState(context.state)
+
     workletNode.port.onmessage = (event) => {
+      if (generation !== micGeneration) return
       const { samples, sequence } = event.data
       const pcm16 = float32ToInt16(samples)
+      const now = Date.now()
+      micWatchdog.frame(micGuard.peakInt16(pcm16), now)
+      // Sequence numbers continue across a re-acquire so the server sees no false gap or reset.
+      const outSequence = (micSequenceOffset + sequence) >>> 0
+      micLastSequence = outSequence
       // A production audit found this feedback bar was purely decorative
       // (a canned CSS animation, unconditional on real signal) — an
       // operator had no way to tell "my voice isn't registering" from
@@ -2799,42 +3295,270 @@
       // against makes that gap actually observable, not just fixed in
       // theory: what the operator sees IS what's being evaluated.
       updateMicLevel(computeRmsInt16(pcm16))
-      if (!ws || ws.readyState !== WebSocket.OPEN) return
-      ws.send(encodeAudioFrame(pcm16, sequence))
+      audioFrameSender.send(ws, pcm16, outSequence, (frameSamples, frameSequence) =>
+        encodeAudioFrame(frameSamples, frameSequence)
+      )
+      // The first frames flip "starting"/"lost" to "live" at once instead of waiting for the next tick.
+      if (micCaptureState !== "live" && micWatchdog.status(now) === "live") micWatchTick()
+      if (now - lastAudioTransportRenderAt >= 500) {
+        lastAudioTransportRenderAt = now
+        renderAudioTransportStatus()
+      }
     }
 
-    // Send mic:start command so the backend ASR and calibration initialize before first audio frame
-    sendJson({ id: crypto.randomUUID(), type: "mic:start", timestamp: Date.now(), payload: null })
+    if (beforeConnect) beforeConnect()
     source.connect(workletNode)
+    return { ok: true }
+  }
+
+  function startMicWatch() {
+    if (micWatchTimer === null) micWatchTimer = setInterval(micWatchTick, MIC_WATCH_INTERVAL_MS)
+  }
+
+  function stopMicWatch() {
+    if (micWatchTimer !== null) clearInterval(micWatchTimer)
+    micWatchTimer = null
+    if (micRecoverTimer !== null) clearTimeout(micRecoverTimer)
+    micRecoverTimer = null
+    if (micDeviceChangeTimer !== null) clearTimeout(micDeviceChangeTimer)
+    micDeviceChangeTimer = null
+    micBadSince = null
+  }
+
+  function micWatchTick() {
+    if (!micWanted || micAcquiring) return
+    const now = Date.now()
+    const state = micWatchdog.status(now)
+    if (micGaveUp) {
+      // Recovery is over; keep the (honest) lost state on screen until the operator acts.
+      renderMicCaptureState("gave-up", { attempts: micRecovery.attempts() })
+      return
+    }
+    if (state === "live") micRecovery.noteLive(now)
+    else micRecovery.noteNotLive()
+
+    const bad = state !== "live" && state !== "starting"
+    if (bad && micBadSince === null) micBadSince = now
+    if (!bad) micBadSince = null
+
+    const previous = micCaptureState
+    const previousWasBad = previous !== "idle" && previous !== "live" && previous !== "starting"
+    // While a reconnect is in progress the "recovering" line stays up until frames are really back.
+    const holdRecovering = previous === "recovering" && state !== "live"
+    if (!holdRecovering && state !== previous) {
+      renderMicCaptureState(state)
+      if (bad) log(t("mic.state." + state), "error")
+      else if (state === "live" && previousWasBad) log(t("log.micRecovered"), "received")
+    }
+
+    if (micRecoverTimer !== null) return
+    let action = micWatchdog.recoveryAction(now)
+    // A context that stays suspended is treated like a lost device after a short wait.
+    if (action === "resume-context") {
+      if (audioContext) audioContext.resume().catch(() => {})
+      if (micBadSince !== null && now - micBadSince >= MIC_SUSPENDED_ESCALATE_MS) action = "reacquire"
+    }
+    if (action === "reacquire") scheduleMicRecovery()
+  }
+
+  function giveUpMic(reasonText) {
+    micGaveUp = true
+    renderMicCaptureState("gave-up", { attempts: micRecovery.attempts() })
+    log(reasonText || t("mic.state.gave-up", { attempts: micRecovery.attempts() }), "error")
+  }
+
+  function scheduleMicRecovery() {
+    const decision = micRecovery.next()
+    if (!decision.retry) {
+      giveUpMic()
+      return
+    }
+    renderMicCaptureState("recovering", { attempt: decision.attempt, max: micRecovery.maxAttempts() })
+    log(t("mic.state.recovering", { attempt: decision.attempt, max: micRecovery.maxAttempts() }), "error", { toast: false })
+    micRecoverTimer = setTimeout(async () => {
+      micRecoverTimer = null
+      if (!micWanted) return
+      micAcquiring = true
+      releaseMic()
+      micSequenceOffset = (micLastSequence + 1) >>> 0
+      const result = await acquireMic()
+      micAcquiring = false
+      if (!micWanted || result.cancelled) return
+      if (result.ok) return // micWatchTick promotes "recovering" to "live" once frames flow
+      const { info, text } = describeMicError(result.error)
+      log(text, "error", { toast: false })
+      if (!info.retryable) {
+        giveUpMic(text)
+        return
+      }
+      // Still no device: keep the lost state so the next tick schedules the next (bounded) attempt.
+      micWatchdog.start(Date.now())
+      micWatchdog.trackEnded()
+      renderMicCaptureState("ended")
+    }, decision.delayMs)
+  }
+
+  // A device was plugged in or out, or the default input changed: if ours is gone, treat the
+  // capture as ended now instead of waiting for the frame watchdog.
+  async function checkMicDevices() {
+    if (!micWanted || !mediaStream) return
+    try {
+      const devices = (await navigator.mediaDevices.enumerateDevices()).filter((device) => device.kind === "audioinput")
+      const track = mediaStream.getAudioTracks()[0]
+      const settings = track && track.getSettings ? track.getSettings() : {}
+      const stillThere = devices.length > 0 && (!settings.deviceId || devices.some((device) => device.deviceId === settings.deviceId))
+      log(t("log.micDeviceChanged"), "received", { toast: false })
+      if (!stillThere) {
+        micWatchdog.trackEnded()
+        micWatchTick()
+      }
+    } catch (err) {
+      log(t("log.micDeviceCheckFailed", { error: err && err.message ? err.message : String(err) }), "error", { toast: false })
+    }
+  }
+
+  if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+    navigator.mediaDevices.addEventListener("devicechange", () => {
+      if (!micWanted) return
+      if (micDeviceChangeTimer !== null) clearTimeout(micDeviceChangeTimer)
+      micDeviceChangeTimer = setTimeout(() => {
+        micDeviceChangeTimer = null
+        checkMicDevices()
+      }, 500)
+    })
+  }
+
+  async function startMic() {
+    // Disable at once: a double click used to open two streams.
+    if (micStartBtn.disabled) return
+    micStartBtn.disabled = true
+    setMicWanted(true)
+    micGaveUp = false
+    micRecovery.reset()
+    micSequenceOffset = 0
+    micLastSequence = -1
+    renderMicCaptureState("starting")
+    const result = await acquireMic(() => {
+      // Send mic:start before the first audio frame so the backend ASR and calibration initialize in time.
+      micRunning = true
+      audioFrameSender.reset()
+      serverMicMayBeRunning = sendJson(
+        { id: crypto.randomUUID(), type: "mic:start", timestamp: Date.now(), payload: null },
+        { reportDisconnected: false }
+      )
+    })
+    if (!result.ok) {
+      setMicWanted(false)
+      micWatchdog.stop()
+      renderMicCaptureState("idle")
+      micStartBtn.disabled = false
+      if (!result.cancelled) log(describeMicError(result.error).text, "error")
+      return
+    }
 
     micStartBtn.disabled = true
     micStopBtn.disabled = false
-    micVisualEl.classList.add("active")
+    startMicWatch()
+    renderAudioTransportStatus()
     log(t("log.micStarted"), "sent")
   }
 
+  // SF-06: the server could not start transcription for our mic:start. It is not running, so stop
+  // showing "listening": release the capture and say why, until the operator presses Start again.
+  async function handleMicStartFailed(payload) {
+    const reason = payload && typeof payload.reason === "string" ? payload.reason : ""
+    if (!micRunning) return // already stopped here (e.g. the operator pressed Stop meanwhile)
+    log(t("mic.state.startFailed", { reason }), "error")
+    await stopMic()
+    renderMicCaptureState("startFailed", { reason })
+  }
+
   async function stopMic() {
-    if (mediaStream) {
-      mediaStream.getTracks().forEach((track) => track.stop())
-      mediaStream = null
+    setMicWanted(false)
+    micRunning = false
+    micGaveUp = false
+    stopMicWatch()
+    micWatchdog.stop()
+    micRecovery.reset()
+    releaseMic()
+    if (sendJson(
+      { id: crypto.randomUUID(), type: "mic:stop", timestamp: Date.now(), payload: null },
+      { reportDisconnected: false }
+    )) {
+      serverMicMayBeRunning = false
     }
-    if (audioContext) {
-      await audioContext.close().catch(() => {})
-      audioContext = null
-    }
-    sendJson({ id: crypto.randomUUID(), type: "mic:stop", timestamp: Date.now(), payload: null })
 
     micStartBtn.disabled = false
     micStopBtn.disabled = true
-    micVisualEl.classList.remove("active")
+    renderMicCaptureState("idle")
     micCalibratingStatusEl.style.display = "none"
     resetMicLevel()
+    audioFrameSender.reset()
+    renderAudioTransportStatus()
     renderMicHealth(null)
     log(t("log.micStopped"), "sent")
   }
 
+  // After the dashboard window crashed and was reloaded by the main process, the microphone is
+  // gone with the old renderer. If the operator had it on, bring it back once the server link is
+  // up (so exactly one mic:start is sent: startMic's own) and say plainly what happened; if that
+  // fails, make the server agree the microphone is off.
+  async function resumeMicAfterReload() {
+    if (!micWantedAtLoad) return
+    micWantedAtLoad = false
+    log(t("mic.state.resumeAfterReload"), "received")
+    for (let i = 0; i < 40 && !(ws && ws.readyState === 1); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 500))
+    }
+    if (ws && ws.readyState === 1) await startMic()
+    if (!micRunning) {
+      sendJson({ id: crypto.randomUUID(), type: "mic:stop", timestamp: Date.now(), payload: null }, { reportDisconnected: false })
+      log(t("mic.state.resumeNotRestored"), "error")
+    }
+  }
+
+  const seenMainNoticeIds = new Set()
+  const MAIN_NOTICE_TOAST_MAX_AGE_MS = 120000
+  // Non-blocking notices from the main process (uncaught errors, crash recovery, failed service start).
+  function handleMainNotice(notice) {
+    if (!notice || typeof notice.code !== "string" || seenMainNoticeIds.has(notice.id)) return
+    seenMainNoticeIds.add(notice.id)
+    const text = t("notice.main." + notice.code, { detail: typeof notice.detail === "string" ? notice.detail : "" })
+    const fresh = typeof notice.at === "number" && Date.now() - notice.at < MAIN_NOTICE_TOAST_MAX_AGE_MS
+    log(text, notice.level === "info" ? "received" : "error", { toast: fresh })
+  }
+
+  if (window.churchOverlay.onMainNotice) window.churchOverlay.onMainNotice(handleMainNotice)
+  if (window.churchOverlay.getMainNotices) {
+    window.churchOverlay
+      .getMainNotices()
+      .then((notices) => {
+        const list = Array.isArray(notices) ? notices : []
+        list.forEach(handleMainNotice)
+        if (list.some((notice) => notice && notice.resumeMic)) return resumeMicAfterReload()
+      })
+      .catch((err) => log(t("log.mainNoticesFailed", { error: err && err.message ? err.message : String(err) }), "error", { toast: false }))
+  }
+
   micStartBtn.addEventListener("click", () => startMic())
   micStopBtn.addEventListener("click", () => stopMic())
+
+  const LOG_QUIET_TYPES = new Set(["mic:health", "transcript:partial", "status:update", "verse:preview-result", "rundown:state", "bible:chapter-result", "bible:search-result", "verse:lookup-failed"])
+
+  // One short, operator-readable detail for the Activity log (textContent only).
+  function describeReceived(message) {
+    const p = message.payload
+    if (!p) return ""
+    try {
+      if ((message.type === "transcript:final" || message.type === "detector:near-miss") && typeof p.text === "string") {
+        return p.text.length > 140 ? p.text.slice(0, 140) + "…" : p.text
+      }
+      if ((message.type === "verse:show" || message.type === "verse:pending") && p.reference) return formatDisplayedReference(p)
+    } catch {
+      // A malformed payload only loses its detail line.
+    }
+    return ""
+  }
 
   function connect(port, token) {
     setStatus(t("status.connecting"), "disconnected")
@@ -2844,13 +3568,30 @@
       reconnectAttempts = 0
       setStatus(t("status.connectedOperator"), "connected")
       log(t("log.connected"), "received")
+      if (micRunning) {
+        serverMicMayBeRunning = sendJson({ id: crypto.randomUUID(), type: "mic:start", timestamp: Date.now(), payload: null })
+      } else if (serverMicMayBeRunning) {
+        serverMicMayBeRunning = !sendJson({ id: crypto.randomUUID(), type: "mic:stop", timestamp: Date.now(), payload: null })
+      }
+      renderAudioTransportStatus()
+      notifyBridge({ type: "bridge:open" })
     })
     ws.addEventListener("close", () => {
+      renderAudioTransportStatus()
       const delay = nextReconnectDelay()
       const delaySeconds = Math.round(delay / 1000)
       setStatus(t("status.disconnectedRetrying", { seconds: delaySeconds }), "disconnected")
       log(t("log.disconnectedRetrying", { seconds: delaySeconds }), "error", { toast: false })
-      setTimeout(() => connect(port, token), delay)
+      setTimeout(() => {
+        // S-04: the token may have been rotated while this socket was gone
+        // (our own dashboard "rotate" button revokes this very session).
+        // Re-read the live values instead of retrying with the captured
+        // ones, or a rotated-away token would be retried forever.
+        window.churchOverlay
+          .getOperatorConnectionInfo()
+          .then((info) => connect(info.port, info.token))
+          .catch(() => connect(port, token))
+      }, delay)
     })
     ws.addEventListener("error", () => log(t("log.connectionError"), "error", { toast: false }))
     ws.addEventListener("message", (event) => {
@@ -2860,15 +3601,22 @@
       } catch {
         return
       }
+      notifyBridge(message)
       // message.type is a wire-protocol identifier (e.g. "verse:show"),
       // not user-facing text — it stays in English regardless of UI
       // language, same as any other protocol/technical identifier.
       // High-frequency telemetry would bury real events in the log.
-      if (message.type !== "mic:health" && message.type !== "transcript:partial") {
-        log(t("log.received", { type: message.type }), "received")
+      // status:update and verse:preview-result fire constantly / per keystroke and only
+      // pushed real events (verses, transcripts) out of the log window.
+      if (!LOG_QUIET_TYPES.has(message.type)) {
+        const detail = describeReceived(message)
+        log(detail ? t("log.receivedDetail", { type: message.type, detail }) : t("log.received", { type: message.type }), "received")
       }
 
-      if (message.type === "transcript:partial" || message.type === "transcript:final") {
+      if (message.type === "verse:show" || message.type === "verse:pending") setBibleSourceDegraded(false)
+      if (message.type === "verse:lookup-failed") {
+        handleVerseLookupFailed(message.payload)
+      } else if (message.type === "transcript:partial" || message.type === "transcript:final") {
         // ARCHITECTURE.md section 70: the operator needs to see what was
         // actually heard, continuously, to judge transcription accuracy
         // and latency — this field always reflects the raw ASR output,
@@ -2893,7 +3641,7 @@
         onScreen.verse = ref ? formatDisplayedReference(message.payload) : "…"
         if (ref) {
           rememberRecentVerse(message.payload)
-          lastShownReference = { book: ref.book, chapter: ref.chapter, verse: ref.verse }
+          lastShownReference = rangeReference(ref, message.payload.verseEnd)
         }
         renderTally()
       } else if (message.type === "verse:clear") {
@@ -2905,6 +3653,8 @@
       } else if (message.type === "canvas:show" || message.type === "canvas:clear") {
         onScreen.canvas = message.type === "canvas:show"
         renderTally()
+      } else if (message.type === "mic:start-failed") {
+        handleMicStartFailed(message.payload)
       } else if (message.type === "mic:health") {
         renderMicHealth(message.payload)
       } else if (message.type === "media:show") {
@@ -2946,7 +3696,7 @@
       } else if (message.type === "verse:preview-result") {
         showPreviewResult(message.payload)
       } else if (message.type === "detector:near-miss") {
-        showNearMiss(message.payload && message.payload.text)
+        showNearMiss(message.payload && message.payload.text, message.payload && message.payload.suggestions)
       }
     })
   }
@@ -2958,11 +3708,12 @@
   // never re-displays cached text on its own (AGENTS.md sections 14, 50).
   const MAX_RECENT_VERSES = 9
   const recentVersesEl = document.getElementById("recent-verses")
-  let recentVerses = [] // [{ key, label, reference: { book, chapter, verse } }], newest first
+  let recentVerses = [] // [{ key, label, reference: { book, chapter, verse, verseEnd? } }], newest first (section 146: a range keeps its verseEnd)
+  let renderedRecentVersesKey = null
 
   function rememberRecentVerse(verse) {
     const ref = verse.reference
-    const reference = { book: ref.book, chapter: ref.chapter, verse: ref.verse }
+    const reference = rangeReference(ref, verse.verseEnd)
     const key = referenceKey(reference)
     recentVerses = [{ key, label: formatDisplayedReference(verse), reference }]
       .concat(recentVerses.filter((entry) => entry.key !== key))
@@ -2978,30 +3729,46 @@
 
   function renderRecentVerses() {
     if (!recentVersesEl) return
-    recentVersesEl.innerHTML = ""
-    if (recentVerses.length === 0) {
-      const empty = document.createElement("span")
-      empty.className = "recent-empty"
-      empty.textContent = t("recent.empty")
-      recentVersesEl.appendChild(empty)
-      return
+    const renderKey = recentVerses.map((entry) => entry.key + ":" + entry.label).join("|")
+    if (renderKey !== renderedRecentVersesKey) {
+      renderedRecentVersesKey = renderKey
+      recentVersesEl.replaceChildren()
+      if (recentVerses.length === 0) {
+        const empty = document.createElement("span")
+        empty.className = "recent-empty"
+        empty.textContent = t("recent.empty")
+        recentVersesEl.appendChild(empty)
+        return
+      }
+      recentVerses.forEach((entry, index) => {
+        const chip = document.createElement("button")
+        chip.type = "button"
+        chip.className = "recent-chip"
+        chip.dataset.referenceKey = entry.key
+        chip.title = t("recent.recallHint", { reference: entry.label, key: String(index + 1) })
+        const num = document.createElement("span")
+        num.className = "recent-chip-key"
+        num.textContent = String(index + 1)
+        const label = document.createElement("span")
+        label.textContent = entry.label
+        chip.append(num, label)
+        chip.addEventListener("click", () => recallRecentVerse(index))
+        recentVersesEl.appendChild(chip)
+      })
     }
-    recentVerses.forEach((entry, index) => {
-      const chip = document.createElement("button")
-      chip.type = "button"
-      chip.className = "recent-chip" + (onScreen.verse === entry.label ? " live" : "")
-      if (onScreen.verse === entry.label) chip.setAttribute("aria-current", "true")
-      chip.title = t("recent.recallHint", { reference: entry.label, key: String(index + 1) })
-      const num = document.createElement("span")
-      num.className = "recent-chip-key"
-      num.textContent = String(index + 1)
-      const label = document.createElement("span")
-      label.textContent = entry.label
-      chip.append(num, label)
-      chip.addEventListener("click", () => recallRecentVerse(index))
-      recentVersesEl.appendChild(chip)
-    })
+
+    for (const chip of recentVersesEl.querySelectorAll(".recent-chip")) {
+      const isLive = recentVerses.find((entry) => entry.key === chip.dataset.referenceKey)?.label === onScreen.verse
+      chip.classList.toggle("live", isLive)
+      if (isLive) chip.setAttribute("aria-current", "true")
+      else chip.removeAttribute("aria-current")
+    }
   }
+
+  window.addEventListener("churchoverlay:languagechange", () => {
+    renderedRecentVersesKey = null
+    renderRecentVerses()
+  })
 
   // ---- Header clock and on-air timer ---------------------------------------
   const headerClockEl = document.getElementById("header-clock")
@@ -3026,7 +3793,8 @@
   const shortcutsModalEl = document.getElementById("shortcuts-modal")
   const shortcutsBtn = document.getElementById("shortcuts-btn")
   const shortcutsCloseBtn = document.getElementById("shortcuts-close-btn")
-  const VIEW_ORDER = ["live", "rundown", "media", "overlay", "history", "settings"]
+  // "bible" is last so every existing Ctrl+1..6 shortcut keeps its meaning (it is Ctrl+7).
+  const VIEW_ORDER = ["live", "rundown", "media", "overlay", "history", "settings", "bible"]
 
   function openShortcuts() {
     shortcutsModalEl.style.display = "flex"
@@ -3269,10 +4037,13 @@
     } else if (!typing && !ctrl && key === "/") {
       event.preventDefault()
       focusReferenceInput()
-    } else if (ctrl && key === "Enter" && !event.repeat && versePendingBannerEl.style.display !== "none") {
+    } else if (ctrl && key === "Enter" && !typing && !event.repeat && versePendingBannerEl.style.display !== "none") {
       // A held key must not confirm twice.
       event.preventDefault()
       versePendingConfirmBtn.click()
+    } else if (key === "Escape" && !event.shiftKey && versePendingBannerEl.style.display !== "none") {
+      event.preventDefault()
+      dismissPendingVerse()
     } else if (event.shiftKey && key === "Escape") {
       event.preventDefault()
       clearBtn.click()
@@ -3286,7 +4057,7 @@
     } else if (event.altKey && !ctrl && !event.shiftKey && (key === "ArrowLeft" || key === "ArrowRight")) {
       event.preventDefault()
       if (!event.repeat) stepVerse(key === "ArrowRight" ? 1 : -1)
-    } else if (ctrl && !event.shiftKey && !event.altKey && /^(Digit|Numpad)[1-6]$/.test(event.code)) {
+    } else if (ctrl && !event.shiftKey && !event.altKey && /^(Digit|Numpad)[1-7]$/.test(event.code)) {
       // event.code, not key: on a French AZERTY keyboard the digit row types
       // "&", "\u00e9", ... unless Shift is held, so key never matched there.
       event.preventDefault()
@@ -3328,8 +4099,24 @@
   const previewTextEl = document.getElementById("reference-preview-text")
   let previewTimer = null
   let previewSeq = 0
+  // seq of the newest preview answered "not-found" by the server (the index
+  // rejected the reference); null otherwise. Lets Show refuse a reference the
+  // server has already said does not exist instead of sending it to be dropped.
+  let previewNotFoundSeq = null
+
+  // Format help in the preview slot (shown when Show is pressed on text that is not
+  // "Book Chapter:Verse"); the next keystroke or answer replaces it.
+  function showReferenceHint(message) {
+    previewNotFoundSeq = null
+    previewEl.classList.add("is-hint")
+    previewEl.hidden = false
+    previewRefEl.textContent = ""
+    previewTextEl.textContent = message
+  }
 
   function hidePreview() {
+    previewNotFoundSeq = null
+    previewEl.classList.remove("is-hint")
     previewEl.hidden = true
     previewRefEl.textContent = ""
     previewTextEl.textContent = ""
@@ -3354,6 +4141,8 @@
   function showPreviewResult(payload) {
     // Only the newest answer is shown.
     if (!payload || payload.seq !== previewSeq) return
+    previewNotFoundSeq = !payload.verse && payload.reason === "not-found" ? payload.seq : null
+    previewEl.classList.remove("is-hint")
     previewEl.hidden = false
     if (payload.verse) {
       previewRefEl.textContent = formatDisplayedReference(payload.verse)
@@ -3362,16 +4151,32 @@
       previewRefEl.textContent = ""
       // "unavailable": the reference is valid but the Bible source did not answer.
       previewTextEl.textContent = t(payload.reason === "unavailable" ? "preview.unavailable" : "preview.notFound")
+      // Keyboard-friendly: Tab to a candidate, Enter fills the box; the preview then
+      // shows that verse and Enter shows it, all through the normal validation path.
+      const suggestionsEl = document.createElement("div")
+      suggestionsEl.className = "preview-suggestions"
+      appendSuggestionButtons(suggestionsEl, payload.suggestions, (reference) => {
+        referenceInput.value = reference.book + " " + reference.chapter + ":" + reference.verse
+        referenceInput.dispatchEvent(new Event("input"))
+        referenceInput.focus()
+      })
+      if (suggestionsEl.childElementCount > 0) previewTextEl.appendChild(suggestionsEl)
     }
   }
 
   // Alt+Left / Alt+Right: one verse back/forward from the last verse shown.
   // An ordinary verse:override, so the server validates it; past the end of a
   // chapter nothing is shown (no rollover to the next chapter).
+  // Section 146: lastShownReference carries the range end of a shown range,
+  // and stepping FORWARD continues at the range's END (Alt+Right after
+  // "Jean 3:16-18" shows 19, not 17 — the middle of the range the operator
+  // already has on screen); stepping back always starts from the range's
+  // FIRST verse.
   let lastShownReference = null
   function stepVerse(delta) {
     if (!lastShownReference) return
-    const verse = lastShownReference.verse + delta
+    const base = delta > 0 ? (lastShownReference.verseEnd ?? lastShownReference.verse) : lastShownReference.verse
+    const verse = base + delta
     if (verse < 1) return
     const reference = { book: lastShownReference.book, chapter: lastShownReference.chapter, verse }
     sendJson({ id: crypto.randomUUID(), type: "verse:override", timestamp: Date.now(), payload: reference })
@@ -3443,8 +4248,18 @@
     return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0")
   }
 
+  // Section 146: the reference payload for remembering/re-showing a verse,
+  // carrying the range end when the shown verse IS a range ("Book C:V-E")
+  // — recalling "Jean 3:16-18" must re-show the whole range, not silently
+  // truncate it to verse 16.
+  function rangeReference(ref, verseEnd) {
+    return typeof verseEnd === "number" && verseEnd > ref.verse
+      ? { book: ref.book, chapter: ref.chapter, verse: ref.verse, verseEnd }
+      : { book: ref.book, chapter: ref.chapter, verse: ref.verse }
+  }
+
   function referenceKey(ref) {
-    return ref.book + " " + ref.chapter + ":" + ref.verse
+    return ref.book + " " + ref.chapter + ":" + ref.verse + (typeof ref.verseEnd === "number" && ref.verseEnd > ref.verse ? "-" + ref.verseEnd : "")
   }
 
   let historyRenderToken = 0
@@ -3532,6 +4347,27 @@
     if (event.detail.view === "history") renderHistoryView()
   })
 
+  /** Audit B6: tells the operator when the settings file was restored/set aside or one key could not be read. */
+  function renderConfigRecovery(list) {
+    const banner = document.getElementById("config-recovery-banner")
+    const text = document.getElementById("config-recovery-text")
+    if (!banner || !text || !Array.isArray(list) || list.length === 0) return
+    const KEY_NAMES = { groq: "Groq", deepgram: "Deepgram", anthropic: "Anthropic" }
+    const messages = []
+    if (list.includes("quarantined")) messages.push(t("config.recovered.quarantined"))
+    else if (list.includes("bak")) messages.push(t("config.recovered.bak"))
+    for (const entry of list) {
+      if (typeof entry !== "string" || !entry.startsWith("key-unreadable:")) continue
+      const name = KEY_NAMES[entry.slice("key-unreadable:".length)]
+      if (name) messages.push(t("config.recovered.keyUnreadable", { name }))
+    }
+    if (messages.length === 0) return
+    text.textContent = messages.join(" ")
+    banner.style.display = "flex"
+    const dismiss = document.getElementById("config-recovery-dismiss")
+    if (dismiss) dismiss.onclick = () => { banner.style.display = "none" }
+  }
+
   function showSetupScreen() {
     appShellEl.style.display = "none"
     setupScreenEl.style.display = "flex"
@@ -3566,17 +4402,42 @@
   // so unlike those toggles, this one confirms with the operator first,
   // and warns specifically about the network-exposure consequence when
   // turning it ON (nothing new when turning it off).
+  //
+  // S-04 amendment: the FIRST activation replaces the generic confirm
+  // with the explicit trusted-network warning, and its acknowledgment is
+  // persisted (allowPhoneRemoteWarningAck) so it is never repeated —
+  // while set-allow-phone-remote itself records the acknowledgment too,
+  // so both entry points (setup checkbox, this toggle) converge.
   remoteToggleBtn.addEventListener("click", () => {
     const enabling = !allowPhoneRemoteEnabled
-    if (!window.confirm(t(enabling ? "remote.confirmEnable" : "remote.confirmDisable"))) return
+    const needsTrustWarning = enabling && !remoteWarningAcked
+    if (needsTrustWarning && !window.confirm(t("remote.trustWarning"))) return
+    if (!needsTrustWarning && !window.confirm(t(enabling ? "remote.confirmEnable" : "remote.confirmDisable"))) return
     remoteToggleBtn.disabled = true
-    window.churchOverlay
-      .setAllowPhoneRemote(enabling)
-      .then((info) => renderRemotePanel(info.remoteUrl, info.allowPhoneRemote))
-      .catch((err) => {
-        log(err.message, "error")
-        remoteToggleBtn.disabled = false
-      })
+    const proceed = () =>
+      window.churchOverlay
+        .setAllowPhoneRemote(enabling)
+        .then((info) => {
+          if (enabling) remoteWarningAcked = true
+          renderRemotePanel(info.remoteUrl, info.allowPhoneRemote)
+        })
+        .catch((err) => {
+          log(err.message, "error")
+          remoteToggleBtn.disabled = false
+        })
+    if (needsTrustWarning) {
+      // The acknowledgment is persisted first; a persist failure must not
+      // block the enable itself (the main-process toggle records it too).
+      window.churchOverlay
+        .acknowledgeRemoteNetworkWarning()
+        .then(() => {
+          remoteWarningAcked = true
+        })
+        .catch(() => {})
+        .then(proceed)
+    } else {
+      proceed()
+    }
   })
 
   remoteCopyBtn.addEventListener("click", () => {
@@ -3591,6 +4452,56 @@
   function renderObsPanel(overlayUrl) {
     if (overlayUrl) obsUrlInput.value = overlayUrl
   }
+
+  // S-04: age of each token, with a visual alert past 7 days. An absent
+  // timestamp (config predating rotation support) renders nothing rather
+  // than guessing an age from nothing.
+  function renderTokenAge(el, generatedAt) {
+    if (!el) return
+    if (!generatedAt) {
+      el.textContent = ""
+      el.classList.remove("token-age-stale")
+      return
+    }
+    const generated = new Date(generatedAt).getTime()
+    const days = Math.floor((Date.now() - generated) / 86400000)
+    if (!Number.isFinite(days) || days < 0) {
+      el.textContent = ""
+      el.classList.remove("token-age-stale")
+      return
+    }
+    el.textContent = t(days > 7 ? "remote.tokenAgeStale" : "remote.tokenAge", { days })
+    el.classList.toggle("token-age-stale", days > 7)
+  }
+
+  function renderTokenAges(info) {
+    renderTokenAge(obsTokenAgeEl, info && info.viewerTokenGeneratedAt)
+    renderTokenAge(remoteTokenAgeEl, info && info.operatorTokenGeneratedAt)
+  }
+
+  // S-04: rotate-and-revoke straight from the dashboard. The confirm
+  // spells out the consequence — every link already handed out for that
+  // token stops working immediately; the panel then shows the new ones.
+  function rotateToken(kind, btn) {
+    if (!window.confirm(t(kind === "operator" ? "remote.rotateConfirm" : "obs.rotateConfirm"))) return
+    btn.disabled = true
+    window.churchOverlay
+      .rotateToken(kind)
+      .then((info) => {
+        renderObsPanel(info.overlayUrl)
+        renderOverlayPreview(info.overlayUrl)
+        renderRemotePanel(info.remoteUrl, info.allowPhoneRemote)
+        renderTokenAges(info)
+        log(t(kind === "operator" ? "log.remoteTokenRotated" : "log.viewerTokenRotated"), "sent", { toast: true })
+      })
+      .catch((err) => log(err.message, "error"))
+      .finally(() => {
+        btn.disabled = false
+      })
+  }
+
+  obsRotateBtn.addEventListener("click", () => rotateToken("viewer", obsRotateBtn))
+  remoteRotateBtn.addEventListener("click", () => rotateToken("operator", remoteRotateBtn))
 
   // Derives mediaOrigin from the same overlayUrl the OBS panel and the
   // embedded preview iframe already use — one real, known-good origin,
@@ -3685,6 +4596,43 @@
       })
   })
 
+  const openLogsBtn = document.getElementById("open-logs-btn")
+  if (openLogsBtn) {
+    openLogsBtn.addEventListener("click", () => {
+      openLogsBtn.disabled = true
+      window.churchOverlay
+        .openLogsFolder()
+        .then((result) => {
+          if (result && !result.ok) log(t("log.logsOpenFailed", { path: result.path, error: result.error }), "error")
+        })
+        .catch((err) => log(t("log.logsOpenFailed", { path: "", error: err.message }), "error"))
+        .finally(() => {
+          openLogsBtn.disabled = false
+        })
+    })
+  }
+
+  if (exportTranscriptBtn) {
+    exportTranscriptBtn.addEventListener("click", () => {
+      exportTranscriptBtn.disabled = true
+      exportTranscriptBtn.textContent = t("session.exporting")
+      window.churchOverlay
+        ?.exportSessionTranscript?.()
+        .then((result) => {
+          if (!result || result.canceled) return
+          if (result.error) {
+            log(result.error, "error")
+          } else {
+            log(t("log.transcriptExported", { path: result.path }), "received", { toast: true })
+          }
+        })
+        .catch((err) => log(t("log.importFailed", { error: err.message }), "error"))
+        .finally(() => {
+          exportTranscriptBtn.disabled = false
+          exportTranscriptBtn.textContent = t("session.exportTranscriptButton")
+        })
+    })
+  }
   // ARCHITECTURE.md section 93: a strictly one-shot, operator-triggered
   // digest — reads the already-rendered sermon-notes feed text directly
   // (oldest first, since the feed itself prepends newest-first) rather
@@ -3854,6 +4802,50 @@
       .setFrenchTranslation(translation)
       .catch((err) => log(t("log.importFailed", { error: err.message }), "error"))
   })
+
+  const customBibleApiInput = document.getElementById("custom-bible-api-url")
+  const customBibleApiApplyBtn = document.getElementById("custom-bible-api-apply-btn")
+  const customBibleApiStatus = document.getElementById("custom-bible-api-status")
+
+  if (window.churchOverlay && window.churchOverlay.getCustomBibleApiUrl && customBibleApiInput) {
+    window.churchOverlay
+      .getCustomBibleApiUrl()
+      .then((url) => {
+        if (url) customBibleApiInput.value = url
+      })
+      .catch(() => {})
+  }
+
+  if (customBibleApiApplyBtn && customBibleApiInput) {
+    customBibleApiApplyBtn.addEventListener("click", () => {
+      const url = customBibleApiInput.value.trim()
+      if (url !== "" && !url.startsWith("https://")) {
+        if (customBibleApiStatus) {
+          customBibleApiStatus.textContent = t("bibleApi.invalidUrl")
+          customBibleApiStatus.style.color = "var(--color-danger, #ef4444)"
+        }
+        return
+      }
+      customBibleApiApplyBtn.disabled = true
+      window.churchOverlay
+        ?.setCustomBibleApiUrl?.(url)
+        .then(() => {
+          if (customBibleApiStatus) {
+            customBibleApiStatus.textContent = t("bibleApi.saved")
+            customBibleApiStatus.style.color = "var(--color-success, #22c55e)"
+          }
+        })
+        .catch((err) => {
+          if (customBibleApiStatus) {
+            customBibleApiStatus.textContent = err.message
+            customBibleApiStatus.style.color = "var(--color-danger, #ef4444)"
+          }
+        })
+        .finally(() => {
+          customBibleApiApplyBtn.disabled = false
+        })
+    })
+  }
   posterDurationApplyBtn.addEventListener("click", () => {
     const raw = posterDurationInputEl.value.trim()
     const minutes = raw === "" ? null : Number(raw)
@@ -3910,6 +4902,9 @@
         setActiveOption(verseLayoutToggleEl, "layout", info.verseLayout || "fullscreen")
         setActiveOption(frenchTranslationToggleEl, "translation", info.frenchTranslation || "ls1910")
         renderRemotePanel(info.remoteUrl, info.allowPhoneRemote)
+        // complete-setup persists the acknowledgment whenever it enables
+        // the exposure (S-04), so this session starts in the same state.
+        remoteWarningAcked = Boolean(info.allowPhoneRemote)
         renderObsPanel(info.overlayUrl)
         renderOverlayPreview(info.overlayUrl)
         setMediaOrigin(info.overlayUrl)
@@ -3939,6 +4934,7 @@
     .getStartupStatus()
     .then((status) => {
       window.i18n.setLanguage(status.uiLanguage || "en")
+      renderConfigRecovery(status.configRecovered)
       setActiveOption(setupUiLanguageEl, "lang", status.uiLanguage || "en")
       setActiveOption(uiLanguageToggleEl, "lang", status.uiLanguage || "en")
 
@@ -3950,6 +4946,10 @@
         setActiveOption(frenchTranslationToggleEl, "translation", status.frenchTranslation || "ls1910")
         renderRemotePanel(status.remoteUrl, status.allowPhoneRemote)
         renderObsPanel(status.overlayUrl)
+        // S-04: trust-warning state and token ages come from the persisted
+        // config, not from module state.
+        remoteWarningAcked = status.remoteWarningAcked === true
+        renderTokenAges(status)
         renderOverlayPreview(status.overlayUrl)
         setMediaOrigin(status.overlayUrl)
         renderNdiStatus(status.ndi)

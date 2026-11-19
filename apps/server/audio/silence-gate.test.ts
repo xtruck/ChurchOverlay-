@@ -97,6 +97,24 @@ test("SilenceGate: a fresh above-threshold frame refills the hangover budget rat
   assert.equal(stillForwarded.forwarded, true)
 })
 
+test("SilenceGate: resetMetrics() clears one session's totals and RMS peak so the next session starts from zero", () => {
+  const gate = new SilenceGate({ threshold: 500, hangoverMs: 0 })
+  gate.process(makeFrame(new Array(160).fill(10000))) // loud: forwarded, sets maxRms
+  gate.process(makeFrame(new Array(160).fill(0))) // silent: rejected
+  const before = gate.getMetrics()
+  assert.equal(before.framesReceived, 2)
+  assert.equal(before.maxRms, 10000)
+
+  gate.resetMetrics()
+  const after = gate.getMetrics()
+  assert.deepEqual(
+    [after.framesReceived, after.framesRejected, after.framesForwarded, after.averageRms, after.maxRms],
+    [0, 0, 0, 0, 0],
+  )
+  // The gate itself keeps working after a reset.
+  assert.equal(gate.process(makeFrame(new Array(160).fill(10000))).forwarded, true)
+})
+
 test("SilenceGate: getMetrics() before any frame is processed reports zeros, not NaN", () => {
   const gate = new SilenceGate()
   const metrics = gate.getMetrics()

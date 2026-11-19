@@ -1,3 +1,4 @@
+import { nullProto } from "../../../packages/shared/type-guards"
 import type { VerseIndex, VerseReference } from "../../../packages/contracts"
 import { BOOK_CATALOG, type BookEntry } from "./book-catalog"
 
@@ -6,9 +7,9 @@ import { BOOK_CATALOG, type BookEntry } from "./book-catalog"
  * Keep this list small and explicit (AGENTS.md section 40) — add an entry
  * only when a real, common spelling is missing, never speculatively.
  */
-const BOOK_ID_ALIASES: Readonly<Record<string, string>> = {
+const BOOK_ID_ALIASES: Readonly<Record<string, string>> = nullProto({
   psalms: "psalm",
-}
+})
 
 /**
  * v1 VerseIndex implementation — the hallucination guard (ARCHITECTURE.md
@@ -53,5 +54,6 @@ export class KnownValidVerseIndex implements VerseIndex {
  * RegexDetector#normalizeBookName).
  */
 function normalizeBookId(rawBookId: string): string {
+  if (typeof rawBookId !== "string") return "" // never throw out of the hallucination guard (TS-06)
   return rawBookId.trim().replace(/\s+/g, " ").toLowerCase()
 }

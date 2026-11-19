@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises"
 import { join } from "node:path"
-import type { Verse, VerseReference, VerseSource } from "../../../packages/contracts"
+import type { ChapterCapableSource, Verse, VerseReference, VerseSource } from "../../../packages/contracts"
 import { OFFLINE_BIBLE_BOOK_KEYS } from "./offline-bible-book-keys"
 
 // This module compiles to dist/apps/server/verse/offline-verse-source.js,
@@ -43,8 +43,25 @@ const TRANSLATION = "ls1910"
  * reference against the same 66-book/chapter/verse-count catalog before
  * anything reaches a VerseSource at all.
  */
-export class OfflineVerseSource implements VerseSource {
+export class OfflineVerseSource implements VerseSource, ChapterCapableSource {
   constructor(private readonly data: OfflineBibleData) {}
+
+  /** Bible Browser: a whole chapter from the bundled data (null when the book/chapter is not in it). */
+  async getChapter(book: string, chapter: number): Promise<readonly Verse[] | null> {
+    const bookKey = OFFLINE_BIBLE_BOOK_KEYS[book]
+    if (!bookKey) return null
+    const verses = this.data[bookKey]?.[String(chapter)]
+    if (!verses) return null
+    const result: Verse[] = []
+    for (const [number, text] of Object.entries(verses)) {
+      const verse = Number(number)
+      if (!Number.isInteger(verse) || verse < 1 || typeof text !== "string" || text.length === 0) continue
+      result.push({ reference: { book, chapter, verse }, text, translation: TRANSLATION, source: "offline-bundled" })
+    }
+    if (result.length === 0) return null
+    result.sort((a, b) => a.reference.verse - b.reference.verse)
+    return result
+  }
 
   async getVerse(reference: VerseReference): Promise<Verse | null> {
     const bookKey = OFFLINE_BIBLE_BOOK_KEYS[reference.book]

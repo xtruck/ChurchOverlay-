@@ -27,6 +27,7 @@ import { KnownValidVerseIndex } from "../apps/server/verse/known-valid-verse-ind
 import { FreeApiSource } from "../apps/server/verse/free-api-source"
 import { GroqProvider } from "../apps/server/asr/groq-provider"
 import { Logger } from "../packages/shared/logger"
+import { redactUrl } from "../apps/web/redact-url"
 
 async function main(): Promise<void> {
   const groqApiKey = process.env.GROQ_API_KEY
@@ -85,13 +86,14 @@ async function main(): Promise<void> {
   console.log("ChurchOverlay dev preview is running.")
   console.log("")
   console.log("Operator dashboard (dev-only preview, open this one and click around):")
+  // S-09: same masking discipline as the web mode's own startup log.
   console.log(
-    `  http://127.0.0.1:${dashboardHttpPort}/dashboard.html?token=${tokens.operatorToken}&wsPort=${wsPort}`
+    `  ${redactUrl(`http://127.0.0.1:${dashboardHttpPort}/dashboard.html?token=${tokens.operatorToken}&wsPort=${wsPort}`)}`
   )
   console.log("")
   console.log("Overlay (the real page — open in a second tab/window to see verses appear):")
   console.log(
-    `  http://127.0.0.1:${overlayHttpPort}/index.html?token=${tokens.viewerToken}&wsPort=${wsPort}`
+    `  ${redactUrl(`http://127.0.0.1:${overlayHttpPort}/index.html?token=${tokens.viewerToken}&wsPort=${wsPort}`)}`
   )
   console.log("")
   console.log("Try it: in the dashboard, type \"John 3:16\" and click \"Show on overlay\".")

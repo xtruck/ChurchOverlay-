@@ -2,7 +2,11 @@ import { isPlainObject } from "../../../packages/shared/type-guards"
 import { WebSocket } from "ws"
 import type { AsrProvider, AudioFrame, TranscriptResult } from "../../../packages/contracts"
 import { generateUlid } from "../../../packages/shared/ulid"
+import type { Logger } from "../../../packages/shared/logger"
 import { biblicalVocabularyFor, plannedBookTerms } from "./biblical-vocabulary"
+import { OFF_LANGUAGE_MIN_WORDS, offLanguageShare } from "./language-lock"
+import { isBibleWord } from "./transcript-screen"
+import type { TranscriptionPolicy } from "./noise-mode"
 
 const DEFAULT_MODEL = "nova-2"
 /**
@@ -39,6 +43,9 @@ const DEFAULT_ENDPOINTING_MS = 300
 const MAX_PLANNED_BOOK_TERMS = 15
 const DEFAULT_CONNECT_TIMEOUT_MS = 10_000
 
+/** After this many language drops in a row the guard stops dropping until a transcript passes it. */
+export const DEEPGRAM_LANGUAGE_VALVE_AFTER = 5
+
 export type DeepgramProviderOptions = {
   readonly apiKey: string
   readonly model?: string
@@ -51,14 +58,35 @@ export type DeepgramProviderOptions = {
   readonly endpointingMs?: number
   /** Boosts Bible book names and "chapitre/verset" (see biblical-vocabulary.ts). Default true. */
   readonly biblicalVocabulary?: boolean
+  /** Receives one debug line per transcript dropped for being in another language. */
+  readonly logger?: Logger
+  /** Operator noise/tongues strictness: how much off-language speech is tolerated (noise-mode.ts). */
+  readonly policy?: TranscriptionPolicy
+  /**
+   * SF-19: reopen the socket (exponential backoff, driven by incoming audio) after an unexpected close.
+   * For when this is the only or the last provider in the chain: nothing else can take over, so without
+   * it the app stays deaf until the mic is cycled. Off by default (a failover wrapper handles the close).
+   */
+  readonly reconnectOnClose?: boolean
+  /** Injectable clock for the reconnect backoff. */
+  readonly now?: () => number
 }
+
+const RECONNECT_INITIAL_MS = 1_000
+const RECONNECT_MAX_MS = 30_000
 
 type DeepgramMessage = {
   readonly type?: string
   readonly is_final?: boolean
   readonly speech_final?: boolean
   readonly channel?: {
-    readonly alternatives?: readonly { readonly transcript?: string; readonly confidence?: number }[]
+    readonly alternatives?: readonly {
+      readonly transcript?: string
+      readonly confidence?: number
+      /** Nova-3 `multi` only (unverified against live traffic): detected languages, and a language per word. */
+      readonly languages?: readonly string[]
+      readonly words?: readonly { readonly language?: string }[]
+    }[]
   }
 }
 
@@ -77,6 +105,10 @@ export class DeepgramProvider implements AsrProvider {
   private readonly connectTimeoutMs: number
   private readonly biblicalVocabulary: boolean
   private language: string | undefined
+  private readonly logger?: Logger
+  private readonly policy?: TranscriptionPolicy
+  private offLanguageDrops = 0
+  private consecutiveOffLanguage = 0
   private socket: WebSocket | null = null
   private keepAliveTimer: ReturnType<typeof setInterval> | null = null
   private lastSendAt = 0
@@ -87,12 +119,22 @@ export class DeepgramProvider implements AsrProvider {
   private errorCallback: ((error: Error) => void) | null = null
   private currentVerseRef: string | null = null
   private plannedBookIds: readonly string[] = []
+  private reconnectOnClose: boolean
+  private readonly now: () => number
+  private lostUnexpectedly = false
+  private reconnectAttempts = 0
+  private nextReconnectAt = 0
+  private reconnecting: Promise<void> | null = null
 
   constructor(options: DeepgramProviderOptions) {
+    this.reconnectOnClose = options.reconnectOnClose ?? false
+    this.now = options.now ?? Date.now
     if (!options.apiKey.trim()) throw new Error("DeepgramProvider requires an apiKey")
     this.apiKey = options.apiKey
     this.model = options.model ?? DEFAULT_MODEL
     this.language = options.language
+    this.logger = options.logger
+    this.policy = options.policy
     this.url = options.url ?? DEFAULT_URL
     this.WebSocketImpl = options.WebSocketImpl ?? WebSocket
     this.keepAliveIntervalMs = options.keepAliveIntervalMs ?? DEFAULT_KEEPALIVE_MS
@@ -100,6 +142,11 @@ export class DeepgramProvider implements AsrProvider {
     this.endpointingExplicit = options.endpointingMs !== undefined
     this.connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS
     this.biblicalVocabulary = options.biblicalVocabulary ?? true
+  }
+
+  /** SF-19: the host turns this on once it knows Deepgram is the last provider in the chain (see the option). */
+  setReconnectOnClose(enabled: boolean): void {
+    this.reconnectOnClose = enabled
   }
 
   /** Takes effect on the next start() — Deepgram fixes language per connection. */
@@ -179,6 +226,11 @@ export class DeepgramProvider implements AsrProvider {
       if (!this.active) return
       this.socket = null
       this.active = false
+      if (this.reconnectOnClose) {
+        this.lostUnexpectedly = true
+        this.reconnectAttempts = 0
+        this.nextReconnectAt = this.now() + RECONNECT_INITIAL_MS
+      }
       this.reportError(new Error("Deepgram WebSocket closed unexpectedly"))
     })
     try {
@@ -191,12 +243,48 @@ export class DeepgramProvider implements AsrProvider {
       }
       throw error
     }
+    // stop() ran while this socket was still connecting: it had nothing open to
+    // close, so close it here instead of leaving a live, billed connection that
+    // keeps delivering transcripts after the mic was stopped.
+    if (this.socket !== socket) {
+      if (socket.readyState === this.WebSocketImpl.OPEN || socket.readyState === this.WebSocketImpl.CONNECTING) {
+        socket.close()
+      }
+      return
+    }
     this.lastSendAt = Date.now()
     this.armKeepAlive(socket)
   }
 
+  /** SF-19: one reconnect attempt at a time, spaced by exponential backoff; each failure is reported. */
+  private async reconnectIfDue(): Promise<void> {
+    if (this.reconnecting) return this.reconnecting
+    if (this.now() < this.nextReconnectAt) return
+    this.reconnecting = (async () => {
+      try {
+        await this.start()
+        if (this.active) {
+          this.lostUnexpectedly = false
+          this.reconnectAttempts = 0
+          this.logger?.info({ component: "asr", event: "deepgram.reconnected" })
+        }
+      } catch (error) {
+        this.reconnectAttempts += 1
+        this.nextReconnectAt = this.now() + Math.min(RECONNECT_INITIAL_MS * 2 ** this.reconnectAttempts, RECONNECT_MAX_MS)
+        this.reportError(error instanceof Error ? error : new Error(String(error)))
+      }
+    })().finally(() => {
+      this.reconnecting = null
+    })
+    return this.reconnecting
+  }
+
   async sendAudio(audio: AudioFrame): Promise<void> {
-    const socket = this.openSocket()
+    let socket = this.openSocket()
+    if (!socket && this.lostUnexpectedly) {
+      await this.reconnectIfDue()
+      socket = this.openSocket()
+    }
     if (!socket) throw new Error("DeepgramProvider is not connected")
     socket.send(Buffer.from(audio.samples.buffer, audio.samples.byteOffset, audio.samples.byteLength))
     this.lastSendAt = Date.now()
@@ -217,6 +305,7 @@ export class DeepgramProvider implements AsrProvider {
 
   async stop(): Promise<void> {
     this.active = false
+    this.lostUnexpectedly = false
     this.clearKeepAlive()
     const socket = this.socket
     this.socket = null
@@ -268,6 +357,42 @@ export class DeepgramProvider implements AsrProvider {
     const text = typeof alternative?.transcript === "string" ? alternative.transcript.trim() : ""
     if (!text) return
     const state = message.is_final ? "final" : "partial"
+    // `language=multi` code-switches ten languages, not two. French and English only: a transcript that is mostly
+    // something else is dropped (tolerance by mode: tongues is least tolerant).
+    // Only alphabetic words count, Bible book names and numbers never do (engines mis-tag them), and fewer than
+    // OFF_LANGUAGE_MIN_WORDS judged words is never enough to drop: "Jean 3 16" must always get through.
+    const alphabeticWords = text.split(/[^\p{L}]+/u).filter((word) => word.length > 0 && !isBibleWord(word)).length
+    const off = offLanguageShare(alternative?.words, alternative?.languages, { transcriptWords: alphabeticWords, skip: isBibleWord })
+    const limit = this.policy?.mode === "tongues" ? 0.25 : this.policy?.mode === "noisy" ? 0.4 : 0.5
+    if (off !== null && off.judged >= OFF_LANGUAGE_MIN_WORDS && off.share >= limit) {
+      this.consecutiveOffLanguage += 1
+      if (this.consecutiveOffLanguage <= DEEPGRAM_LANGUAGE_VALVE_AFTER) {
+        this.offLanguageDrops += 1
+        const note = this.policy?.ledger.record("off-language", "deepgram")
+        if (note === undefined || note.log) {
+          this.logger?.info({
+            component: "asr",
+            event: "deepgram.language-dropped",
+            correlationId: this.correlationId,
+            metadata: { share: Math.round(off.share * 100) / 100, judged: off.judged, state, total: this.offLanguageDrops, suppressed: note?.suppressed ?? 1 },
+          })
+        }
+        if (state === "final") this.correlationId = generateUlid()
+        return
+      }
+      // Safety valve: many drops in a row means the guard, not the speaker, is probably wrong. Let text through, say so.
+      if (this.consecutiveOffLanguage === DEEPGRAM_LANGUAGE_VALVE_AFTER + 1) {
+        this.policy?.ledger.setValve("deepgram-language", true)
+        this.logger?.warn({
+          component: "asr",
+          event: "deepgram.language-guard-bypassed",
+          metadata: { consecutive: DEEPGRAM_LANGUAGE_VALVE_AFTER, share: Math.round(off.share * 100) / 100 },
+        })
+      }
+    } else if (this.consecutiveOffLanguage > 0) {
+      if (this.consecutiveOffLanguage > DEEPGRAM_LANGUAGE_VALVE_AFTER) this.policy?.ledger.setValve("deepgram-language", false)
+      this.consecutiveOffLanguage = 0
+    }
     this.sequence += 1
     this.deliverTranscript({
       id: generateUlid(),
@@ -278,6 +403,10 @@ export class DeepgramProvider implements AsrProvider {
       ...(typeof alternative?.confidence === "number" ? { providerConfidence: alternative.confidence } : {}),
       timestamp: Date.now(),
     })
+    // AGENTS.md section 23: one processing chain per utterance. The partials and
+    // the final of an utterance share an id; the next utterance gets its own, so
+    // a single id can be traced through detector, lookup, WS and overlay.
+    if (state === "final") this.correlationId = generateUlid()
   }
 
   /** A consumer that throws must not escape into the socket's message listener. */

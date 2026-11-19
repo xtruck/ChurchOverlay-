@@ -10,6 +10,7 @@ test("ACTION_REGISTRY: contains all registered actions including Phase 2 and inn
       "mic:start",
       "mic:stop",
       "asr:return-primary",
+      "asr:noise-mode",
       "status:update",
       "transcript:partial",
       "transcript:final",
@@ -17,9 +18,17 @@ test("ACTION_REGISTRY: contains all registered actions including Phase 2 and inn
       "verse:override",
       "verse:preview",
       "verse:preview-result",
+      "verse:navigate",
+      "bible:chapter",
+      "bible:chapter-result",
+      "bible:search",
+      "bible:search-result",
+      "verse:navigate-result",
       "verse:show",
       "verse:pending",
       "verse:confirm-pending",
+      "verse:dismiss-pending",
+      "verse:lookup-failed",
       "media:select",
       "media:play",
       "media:pause",
@@ -52,6 +61,7 @@ test("ACTION_REGISTRY: contains all registered actions including Phase 2 and inn
       "overlay:style",
       "mic:auto-gain",
       "mic:health",
+      "mic:start-failed",
       "timer:start",
       "timer:stop",
       "timer:reset",
@@ -115,6 +125,37 @@ test("validateWsMessage: accepts a valid verse:override command with a VerseRefe
     "operator"
   )
   assert.equal(result.ok, true)
+})
+
+// Section 146 (frontend pass): the operator's manual range end ("Book
+// C:V-E") is an additive optional number on the typed reference — shape
+// only here; AppCore owns the semantics (integer, forward, clamped, capped).
+test("validateWsMessage: accepts an optional numeric verseEnd on verse:override and verse:preview references", () => {
+  for (const type of ["verse:override", "verse:preview"] as const) {
+    const withRange = validateWsMessage(
+      {
+        id: "01ABC",
+        type,
+        timestamp: 1700000000000,
+        payload: type === "verse:preview" ? { seq: 1, reference: { book: "john", chapter: 3, verse: 16, verseEnd: 18 } } : { book: "john", chapter: 3, verse: 16, verseEnd: 18 },
+      },
+      "operator"
+    )
+    assert.equal(withRange.ok, true, type)
+  }
+})
+
+test("validateWsMessage: rejects a non-numeric verseEnd on a typed reference", () => {
+  const result = validateWsMessage(
+    {
+      id: "01ABC",
+      type: "verse:override",
+      timestamp: 1700000000000,
+      payload: { book: "john", chapter: 3, verse: 16, verseEnd: "18" },
+    },
+    "operator"
+  )
+  assert.equal(result.ok, false)
 })
 
 test("validateWsMessage: accepts optional correlationId and sequence when valid", () => {
@@ -551,6 +592,21 @@ test("validateWsMessage: rejects verse:confirm-pending with a non-null payload, 
   assert.equal(fromViewer.ok, false)
 })
 
+test("validateWsMessage: verse:dismiss-pending is a null-payload operator command", () => {
+  assert.equal(
+    validateWsMessage({ id: "01ABC", type: "verse:dismiss-pending", timestamp: 1700000000000, payload: null }, "operator").ok,
+    true
+  )
+  assert.equal(
+    validateWsMessage({ id: "01ABC", type: "verse:dismiss-pending", timestamp: 1700000000000, payload: {} }, "operator").ok,
+    false
+  )
+  assert.equal(
+    validateWsMessage({ id: "01ABC", type: "verse:dismiss-pending", timestamp: 1700000000000, payload: null }, "viewer").ok,
+    false
+  )
+})
+
 test("ACTION_REGISTRY['verse:pending'].validatePayload: accepts a valid pending Verse (no trigger required), rejects a malformed one", () => {
   assert.equal(ACTION_REGISTRY["verse:pending"].validatePayload(VALID_PENDING_VERSE), true)
   for (const payload of [{}, { ...VALID_PENDING_VERSE, reference: null }, null]) {
@@ -865,6 +921,21 @@ test("ACTION_REGISTRY['detector:near-miss'].validatePayload: accepts a text stri
   }
 })
 
+test("'did you mean' suggestions: optional, at most 3 well-formed references, on near-miss and preview-result", () => {
+  const ref = { book: "isaiah", chapter: 4, verse: 6 }
+  const nearMiss = ACTION_REGISTRY["detector:near-miss"]
+  assert.equal(nearMiss.validatePayload({ text: "x", suggestions: [ref] }), true)
+  assert.equal(nearMiss.validatePayload({ text: "x", suggestions: [] }), true)
+  assert.equal(nearMiss.validatePayload({ text: "x", suggestions: [ref, ref, ref, ref] }), false)
+  assert.equal(nearMiss.validatePayload({ text: "x", suggestions: [{ book: "isaiah" }] }), false)
+  assert.equal(nearMiss.validatePayload({ text: "x", suggestions: "isaiah 4:6" }), false)
+
+  const preview = ACTION_REGISTRY["verse:preview-result"]
+  const base = { seq: 1, reference: { book: "isaiah", chapter: 4, verse: 8 }, verse: null, reason: "not-found" }
+  assert.equal(preview.validatePayload({ ...base, suggestions: [ref] }), true)
+  assert.equal(preview.validatePayload({ ...base, suggestions: [{ book: 1 }] }), false)
+})
+
 test("validateWsMessage: rejects any inbound sender for detector:near-miss — a server-only event", () => {
   const asOperator = validateWsMessage(
     { id: "01ABC", type: "detector:near-miss", timestamp: 1700000000000, payload: { text: "abacuc 4" } },
@@ -1055,4 +1126,37 @@ test("validateWsMessage: rejects any inbound sender for copilot:suggestions, a s
   const message = { id: "01ABC", type: "copilot:suggestions", timestamp: 1700000000000, payload: { id: "s1", relatedVerses: [], keyPoint: null } }
   assert.equal(validateWsMessage(message, "operator").ok, false)
   assert.equal(validateWsMessage(message, "viewer").ok, false)
+})
+
+test("status:update aiHelpers: optional, fixed state and reason vocabulary only (free text can never ride along)", () => {
+  const status = ACTION_REGISTRY["status:update"]
+  assert.equal(status.validatePayload({ asrHealth: "ok" }), true)
+  assert.equal(status.validatePayload({ asrHealth: "ok", aiHelpers: { state: "ok" } }), true)
+  assert.equal(status.validatePayload({ asrHealth: "ok", aiHelpers: { state: "paused", reason: "repeated-failures" } }), true)
+  assert.equal(status.validatePayload({ asrHealth: "ok", aiHelpers: { state: "unavailable", reason: "model-unavailable" } }), true)
+  assert.equal(status.validatePayload({ asrHealth: "ok", aiHelpers: { state: "broken" } }), false)
+  assert.equal(status.validatePayload({ asrHealth: "ok", aiHelpers: { state: "paused", reason: "Groq text request failed (404)" } }), false)
+  assert.equal(status.validatePayload({ asrHealth: "ok", aiHelpers: "paused" }), false)
+})
+
+
+test("mic:start-failed (SF-06) is a server-only event with a bounded string reason", () => {
+  const def = ACTION_REGISTRY["mic:start-failed"]
+  assert.equal(def.kind, "event")
+  assert.deepEqual(def.allowedSenders, [])
+  assert.equal(def.validatePayload({ reason: "Deepgram unreachable" }), true)
+  assert.equal(def.validatePayload({ reason: "" }), false)
+  assert.equal(def.validatePayload({ reason: "x".repeat(501) }), false)
+  assert.equal(def.validatePayload({ reason: "ok", extra: 1 }), false)
+  assert.equal(def.validatePayload(null), false)
+  const sent = validateWsMessage({ id: "01X", type: "mic:start-failed", timestamp: 1, payload: { reason: "x" } }, "operator")
+  assert.equal(sent.ok, false, "clients can never send it")
+})
+
+test("mic:health accepts the additive no-audio state (SF-08) and still rejects unknown states", () => {
+  const base = { speechDbfs: null, noiseDbfs: null, snrDb: null, peakDbfs: null, clippingRatio: 0, gainDb: 0, autoGain: true }
+  const def = ACTION_REGISTRY["mic:health"]
+  assert.equal(def.validatePayload({ ...base, state: "no-audio" }), true)
+  assert.equal(def.validatePayload({ ...base, state: "no-signal" }), true)
+  assert.equal(def.validatePayload({ ...base, state: "dead" }), false)
 })

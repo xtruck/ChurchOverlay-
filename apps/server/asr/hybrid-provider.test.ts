@@ -32,6 +32,30 @@ test("HybridAsrProvider: with no apiKey, hasRealProvider() is false and sendAudi
   await assert.doesNotReject(() => provider.stop())
 })
 
+test("HybridAsrProvider: forwards the end-of-utterance flush to the real provider (AppCore finds it by name), and is a no-op without a key", async () => {
+  const captured: CapturedRequest[] = []
+  const provider = new HybridAsrProvider({
+    apiKey: "a-real-key",
+    fetchImpl: fakeFetch(() => jsonResponse({ text: "Turn to John 3:16" }), captured),
+    chunkDurationMs: 5000,
+  })
+  const results: TranscriptResult[] = []
+  provider.onTranscript((r) => results.push(r))
+
+  await provider.start()
+  await provider.sendAudio(oneSecondFrame()) // 1 s: below the 5 s chunk, so nothing sent yet
+  assert.equal(captured.length, 0)
+
+  await provider.onUtteranceEnd() // the silence gate says the sentence ended
+  assert.equal(captured.length, 1)
+  assert.equal(results[0]?.text, "Turn to John 3:16")
+
+  const keyless = new HybridAsrProvider()
+  await assert.doesNotReject(() => keyless.onUtteranceEnd())
+  assert.doesNotThrow(() => keyless.setCurrentVerseRef("john 3:16"))
+  assert.doesNotThrow(() => keyless.discardBufferedAudio())
+})
+
 test("HybridAsrProvider: emitText() works with no apiKey configured — dry-run testing never depends on Groq", () => {
   const provider = new HybridAsrProvider()
   const results: TranscriptResult[] = []

@@ -87,6 +87,31 @@ test("CircuitBreaker: a failed probe reopens the circuit and restarts the cooldo
   assert.equal(breaker.canProceed(), true)
 })
 
+test("CircuitBreaker: a failed probe is released even when recording its cooldown fails", () => {
+  let now = 0
+  let throwOnNextRead = false
+  const breaker = new CircuitBreaker({
+    failureThreshold: 1,
+    cooldownMs: 1000,
+    now: () => {
+      if (throwOnNextRead) {
+        throwOnNextRead = false
+        throw new Error("clock failed")
+      }
+      return now
+    },
+  })
+  breaker.recordFailure()
+  now = 1000
+  assert.equal(breaker.canProceed(), true)
+
+  throwOnNextRead = true
+  assert.throws(() => breaker.recordFailure(), /clock failed/)
+  assert.equal(breaker.getState(), "half-open")
+  assert.equal(breaker.canProceed(), true, "the failed bookkeeping must not strand the half-open probe")
+  assert.equal(breaker.canProceed(), false, "only one retry probe may be in flight")
+})
+
 test("CircuitBreaker: rejects an invalid failureThreshold or cooldownMs", () => {
   assert.throws(() => new CircuitBreaker({ failureThreshold: 0 }))
   assert.throws(() => new CircuitBreaker({ failureThreshold: 1.5 }))

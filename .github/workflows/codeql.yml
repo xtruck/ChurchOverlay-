@@ -1,0 +1,55 @@
+name: CodeQL
+
+# P1-1: static security analysis of the TypeScript sources (server, desktop
+# main/preload, web mode) and the vanilla-JS renderer pages, on top of the
+# unit/source-guard tests. Runs on every push to main and every pull request,
+# plus a weekly sweep so a new query or a new advisory still reaches the repo
+# even when nothing moved.
+#
+# S-02 pinning policy (same as ci.yml): every external action is pinned to a
+# FULL COMMIT SHA (verified with `git ls-remote <repo> refs/tags/<tag>{}`),
+# never a moving tag. Each pin carries the version it names, and upgrading is
+# a deliberate, reviewable diff of the comment.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Mondays 05:23 UTC, deliberately off the hour to avoid runner congestion.
+    - cron: "23 5 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (javascript-typescript)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      # Required to upload the SARIF results to the Security tab.
+      security-events: write
+
+    steps:
+      - name: Checkout repository
+        # v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Initialize CodeQL
+        # v3.39.3
+        uses: github/codeql-action/init@9418214df1f2c4b8128c770156c409013b07d6b9
+        with:
+          languages: javascript-typescript
+          # security-extended: the default suite plus the deeper taint-tracking
+          # queries (injection paths through the WS surface, the /api routes and
+          # the renderer pages are exactly what this repo hands to strangers).
+          queries: security-extended
+
+      - name: Perform CodeQL Analysis
+        # v3.39.3
+        uses: github/codeql-action/analyze@9418214df1f2c4b8128c770156c409013b07d6b9
+        with:
+          category: "/language:javascript-typescript"

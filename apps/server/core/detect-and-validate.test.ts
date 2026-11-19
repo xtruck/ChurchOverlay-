@@ -66,3 +66,55 @@ test("detectValidatedReferences: no detected references means no validated refer
   )
   assert.deepEqual(result, [])
 })
+
+// ---------------------------------------------------------------------------
+// Innovation pass (ARCHITECTURE.md section 145): validated verse RANGES.
+// ---------------------------------------------------------------------------
+
+import { detectValidatedRanges, MAX_RANGE_VERSES } from "./detect-and-validate"
+import { asVerseRangeDetector, VerseRangeDetector } from "../detector/verse-range-detector"
+
+const rangeDetector = new VerseRangeDetector()
+const rangeIndex = new KnownValidVerseIndex()
+
+// The hallucination guard's range twin: a detected range is a candidate too.
+test("detectValidatedRanges: the hallucination guard clamps to a contiguous existing stretch", () => {
+  // John 3 has 36 verses; "16 to 40" first hits the MAX_RANGE_VERSES cap
+  // (16 + 12 - 1 = 27), which the index then confirms in full.
+  assert.deepEqual(
+    detectValidatedRanges(rangeDetector, rangeIndex, "Jean 3:16-40"),
+    [{ book: "john", chapter: 3, startVerse: 16, endVerse: 27 }]
+  )
+  // A start that does not exist drops the whole range.
+  assert.deepEqual(detectValidatedRanges(rangeDetector, rangeIndex, "Jean 2:40-45"), [])
+  // Chapter-length clamping without the cap: John 3 ends at verse 36.
+  assert.deepEqual(detectValidatedRanges(rangeDetector, rangeIndex, "Jean 3:30-40"), [
+    { book: "john", chapter: 3, startVerse: 30, endVerse: 36 },
+  ])
+  // Psalm 23 has 6 verses: "1 to 9" clamps to 1-6.
+  assert.deepEqual(detectValidatedRanges(rangeDetector, rangeIndex, "Psaume 23:1-9"), [
+    { book: "psalm", chapter: 23, startVerse: 1, endVerse: 6 },
+  ])
+})
+
+test("detectValidatedRanges: the MAX_RANGE_VERSES cap bounds one utterance", () => {
+  assert.equal(MAX_RANGE_VERSES, 12)
+  // Psalm 119 has 176 verses; a spoken "1 à 176" must neither flood the
+  // overlay nor turn one detection into 176 source reads.
+  const validated = detectValidatedRanges(rangeDetector, rangeIndex, "Psaume 119:1-176")
+  assert.deepEqual(validated, [{ book: "psalm", chapter: 119, startVerse: 1, endVerse: 12 }])
+})
+
+test("detectValidatedRanges: duplicates collapse to one range", () => {
+  assert.deepEqual(detectValidatedRanges(rangeDetector, rangeIndex, "Jean 3:16-18 et 16-18"), [
+    { book: "john", chapter: 3, startVerse: 16, endVerse: 18 },
+  ])
+})
+
+test("asVerseRangeDetector: structural lookup on the pipeline detector instance", () => {
+  const regex = new RegexDetector()
+  assert.equal(asVerseRangeDetector(regex), regex)
+  assert.equal(asVerseRangeDetector({ detect: () => [] }), null)
+  assert.equal(asVerseRangeDetector(null), null)
+  assert.equal(asVerseRangeDetector(undefined), null)
+})

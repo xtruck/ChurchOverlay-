@@ -17,6 +17,8 @@ const DEFAULT_URL = "https://api.groq.com/openai/v1/chat/completions"
 // API key — "does not exist or you do not have access to it" — which is an
 // access/tier error on a contact-sales model, not a deprecation.
 const DEFAULT_MODEL = "openai/gpt-oss-20b"
+const SUMMARIZE_TIMEOUT_MS = 30_000
+const SUMMARY_MAX_COMPLETION_TOKENS = 2_000
 
 // Verified directly against Groq's real, current API documentation before
 // writing this (https://console.groq.com/docs/api-reference#chat-create),
@@ -33,6 +35,8 @@ export type SermonNotesGeneratorOptions = {
   readonly model?: string
   readonly fetchImpl?: typeof fetch
   readonly url?: string
+  /** Whole-request deadline including the body read; default 30 s. */
+  readonly timeoutMs?: number
 }
 
 /**
@@ -49,6 +53,7 @@ export class SermonNotesGenerator {
   private readonly model: string
   private readonly fetchImpl: typeof fetch
   private readonly url: string
+  private readonly timeoutMs: number
   // Circuit-breaker state: set once on a permanent model error, checked
   // at the top of every summarize() call. `undefined` = still active.
   private disabledReason: string | undefined
@@ -61,6 +66,7 @@ export class SermonNotesGenerator {
     this.model = options.model ?? DEFAULT_MODEL
     this.fetchImpl = options.fetchImpl ?? fetch
     this.url = options.url ?? DEFAULT_URL
+    this.timeoutMs = options.timeoutMs ?? SUMMARIZE_TIMEOUT_MS
   }
 
   /**
@@ -83,38 +89,61 @@ export class SermonNotesGenerator {
       throw new Error(`SermonNotesGenerator disabled for this session: ${this.disabledReason}`)
     }
 
-    const response = await this.fetchImpl(this.url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: this.model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: transcriptText },
-        ],
-      }),
-    })
+    // A hung connection must not leave the operator's "Generate summary" button spinning forever.
+    const controller = new AbortController()
+    // The timer stays armed until the BODY is fully read: a stalled body must not hang forever either.
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs)
+    try {
+      const response = await this.fetchImpl(this.url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: this.model,
+          // gpt-oss reasons before answering; keep it short and leave room for the answer.
+          ...(supportsReasoningEffort(this.model) ? { reasoning_effort: "low" } : {}),
+          max_completion_tokens: SUMMARY_MAX_COMPLETION_TOKENS,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: transcriptText },
+          ],
+        }),
+        signal: controller.signal,
+      })
 
-    if (!response.ok) {
-      const errorBody = await safeReadJson(response)
-      const message =
-        extractGroqErrorMessage(errorBody) ?? `Groq chat completion failed with status ${response.status}`
-      if (isPermanentModelError(message)) {
-        this.disabledReason = message
+      if (!response.ok) {
+        const errorBody = await safeReadJson(response)
+        const message =
+          extractGroqErrorMessage(errorBody) ?? `Groq chat completion failed with status ${response.status}`
+        if (isPermanentModelError(message)) {
+          this.disabledReason = message
+        }
+        throw new Error(message)
       }
-      throw new Error(message)
-    }
 
-    const body = await safeReadJson(response)
-    const content = extractMessageContent(body)
-    if (typeof content !== "string") {
-      throw new Error("Groq chat completion response did not include message content")
+      const body = await safeReadJson(response)
+      const content = extractMessageContent(body)
+      if (typeof content !== "string") {
+        throw new Error("Groq chat completion response did not include message content")
+      }
+      // An empty or truncated answer is a failure, never "success with blank notes".
+      const text = content.trim()
+      if (!text) throw new Error("Groq chat completion returned no answer (empty or token limit reached)")
+      return text
+    } catch (error) {
+      if (controller.signal.aborted) throw new Error("Groq chat completion timed out")
+      throw error
+    } finally {
+      clearTimeout(timer)
     }
-    return content.trim()
   }
+}
+
+/** `reasoning_effort` is only understood by reasoning models (the gpt-oss family); others may answer 400. */
+export function supportsReasoningEffort(model: string): boolean {
+  return /gpt-oss/i.test(model)
 }
 
 async function safeReadJson(response: Response): Promise<unknown> {

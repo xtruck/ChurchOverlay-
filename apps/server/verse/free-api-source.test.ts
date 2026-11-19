@@ -121,3 +121,109 @@ test("FreeApiSource: a network failure (fetch rejects) is a real failure — it 
   )
   await assert.rejects(() => source.getVerse(JOHN_3_16), /network down/)
 })
+
+test("FreeApiSource: rejects a response whose verses[] is a different verse than requested", async () => {
+  const source = new FreeApiSource(
+    fakeFetch(
+      () =>
+        new Response(
+          JSON.stringify({ text: "x", translation_id: "kjv", verses: [{ chapter: 3, verse: 17 }] }),
+          { status: 200 }
+        )
+    )
+  )
+  await assert.rejects(() => source.getVerse(JOHN_3_16), /missing required verse fields/)
+})
+
+test("FreeApiSource: rejects a multi-verse response", async () => {
+  const source = new FreeApiSource(
+    fakeFetch(
+      () =>
+        new Response(
+          JSON.stringify({
+            text: "x",
+            translation_id: "kjv",
+            verses: [
+              { chapter: 3, verse: 16 },
+              { chapter: 3, verse: 17 },
+            ],
+          }),
+          { status: 200 }
+        )
+    )
+  )
+  await assert.rejects(() => source.getVerse(JOHN_3_16), /missing required verse fields/)
+})
+
+test("FreeApiSource: passes an abort signal so a stalled request cannot hang", async () => {
+  let signal: AbortSignal | null | undefined
+  const source = new FreeApiSource((async (_input: unknown, init?: RequestInit) => {
+    signal = init?.signal
+    return new Response(JSON.stringify({ text: "x", translation_id: "kjv" }), { status: 200 })
+  }) as typeof fetch)
+  await source.getVerse(JOHN_3_16)
+  assert.ok(signal)
+})
+
+// CORRECTIF (2026-11-15): concurrent identical lookups — the same reference
+// reaching the source through more than one pipeline path in the same
+// instant — share one HTTP request and one body parse instead of racing
+// duplicate GETs. The slot frees when the request settles.
+test("FreeApiSource: concurrent identical lookups share one HTTP request and one body parse", async () => {
+  let fetchCalls = 0
+  const source = new FreeApiSource((async () => {
+    fetchCalls += 1
+    // A small delay between the body being created and readable makes the
+    // race visible if a second caller tried to re-consume the body.
+    return await new Promise<Response>((resolve) =>
+      setTimeout(
+        () => resolve(new Response(JSON.stringify({ text: "For God so loved the world...", translation_id: "kjv" }), { status: 200 })),
+        5
+      )
+    )
+  }) as typeof fetch)
+
+  const [a, b, c] = await Promise.all([
+    source.getVerse(JOHN_3_16),
+    source.getVerse(JOHN_3_16),
+    source.getVerse(JOHN_3_16),
+  ])
+  assert.equal(fetchCalls, 1, "three concurrent identical lookups must share one HTTP request")
+  assert.deepEqual(b, a)
+  assert.deepEqual(c, a)
+
+  // Settled requests free their slot: the next lookup is a fresh request.
+  await source.getVerse(JOHN_3_16)
+  assert.equal(fetchCalls, 2)
+})
+
+test("FreeApiSource: a failed shared request rejects every waiter, and the next lookup retries", async () => {
+  let fetchCalls = 0
+  const resolvers: Array<{ resolve: (r: Response) => void; reject: (e: Error) => void }> = []
+  const source = new FreeApiSource((async () => {
+    fetchCalls += 1
+    return new Promise<Response>((resolve, reject) => {
+      resolvers.push({ resolve, reject })
+    })
+  }) as typeof fetch)
+
+  const first = source.getVerse(JOHN_3_16)
+  const second = source.getVerse(JOHN_3_16)
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  assert.equal(fetchCalls, 1)
+  resolvers[0]?.reject(new Error("network down"))
+  const results = await Promise.allSettled([first, second])
+  assert.deepEqual(
+    results.map((r) => r.status),
+    ["rejected", "rejected"]
+  )
+  assert.match((results[0] as PromiseRejectedResult).reason.message, /network request failed: network down/)
+
+  const retried = source.getVerse(JOHN_3_16)
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  assert.equal(fetchCalls, 2)
+  resolvers[1]?.resolve(
+    new Response(JSON.stringify({ text: "For God so loved the world...", translation_id: "kjv" }), { status: 200 })
+  )
+  assert.equal((await retried)?.text, "For God so loved the world...")
+})

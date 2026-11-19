@@ -220,6 +220,37 @@ as a bug.
   build-time globbing) and `http-cache-semantics` (GHSA-ch52-4w7c-c8xp, via `got` downloads).
   Every other high/critical advisory still fails the build. Remove an entry when a fix ships.
 
+- The Anthropic key is write-only from the renderer: the `set-ai-key` IPC handler validates
+  its shape (`apps/server/ai/ai-key.ts`), stores it through `ConfigStore` (encrypted with
+  `safeStorage`) and restarts the services, and no IPC channel or WebSocket event ever returns
+  it — the renderer only receives a boolean (`hasAnthropic`). `test-ai-connection` returns a
+  fixed reason code, never provider text. Neither handler logs the key.
+- The Bible browser commands (`bible:chapter`, `bible:search`, `verse:navigate`) and
+  `asr:noise-mode` are operator-only WebSocket commands with bounded payloads; their results
+  are broadcast to operators only, never to viewers or the overlay. Because the phone remote
+  holds the operator token (item 5 above), a paired phone can also call them. They only read
+  Bible text, move the on-screen position or change the transcription strictness — they
+  never bypass `KnownValidVerseIndex`.
+
+## Known low-severity hardening opportunities (not implemented)
+
+Found by a read-only review (ARCHITECTURE.md section 134); none is a demonstrated exploit, all are defence in depth. (The web build's static pages now send `Referrer-Policy: no-referrer` and `X-Content-Type-Options: nosniff`, like the desktop static server.)
+
+- The WebSocket upgrade does not check the `Origin` header. A hostile web page can reach `127.0.0.1` but cannot authenticate without a token. A `verifyClient` check rejecting foreign origins would close this.
+- Sensitive IPC handlers (for example `get-operator-connection-info`, `complete-setup`, `set-ai-key`, `test-ai-connection`) do not assert `event.senderFrame.url` is the dashboard page. The navigation guard makes a foreign page in that window unlikely.
+- Item 5 above says the renderer receives the operator token "and nothing else"; `get-operator-connection-info` also returns the port.
+
+## Dependency advisories (GitHub Dependabot, reviewed 2026-10-12)
+
+Two open alerts, neither with a patched upstream version at the time of review:
+
+| Alert | Package | Reaches the shipped app? | Handling |
+|---|---|---|---|
+| high: `braces` stack exhaustion on deeply nested glob patterns | `braces` ← `micromatch` ← `fast-glob` ← `shelljs` ← `@stagetimerio/grandiose` (optional NDI module) | **No longer packaged.** `shelljs` is used only by grandiose's install-time script (`scripts/ndi.js`, which downloads the NDI SDK); grandiose's runtime entry (`dist/index.js`) requires only `path`, and the app's own code never loads any of the four packages. The input would also have had to be an attacker-chosen glob, which nothing in the app accepts. | `package.json` `build.files` excludes `node_modules/{shelljs,fast-glob,micromatch,braces}` from the installer. Measured: the earlier build contained all four, the new one none, while `express`, `ws`, `dotenv` and grandiose are still present. The alert stays open on GitHub because it reads the lockfile; dismissing it as "not used" is a repository-settings decision left to the owner. |
+| medium: `sprintf-js` denial of service via unbounded precision specifiers | `sprintf-js` ← `roarr` ← `global-agent` ← `@electron/get` ← `app-builder-lib` ← `electron-builder` | **No.** Build tooling only; absent from the packaged app. | None needed for the app. `npm audit fix --force` would downgrade electron-builder to a breaking older version, which is not worth it for a build-time-only advisory. |
+
+`npm audit` (13 findings) also lists other build-tooling chains; `npm audit --omit=dev` lists only the `braces` chain above. Re-check after any dependency update, and drop the `build.files` exclusions if a fixed `braces` is adopted.
+
 ## Reporting a problem
 
 This is a small, single-operator application with no network-facing attack surface

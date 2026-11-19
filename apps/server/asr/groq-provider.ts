@@ -1,9 +1,11 @@
 import type { AsrProvider, AudioFrame, TranscriptResult } from "../../../packages/contracts"
 import { generateUlid } from "../../../packages/shared/ulid"
 import type { Logger } from "../../../packages/shared/logger"
-import { FRENCH_BOOK_ALIASES } from "../detector/regex-detector"
 import { isPlainObject } from "../../../packages/shared/type-guards"
-import { hasForeignScript } from "./script-guard"
+import { hasForeignScript, isLikelyThirdLatinLanguage } from "./script-guard"
+import { LanguageLock, meanLogprob, normalizeLanguage } from "./language-lock"
+import { filterSegments, parseScoredSegments, segmentThresholdsFor } from "./segment-quality"
+import type { TranscriptionPolicy } from "./noise-mode"
 
 const DEFAULT_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
 const DEFAULT_MODEL = "whisper-large-v3-turbo"
@@ -62,8 +64,8 @@ export const RATE_LIMIT_RETRY_BASE_MS = 2000
 // nothing here bounds concurrent in-flight requests — repeated stalls
 // could accumulate silently for the rest of the service. This bounds
 // every request to a hard ceiling so a stall fails fast and recovers
-// through the exact same error/retry path a real 429 or network error
-// already uses, instead of hanging indefinitely.
+// through the error path instead of hanging indefinitely. Network errors
+// are deliberately not retried because the server may have processed them.
 export const DEFAULT_REQUEST_TIMEOUT_MS = 15_000
 export const SUSTAINED_NETWORK_ERROR_THRESHOLD = 3
 
@@ -78,6 +80,42 @@ export class RateLimitError extends Error {
     this.type = type
   }
 }
+
+export class GroqNetworkError extends Error {
+  readonly kind: "timeout" | "network"
+
+  constructor(kind: "timeout" | "network", message: string) {
+    super(message)
+    this.name = "GroqNetworkError"
+    this.kind = kind
+  }
+}
+
+/**
+ * SF-05: a non-429 HTTP failure from Groq. "key-refused" (401/403) will not heal
+ * by retrying: the operator has to fix the key (or the backup must take over).
+ * "server" (5xx) is transient: the chunk is requeued with a bounded backoff.
+ */
+export class GroqHttpError extends Error {
+  readonly kind: "key-refused" | "server"
+  readonly status: number
+
+  constructor(kind: "key-refused" | "server", status: number, message: string) {
+    super(message)
+    this.name = "GroqHttpError"
+    this.kind = kind
+    this.status = status
+  }
+}
+
+/** Longest wait between retries of a chunk refused with a 5xx. */
+export const MAX_SERVER_ERROR_BACKOFF_MS = 30_000
+const SERVER_ERROR_BACKOFF_BASE_MS = 2_000
+
+/** French is the church's primary language: the retry language when a clip's label is a third language and none is locked yet. */
+const PRIMARY_FALLBACK_LANGUAGE = "fr"
+/** After this many language drops in a row the guard lets text through until a clip passes. */
+export const GROQ_LANGUAGE_VALVE_AFTER = 5
 
 export type GroqProviderOptions = {
   readonly apiKey: string
@@ -111,6 +149,8 @@ export type GroqProviderOptions = {
   readonly logger?: Logger
   /** Production audit (2026-09) — see DEFAULT_REQUEST_TIMEOUT_MS above. */
   readonly requestTimeoutMs?: number
+  /** Operator noise/tongues strictness for the per-segment quality filter (noise-mode.ts). Absent = "normal". */
+  readonly policy?: TranscriptionPolicy
 }
 
 /**
@@ -153,6 +193,11 @@ export class GroqProvider implements AsrProvider {
   private readonly logger?: Logger
   private readonly requestTimeoutMs: number
   private language: string | undefined
+  private readonly policy?: TranscriptionPolicy
+  /** Bilingual (no explicit language): sticky fr/en lock so a noisy clip is never decoded as a third language. */
+  private readonly languageLock = new LanguageLock()
+  private readonly dropCounts: Record<string, number> = {}
+  private consecutiveLanguageDrops = 0
 
   private transcriptCallback: ((result: TranscriptResult) => void) | null = null
   private errorCallback: ((error: Error) => void) | null = null
@@ -185,6 +230,10 @@ export class GroqProvider implements AsrProvider {
   // but should trip the exact same "Groq isn't working right now, fail
   // over" signal once it happens repeatedly in a row.
   private consecutiveNetworkErrors = 0
+  // SF-05: consecutive HTTP 5xx replies (same failure streak as above) and a one-shot 401/403 signal.
+  private consecutiveServerErrors = 0
+  private keyRefusedSignalled = false
+  private keyRefusedCallback: (() => void) | null = null
 
   // TASK B: prompt for lexical bias
   private currentVerseRef: string | null = null
@@ -201,12 +250,135 @@ export class GroqProvider implements AsrProvider {
     this.now = options.now ?? Date.now
     this.logger = options.logger
     this.language = options.language
+    this.policy = options.policy
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
   }
 
   /** Live-updatable (ARCHITECTURE.md section 81) — a display-mode switch mid-service (voice, dashboard, or API) should retarget Whisper immediately, not just at construction. */
   setLanguage(language: string | undefined): void {
     this.language = language
+    this.languageLock.reset()
+  }
+
+  private closeLanguageValve(): number {
+    if (this.consecutiveLanguageDrops >= GROQ_LANGUAGE_VALVE_AFTER) this.policy?.ledger.setValve("groq-language", false)
+    return 0
+  }
+
+  private openLanguageValve(): void {
+    this.policy?.ledger.setValve("groq-language", true)
+    this.logger?.warn({
+      component: "asr",
+      event: "groq.language-guard-bypassed",
+      metadata: { consecutive: this.consecutiveLanguageDrops },
+    })
+  }
+
+  /** Count of audio chunks/segments dropped by quality or language checks, by reason (diagnostics only). */
+  getDropCounts(): Readonly<Record<string, number>> {
+    return { ...this.dropCounts }
+  }
+
+  /**
+   * Every audio chunk thrown away is counted in the shared DropLedger (shown to
+   * the operator) and logged, rate-limited per reason, never silent (AGENTS.md 11, 46).
+   */
+  private discardAudio(samples: Int16Array, reason: string, extra: Record<string, unknown> = {}): void {
+    this.dropCounts[reason] = (this.dropCounts[reason] ?? 0) + 1
+    const note = this.policy?.ledger.record("segment", reason)
+    if (note !== undefined && !note.log) return
+    this.logger?.warn({
+      component: "asr",
+      event: "asr.audio-discarded",
+      metadata: {
+        durationMs: Math.round((samples.length / SAMPLE_RATE) * 1000),
+        reason,
+        suppressed: note?.suppressed ?? 1,
+        total: this.dropCounts[reason],
+        ...extra,
+      },
+    })
+  }
+
+  /** One more failure in the "Groq is not working" streak; signals sustained at the threshold and every threshold-th failure after (a failed failover is retried, the wrapper rate-limits it). */
+  private bumpFailureStreak(): void {
+    this.consecutiveNetworkErrors++
+    const over = this.consecutiveNetworkErrors - SUSTAINED_NETWORK_ERROR_THRESHOLD
+    if (over >= 0 && over % SUSTAINED_NETWORK_ERROR_THRESHOLD === 0) this.rateLimitedSustainedCallback?.()
+  }
+
+  private noteDrop(reason: string, metadata: Record<string, unknown> = {}): void {
+    this.dropCounts[reason] = (this.dropCounts[reason] ?? 0) + 1
+    // Shared ledger: counted for the operator's mic panel, and the log line is rate-limited (info, not debug).
+    const note = this.policy?.ledger.record(reason === "language" ? "language" : "segment", reason)
+    if (note !== undefined && !note.log) return
+    this.logger?.info({
+      component: "asr",
+      event: "groq.chunk-dropped",
+      correlationId: this.correlationId,
+      metadata: { reason, total: this.dropCounts[reason], suppressed: note?.suppressed ?? 1, ...metadata },
+    })
+  }
+
+  /**
+   * One chunk -> text, French/English only. With an explicit language the
+   * request is constrained at the API. Bilingual (no explicit language) cannot
+   * be constrained to two languages on Whisper, so: auto-detect only when a
+   * detection is due (language-lock.ts), read the language Groq reports
+   * (verbose_json `language`), and when it is not French/English decode the
+   * same chunk once more with the locked language, or drop it when none is
+   * locked yet. The detection request is the transcription itself: no extra
+   * cost except that single retry.
+   */
+  private async decode(samples: Int16Array): Promise<string> {
+    const explicit = this.language && this.language !== "auto" ? this.language : undefined
+    if (explicit) return (await this.transcribe(samples, explicit)).text
+    const audioMs = (samples.length / SAMPLE_RATE) * 1000
+    const locked = this.languageLock.language
+    const detecting = this.languageLock.needsDetection(audioMs)
+    let decoded = await this.transcribe(samples, detecting || !locked ? undefined : locked)
+    if (detecting || !locked) {
+      const language = normalizeLanguage(decoded.language)
+      if (language) {
+        if (language !== locked) {
+          this.logger?.info({
+            component: "asr",
+            event: "groq.language-locked",
+            correlationId: this.correlationId,
+            metadata: { language, previous: locked },
+          })
+        }
+        this.languageLock.settle(language, 1)
+        this.consecutiveLanguageDrops = this.closeLanguageValve()
+      } else if (decoded.language !== undefined && decoded.language !== "") {
+        // Whisper labelled the clip as a third language. Its label is a guess on a short noisy clip (a French-accented
+        // "Romains 8 28" can come back "portuguese"), so the TEXT decides: only text that really reads as Spanish or
+        // Portuguese is retried, once, with the locked language (or French, the church's primary) and dropped if still so.
+        if (isLikelyThirdLatinLanguage(decoded.text)) {
+          const fallback = locked ?? PRIMARY_FALLBACK_LANGUAGE
+          const retry = await this.transcribe(samples, fallback)
+          if (!isLikelyThirdLatinLanguage(retry.text)) {
+            decoded = retry
+            this.consecutiveLanguageDrops = this.closeLanguageValve()
+          } else if (this.consecutiveLanguageDrops >= GROQ_LANGUAGE_VALVE_AFTER) {
+            this.openLanguageValve() // too many drops in a row: let the text through and say so
+          } else {
+            this.consecutiveLanguageDrops += 1
+            this.noteDrop("language", { detected: decoded.language.slice(0, 24), retried: fallback })
+            return ""
+          }
+        } else {
+          this.logger?.info({
+            component: "asr",
+            event: "groq.language-label-ignored",
+            correlationId: this.correlationId,
+            metadata: { detected: decoded.language.slice(0, 24), words: decoded.text.split(/\s+/).length },
+          })
+        }
+      }
+    }
+    this.languageLock.noteClip(decoded.meanLogprob, detecting)
+    return decoded.text
   }
 
   /**
@@ -338,14 +510,30 @@ export class GroqProvider implements AsrProvider {
   }
 
   async stop(): Promise<void> {
-    if (this.active && this.bufferedSampleCount > 0) {
-      await this.flush()
+    if (!this.active) return
+    try {
+      if (this.bufferedSampleCount > 0) {
+        await this.flush()
+      }
+      if (this.bufferedSampleCount > 0) {
+        throw new Error("GroqProvider.stop() could not transcribe buffered audio because requests are throttled")
+      }
+    } finally {
+      if (this.bufferedSampleCount > 0) this.discardBufferedAudio("stop-undelivered")
+      this.active = false
     }
-    this.active = false
   }
 
   /** Used by failover: discard buffered batch audio without issuing another request. */
-  discardBufferedAudio(): void {
+  discardBufferedAudio(reason = "failover"): void {
+    // AGENTS.md sections 11 and 46: audio thrown away on failover must be observable, not silent.
+    if (this.bufferedSampleCount > 0) {
+      this.logger?.warn({
+        component: "asr",
+        event: "asr.audio-discarded",
+        metadata: { durationMs: Math.round((this.bufferedSampleCount / SAMPLE_RATE) * 1000), reason },
+      })
+    }
     this.bufferedFrames = []
     this.bufferedSampleCount = 0
   }
@@ -358,7 +546,6 @@ export class GroqProvider implements AsrProvider {
   async onUtteranceEnd(): Promise<void> {
     if (!this.active) return
     const bufferedDurationMs = (this.bufferedSampleCount / SAMPLE_RATE) * 1000
-    const timeSinceLastFlush = this.now() - this.lastFlushTime
 
     // Only flush if we've buffered at least the minimum duration
     // This avoids flushing on single words / brief noise
@@ -388,7 +575,7 @@ export class GroqProvider implements AsrProvider {
     // Extract the samples to flush (excluding overlap)
     const samplesToFlush = this.extractSamples(this.bufferedFrames, flushSamples)
     // Retain the overlap samples for the next chunk
-    const overlapFrames = this.extractFrames(this.bufferedFrames, overlapSamples, totalSamples)
+    const overlapFrames = this.extractFrames(this.bufferedFrames, overlapSamples)
 
     // Detach the buffer BEFORE awaiting, exactly like flush() does. Doing it
     // after the await overwrote every frame sendAudio() pushed while the
@@ -423,7 +610,7 @@ export class GroqProvider implements AsrProvider {
   /**
    * Extract frames representing the last N samples for overlap retention
    */
-  private extractFrames(frames: Int16Array[], overlapSamples: number, totalSamples: number): Int16Array[] {
+  private extractFrames(frames: Int16Array[], overlapSamples: number): Int16Array[] {
     const result: Int16Array[] = []
     let remaining = overlapSamples
     // Start from the end and work backwards
@@ -473,7 +660,7 @@ export class GroqProvider implements AsrProvider {
 
   private async transcribeAndEmit(samples: Int16Array): Promise<void> {
     try {
-      const text = await this.transcribe(samples)
+      const text = await this.decode(samples)
       if (text.trim().length === 0) {
         this.logger?.debug({
           component: "asr",
@@ -502,10 +689,48 @@ export class GroqProvider implements AsrProvider {
         state: "final",
         timestamp: this.now(),
       })
+      // AGENTS.md section 23: every Groq transcript is a final utterance, so the
+      // next one starts a new processing chain with its own correlation id.
+      this.correlationId = generateUlid(this.now())
       this.lastFlushTime = this.now()
     } catch (err) {
-      this.errorCallback?.(err instanceof Error ? err : new Error(String(err)))
+      // A 429 says "come back later": the operator is told transcription will
+      // resume, so the chunk that was refused goes back in front of newer audio.
+      // Without this its speech (possibly a verse reference) was silently lost.
+      if (err instanceof RateLimitError && err.type === "429") this.requeueRefusedChunk(samples)
+      // SF-05: a 5xx is transient (the chunk goes back, the retry waits out the
+      // backoff set in transcribe()); a refused key will not heal, so that chunk is
+      // discarded, counted and logged.
+      if (err instanceof GroqHttpError) {
+        if (err.kind === "server") this.requeueRefusedChunk(samples, "groq-server-error-buffer-full")
+        else this.discardAudio(samples, "groq-key-refused")
+      }
+      const error = err instanceof Error ? err : new Error(String(err))
+      if (error instanceof GroqNetworkError) {
+        this.discardAudio(samples, `groq-${error.kind}`, { retryAttempted: false })
+      }
+      this.errorCallback?.(error)
+      // The remote service may have completed an upload before the
+      // connection failed. Do not replay that audio: surface the failed
+      // send to the caller instead of implying successful transcription.
+      if (error instanceof GroqNetworkError) throw error
     }
+  }
+
+  /**
+   * Puts a chunk the provider refused (HTTP 429) back at the front of the
+   * buffer, within the same bound the throttle uses (MAX_THROTTLED_BUFFER_MS,
+   * AGENTS.md section 36). If it would not fit, it is dropped and logged, never
+   * silently (sections 11 and 46).
+   */
+  private requeueRefusedChunk(samples: Int16Array, fullReason = "rate-limited-buffer-full"): void {
+    const totalSamples = this.bufferedSampleCount + samples.length
+    if ((totalSamples / SAMPLE_RATE) * 1000 > MAX_THROTTLED_BUFFER_MS) {
+      this.discardAudio(samples, fullReason)
+      return
+    }
+    this.bufferedFrames.unshift(samples)
+    this.bufferedSampleCount = totalSamples
   }
 
   /**
@@ -580,6 +805,30 @@ export class GroqProvider implements AsrProvider {
     return currText
   }
 
+  /**
+   * Segment-quality filter (segment-quality.ts, thresholds by noise mode): drop
+   * the segments Whisper itself says are probably not speech and rebuild the
+   * text from the rest. No scored segments, or nothing dropped: `text` as is.
+   */
+  private dropUnlikelySegments(scored: ReturnType<typeof parseScoredSegments>, text: string): string {
+    if (!scored) return text
+    const { kept, dropped, rescued } = filterSegments(scored, segmentThresholdsFor(this.policy?.mode))
+    if (rescued > 0) {
+      this.logger?.info({ component: "asr", event: "groq.segment-kept-reference", correlationId: this.correlationId, metadata: { rescued } })
+    }
+    if (dropped.length === 0) return text
+    for (const segment of dropped) {
+      this.noteDrop(segment.reason, {
+        words: segment.words,
+        mode: this.policy?.mode ?? "normal",
+        noSpeechProb: segment.noSpeechProb,
+        avgLogprob: segment.avgLogprob,
+        compressionRatio: segment.compressionRatio,
+      })
+    }
+    return kept.map((segment) => segment.text.trim()).filter(Boolean).join(" ")
+  }
+
   onTranscript(callback: (result: TranscriptResult) => void): void {
     this.transcriptCallback = callback
   }
@@ -593,6 +842,11 @@ export class GroqProvider implements AsrProvider {
     this.rateLimitedSustainedCallback = callback
   }
 
+  /** SF-05: fired once when Groq answers 401/403 (until a request succeeds again). */
+  onKeyRefused(callback: () => void): void {
+    this.keyRefusedCallback = callback
+  }
+
   private async flush(): Promise<void> {
     const samples = concatenateSamples(this.bufferedFrames, this.bufferedSampleCount)
     this.bufferedFrames = []
@@ -600,14 +854,16 @@ export class GroqProvider implements AsrProvider {
     await this.flushSamples(samples)
   }
 
-  private async transcribe(samples: Int16Array): Promise<string> {
+  private async transcribe(samples: Int16Array, language: string | undefined): Promise<GroqDecoded> {
     const wavBytes = encodeWav(samples, SAMPLE_RATE)
     const form = new FormData()
     form.append("file", new Blob([wavBytes], { type: "audio/wav" }), "audio.wav")
     form.append("model", this.model)
-    form.append("response_format", "json")
-    if (this.language) {
-      form.append("language", this.language)
+    // verbose_json adds the detected language and per-segment scores (avg_logprob,
+    // no_speech_prob, compression_ratio) used by the language and noise guards; `text` is still there.
+    form.append("response_format", "verbose_json")
+    if (language) {
+      form.append("language", language)
     }
     // TASK B: Add prompt for lexical bias
     const prompt = this.buildPrompt()
@@ -626,29 +882,26 @@ export class GroqProvider implements AsrProvider {
         signal: controller.signal,
       })
     } catch (err) {
+      clearTimeout(timeoutId)
       // Network failure or our own abort — either way, fetch() itself
       // never produced a response, so this is a connectivity failure
       // class distinct from a documented Groq error response below.
       const isTimeout = err instanceof Error && err.name === "AbortError"
-      this.consecutiveNetworkErrors++
-      if (this.consecutiveNetworkErrors >= SUSTAINED_NETWORK_ERROR_THRESHOLD && this.rateLimitedSustainedCallback) {
-        this.rateLimitedSustainedCallback()
-      }
-      throw new Error(
+      this.bumpFailureStreak()
+      throw new GroqNetworkError(
+        isTimeout ? "timeout" : "network",
         isTimeout
           ? `Groq request timed out after ${this.requestTimeoutMs}ms`
           : `Groq request failed: ${err instanceof Error ? err.message : String(err)}`
       )
-    } finally {
-      clearTimeout(timeoutId)
     }
 
-    // A response — even an error one — means the connection itself is
-    // fine; only fetch() rejecting above counts as a network failure.
-    this.consecutiveNetworkErrors = 0
-
+    try {
     if (!response.ok) {
-      const errorBody = await safeReadJson(response)
+      const errorBody = await safeReadJson(response, controller.signal)
+      // A 5xx is the provider being down: it joins the network-failure streak
+      // (sustained => failover) instead of resetting it.
+      if (response.status < 500) this.consecutiveNetworkErrors = 0
       const errorMessage = extractGroqErrorMessage(errorBody) ?? `Groq request failed with status ${response.status}`
       // TASK 2: detect 429 and parse retry-after delay
       if (response.status === 429) {
@@ -675,13 +928,36 @@ export class GroqProvider implements AsrProvider {
           "429"
         )
       }
+      if (response.status === 401 || response.status === 403) {
+        // The key is refused (revoked, wrong, or the account blocked): retrying
+        // cannot help. Say so plainly and let the failover (if any) take over.
+        if (!this.keyRefusedSignalled) {
+          this.keyRefusedSignalled = true
+          this.keyRefusedCallback?.()
+        }
+        throw new GroqHttpError(
+          "key-refused",
+          response.status,
+          `Clé Groq refusée (HTTP ${response.status}) — vérifiez la clé dans les réglages / Groq key refused: ${errorMessage}`
+        )
+      }
+      if (response.status >= 500) {
+        this.consecutiveServerErrors++
+        const backoff = Math.min(SERVER_ERROR_BACKOFF_BASE_MS * 2 ** (this.consecutiveServerErrors - 1), MAX_SERVER_ERROR_BACKOFF_MS)
+        this.throttledUntil = Math.max(this.throttledUntil, this.now() + backoff)
+        this.bumpFailureStreak()
+        throw new GroqHttpError("server", response.status, errorMessage)
+      }
       throw new Error(errorMessage)
     }
 
     // Reset consecutive 429 counter on successful request
     this.consecutive429s = 0
+    this.consecutiveServerErrors = 0
+    this.keyRefusedSignalled = false
 
-    const body = await safeReadJson(response)
+    const body = await safeReadJson(response, controller.signal)
+    this.consecutiveNetworkErrors = 0
     const text = isPlainObject(body) ? body.text : undefined
     if (typeof text !== "string") {
       throw new Error("Groq response did not include a text field")
@@ -694,16 +970,43 @@ export class GroqProvider implements AsrProvider {
     // quality signal, not a fault). Detection is a cheap, deterministic
     // heuristic — good enough to spot the trend in logs, never used to
     // alter or reject the transcript itself.
-    if (this.language === "fr" && looksLikePortugueseOrSpanish(text)) {
+    if (language === "fr" && looksLikePortugueseOrSpanish(text)) {
       this.logger?.debug({
         component: "asr",
         event: "transcript.language-divergence",
-        metadata: { expected: this.language, textPreview: text.slice(0, 80) },
+        metadata: { expected: language, textPreview: text.slice(0, 80) },
       })
     }
 
-    return text.trim()
+    const scored = parseScoredSegments(body)
+    return {
+      text: this.dropUnlikelySegments(scored, text).trim(),
+      language: isPlainObject(body) && typeof body.language === "string" ? body.language : undefined,
+      meanLogprob: meanLogprob((scored ?? []).map((segment) => segment.avgLogprob)),
+    }
+    } catch (err) {
+      if (controller.signal.aborted || (err instanceof Error && err.name === "AbortError")) {
+        this.bumpFailureStreak()
+        throw new GroqNetworkError("timeout", `Groq request timed out after ${this.requestTimeoutMs}ms`)
+      }
+      if (err instanceof GroqNetworkError) {
+        if (err.kind === "network") this.bumpFailureStreak()
+        throw err
+      }
+      throw err
+    } finally {
+      clearTimeout(timeoutId)
+    }
   }
+}
+
+/** One Groq reply, reduced to what the provider uses. */
+type GroqDecoded = {
+  readonly text: string
+  /** Groq's `language` (a name such as "french"), when the reply carries one. */
+  readonly language: string | undefined
+  /** Mean avg_logprob over the reply's segments, before the quality filter; null when unscored. */
+  readonly meanLogprob: number | null
 }
 
 // TASK B: heuristic Romance-language divergence markers for a French-
@@ -773,9 +1076,19 @@ function writeAscii(view: DataView, offset: number, text: string): void {
   }
 }
 
-async function safeReadJson(response: Response): Promise<unknown> {
+async function safeReadJson(response: Response, signal?: AbortSignal): Promise<unknown> {
+  let text: string
   try {
-    return await response.json()
+    text = await response.text()
+  } catch (err) {
+    if (signal?.aborted || (err instanceof Error && err.name === "AbortError")) throw err
+    throw new GroqNetworkError(
+      "network",
+      `Groq response body failed: ${err instanceof Error ? err.message : String(err)}`
+    )
+  }
+  try {
+    return JSON.parse(text) as unknown
   } catch {
     return null
   }
