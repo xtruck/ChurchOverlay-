@@ -1,4 +1,4 @@
-import type { AsrProvider, AudioFrame, TranscriptResult } from "../../../packages/contracts"
+import type { AsrContextHints, AsrProvider, AudioFrame, TranscriptResult } from "../../../packages/contracts"
 
 type ContextAwareProvider = AsrProvider & {
   setCurrentVerseRef?(reference: string | null): void
@@ -205,6 +205,16 @@ export class FailoverAsrProvider implements AsrProvider {
     this.plannedBookIds = bookIds
     this.primary.setPlannedBooks?.(bookIds)
     this.secondary.setPlannedBooks?.(bookIds)
+  }
+
+  /**
+   * Forwarded to both sides at once, like setPlannedBooks: each adapter decides
+   * whether and when it applies them (a provider without the method ignores
+   * them by design). The standby side has no open stream, so it only stores them.
+   */
+  setContextHints(hints: AsrContextHints): void {
+    this.primary.setContextHints?.(hints)
+    this.secondary.setContextHints?.(hints)
   }
 
   setLanguage(language: string | undefined): void {
