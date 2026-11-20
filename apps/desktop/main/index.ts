@@ -30,6 +30,7 @@ import { FailoverAsrProvider } from "../../server/asr/failover-provider"
 import { ASR_STRATEGIES, asrChain, deepgramLanguageFor, planAsr, type AsrProviderId, type AsrStrategy } from "../../server/asr/asr-strategy"
 import { LocalWhisperProvider } from "../../server/asr/local-whisper-provider"
 import { WhisperServerProcess, localEngineThreads, watchSystemResume } from "../../server/asr/local-whisper-server"
+import { probeWhisperVadSupport, resolveLocalVad, type LocalVadStatus } from "../../server/asr/whisper-vad"
 import { LocalAsrInstaller, LOCAL_MODELS, type LocalAsrInstallState, type LocalModelId } from "./local-asr-installer"
 import { FasterWhisperInstaller, type FasterWhisperInstallState } from "./faster-whisper-installer"
 import { SermonNotesGenerator } from "../../server/ai/sermon-notes-generator"
@@ -153,6 +154,8 @@ function markLocalEngineAbandoned(info: { attempts: number }): void {
   logger.error({ component: "main", event: "local-whisper.backup-lost", metadata: { attempts: info.attempts } })
 }
 let localAsrInstaller: LocalAsrInstaller | null = null
+/** What the last service start decided about Silero VAD (architecture-notes/offline-vad.md). */
+let localVadStatus: LocalVadStatus = { state: "off" }
 let fasterWhisperInstaller: FasterWhisperInstaller | null = null
 
 type LocalEngine = "whisper.cpp" | "faster-whisper"
@@ -520,6 +523,23 @@ async function startServicesNow(config: AppConfig): Promise<StartedServices> {
   localWhisperServer = null
   localAsr = null
   localEngineAbandoned = false
+  localVadStatus = await resolveLocalVad({
+    enabled: config.localAsrVad === true,
+    engine: localEngine,
+    engineReady: localStatus?.state === "ready",
+    model: () => getLocalAsrInstaller().vadModelStatus(),
+    probe: () => probeWhisperVadSupport(localStatus && "serverPath" in localStatus ? localStatus.serverPath : "", { logger }),
+  })
+  if (localVadStatus.state === "unavailable") {
+    // Enabled but not applied: the engine runs WITHOUT VAD, and that is reported, never silent (AGENTS.md 46).
+    logger.warn({
+      component: "main",
+      event: "local-whisper.vad-unavailable",
+      metadata: { reason: localVadStatus.reason, ...(localVadStatus.detail ? { detail: localVadStatus.detail } : {}) },
+    })
+  } else if (localVadStatus.state === "active") {
+    logger.info({ component: "main", event: "local-whisper.vad-active" })
+  }
   if (localStatus?.state === "ready") {
     localWhisperServer =
       "pythonPath" in localStatus
@@ -533,7 +553,15 @@ async function startServicesNow(config: AppConfig): Promise<StartedServices> {
             threads: localThreads,
             onRestartAbandoned: markLocalEngineAbandoned,
           })
-        : new WhisperServerProcess({ serverPath: localStatus.serverPath, modelPath: localStatus.modelPath, logger, threads: localThreads, onRestartAbandoned: markLocalEngineAbandoned })
+        : new WhisperServerProcess({
+            serverPath: localStatus.serverPath,
+            modelPath: localStatus.modelPath,
+            // architecture-notes/offline-vad.md: only a verified model AND a binary that lists the flags.
+            vadModelPath: localVadStatus.state === "active" ? localVadStatus.modelPath : null,
+            logger,
+            threads: localThreads,
+            onRestartAbandoned: markLocalEngineAbandoned,
+          })
     localAsr = new LocalWhisperProvider({ server: localWhisperServer, language: whisperLanguageFor(config.displayMode), logger, policy: transcriptionPolicy })
     // Warm up now, in the background: loading the model takes seconds, and
     // the moment the internet drops is exactly when there are none to spare.
@@ -817,6 +845,7 @@ async function startServicesNow(config: AppConfig): Promise<StartedServices> {
       && left.localAsrEnabled === right.localAsrEnabled
       && left.localAsrModel === right.localAsrModel
       && left.localAsrEngine === right.localAsrEngine
+      && left.localAsrVad === right.localAsrVad
       // ARCHITECTURE.md section 108: overlayTemplate is baked into
       // AppCore's own branding:update sync-on-connect broadcast exactly
       // like organizationName/accentColor above, so it needs the same
@@ -1084,6 +1113,9 @@ function currentAsrStatus(): {
   localModel: LocalModelId
   localEngine: LocalEngine
   localActive: boolean
+  /** Silero VAD inside whisper.cpp: the operator's switch and what actually applies. */
+  localVadEnabled: boolean
+  localVad: LocalVadStatus
 } {
   return {
     hasGroq: Boolean(activeConfig?.groqApiKey),
@@ -1097,6 +1129,8 @@ function currentAsrStatus(): {
     localModel: activeConfig?.localAsrModel ?? "base",
     localEngine: activeConfig?.localAsrEngine ?? "whisper.cpp",
     localActive: localAsr !== null && !localEngineAbandoned,
+    localVadEnabled: activeConfig?.localAsrVad === true,
+    localVad: localVadStatus,
   }
 }
 
@@ -1167,6 +1201,27 @@ ipcMain.handle("set-local-asr", async (_event, payload: unknown) => {
   if (!updated) throw new Error("Services are not configured yet.")
   await startServices(updated)
   return currentAsrStatus()
+})
+
+/**
+ * Silero VAD inside the whisper.cpp engine (architecture-notes/offline-vad.md).
+ * Turning it on first downloads and verifies the ~0.9 MB model; a failed or
+ * unverifiable download is returned as-is and the setting is NOT saved.
+ * Either way the services restart so the engine's command line matches.
+ */
+ipcMain.handle("set-local-vad", async (event, payload: unknown) => {
+  const enabled = payload === true
+  if (enabled) {
+    const sender = event.sender
+    const install = await getLocalAsrInstaller().installVadModel((state) => {
+      if (!sender.isDestroyed()) sender.send("local-vad-progress", state)
+    })
+    if (install.state !== "ready") return { install, asr: currentAsrStatus() }
+  }
+  const updated = await getConfigStore().update((existing) => ({ ...existing, localAsrVad: enabled }))
+  if (!updated) throw new Error("Services are not configured yet.")
+  await startServices(updated)
+  return { install: null, asr: currentAsrStatus() }
 })
 
 /**
