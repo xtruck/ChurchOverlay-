@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import type { AsrProvider, AudioFrame, TranscriptResult } from "../../../packages/contracts"
+import type { AsrContextHints, AsrProvider, AudioFrame, TranscriptResult } from "../../../packages/contracts"
 import { FailoverAsrProvider } from "./failover-provider"
 
 class FakeProvider implements AsrProvider {
@@ -261,6 +261,24 @@ test("FailoverAsrProvider: setPlannedBooks reaches both providers immediately, w
   wrapper.setPlannedBooks(["john", "romans"])
   assert.deepEqual(primary.plannedBooks, ["john", "romans"])
   assert.deepEqual(secondary.plannedBooks, ["john", "romans"])
+})
+
+test("FailoverAsrProvider: setContextHints reaches both sides; a side without the method simply ignores them", () => {
+  class HintedProvider extends FakeProvider {
+    hints: AsrContextHints | null = null
+    setContextHints(hints: AsrContextHints): void { this.hints = hints }
+  }
+  const primary = new HintedProvider()
+  const secondary = new FakeProvider() // no setContextHints: ignored by design, never thrown
+  const wrapper = new FailoverAsrProvider({ primary, secondary, trigger: "primary-error" })
+  const hints: AsrContextHints = { focusBooks: ["john"], plannedBooks: ["romans"] }
+  assert.doesNotThrow(() => wrapper.setContextHints(hints))
+  assert.deepEqual(primary.hints, hints)
+
+  const standby = new HintedProvider()
+  const both = new FailoverAsrProvider({ primary: new HintedProvider(), secondary: standby, trigger: "primary-error" })
+  both.setContextHints(hints)
+  assert.deepEqual(standby.hints, hints, "the standby side stores them for its own next connect")
 })
 
 test("FailoverAsrProvider: a failed returnToPrimary puts the secondary back on air instead of leaving transcription dead", async () => {
