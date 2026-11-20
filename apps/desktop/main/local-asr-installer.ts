@@ -3,6 +3,7 @@ import { createReadStream } from "node:fs"
 import { mkdir, open, readFile, rename, rm, stat, statfs, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { inflateRawSync } from "node:zlib"
+import type { VadModelState } from "../../server/asr/whisper-vad"
 
 /**
  * Downloads and verifies the offline transcription engine on demand — the
@@ -51,6 +52,37 @@ export const LOCAL_MODELS: Readonly<Record<LocalModelId, { file: string; url: st
   },
 }
 
+/**
+ * Silero VAD model for whisper.cpp's `--vad-model` (architecture-notes/offline-vad.md).
+ * The URL is pinned to an immutable Hugging Face revision of ggml-org/whisper-vad
+ * (not "main"), and the SHA-256 is the LFS object id Hugging Face publishes for
+ * that file (the LFS oid is the SHA-256 of the content). Both were read from the
+ * Hugging Face API on 2026-11-19; the file itself was not downloaded by the author
+ * of this change, so the first real download is the first end-to-end check.
+ * An empty or malformed sha256 makes every install and every status check fail
+ * closed ("checksum-unpinned"): an unverified model is never passed to the engine.
+ */
+export type VadModelSpec = { readonly file: string; readonly url: string; readonly sha256: string; readonly bytes: number }
+
+export const SILERO_VAD_MODEL: VadModelSpec = {
+  file: "ggml-silero-v5.1.2.bin",
+  url: "https://huggingface.co/ggml-org/whisper-vad/resolve/9ffd54a1e1ee413ddf265af9913beaf518d1639b/ggml-silero-v5.1.2.bin",
+  sha256: "29940d98d42b91fbd05ce489f3ecf7c72f0a42f027e4875919a28fb4c04ea2cf",
+  bytes: 885_098,
+}
+
+const SHA256_HEX = /^[0-9a-f]{64}$/
+
+export function isPinnedSha256(value: string): boolean {
+  return SHA256_HEX.test(value)
+}
+
+export type LocalVadInstallState =
+  | { readonly state: "unsupported"; readonly reason: string }
+  | { readonly state: "downloading"; readonly progress: number }
+  | { readonly state: "ready"; readonly modelPath: string }
+  | { readonly state: "error"; readonly error: string }
+
 export type LocalAsrInstallState =
   | { readonly state: "unsupported"; readonly reason: string }
   | { readonly state: "not-installed" }
@@ -68,6 +100,8 @@ export type LocalAsrInstallerOptions = {
   readonly models?: Readonly<Record<LocalModelId, { file: string; url: string; sha1: string; approxMb: number }>>
   /** Free bytes on the volume of a directory (null = unknown). Injected in tests. */
   readonly freeBytes?: (dir: string) => Promise<number | null>
+  /** Overridable for tests. */
+  readonly vadModel?: VadModelSpec
 }
 
 export class LocalAsrInstaller {
@@ -78,7 +112,9 @@ export class LocalAsrInstaller {
   private readonly release: { readonly url: string; readonly sha256: string; readonly files: readonly string[] }
   private readonly models: Readonly<Record<LocalModelId, { file: string; url: string; sha1: string; approxMb: number }>>
   private readonly freeBytes: (dir: string) => Promise<number | null>
+  private readonly vadModel: VadModelSpec
   private installing: Promise<LocalAsrInstallState> | null = null
+  private installingVad: Promise<LocalVadInstallState> | null = null
 
   constructor(options: LocalAsrInstallerOptions) {
     this.rootDir = options.rootDir
@@ -88,6 +124,73 @@ export class LocalAsrInstaller {
     this.release = options.release ?? WHISPER_RELEASE
     this.models = options.models ?? LOCAL_MODELS
     this.freeBytes = options.freeBytes ?? freeDiskBytes
+    this.vadModel = options.vadModel ?? SILERO_VAD_MODEL
+  }
+
+  get vadModelPath(): string {
+    return join(this.rootDir, "models", this.vadModel.file)
+  }
+
+  /**
+   * Re-verifies the VAD model on every call (it is under 1 MB, so hashing it at
+   * service start is cheap). Unlike the big Whisper model, a corrupt file here
+   * is caught before it is ever handed to the engine.
+   */
+  async vadModelStatus(): Promise<VadModelState> {
+    if (!isPinnedSha256(this.vadModel.sha256)) return { state: "checksum-unpinned" }
+    const path = this.vadModelPath
+    if (!(await exists(path))) return { state: "missing" }
+    const size = await fileSize(path)
+    if (size !== this.vadModel.bytes) return { state: "corrupt", detail: `size ${size} bytes, expected ${this.vadModel.bytes}` }
+    const actual = await sha256FileStreamed(path)
+    if (actual !== this.vadModel.sha256) return { state: "corrupt", detail: `sha256 ${actual.slice(0, 12)}... does not match` }
+    return { state: "verified", path }
+  }
+
+  /** Idempotent: concurrent calls share one download. A corrupt file is replaced. */
+  installVadModel(onProgress?: (state: LocalVadInstallState) => void): Promise<LocalVadInstallState> {
+    if (!this.installingVad) {
+      this.installingVad = this.doInstallVad(onProgress).finally(() => {
+        this.installingVad = null
+      })
+    }
+    return this.installingVad
+  }
+
+  private async doInstallVad(onProgress?: (state: LocalVadInstallState) => void): Promise<LocalVadInstallState> {
+    const reason = this.unsupportedReason()
+    if (reason) return { state: "unsupported", reason }
+    try {
+      // Fail closed BEFORE any network traffic: never download what cannot be verified.
+      if (!isPinnedSha256(this.vadModel.sha256)) {
+        throw new Error("VAD model checksum is not pinned (SILERO_VAD_MODEL.sha256); refusing to download an unverifiable file")
+      }
+      const current = await this.vadModelStatus()
+      if (current.state !== "verified") {
+        const target = this.vadModelPath
+        await mkdir(join(this.rootDir, "models"), { recursive: true })
+        const partial = `${target}.partial`
+        await downloadToFile(this.fetchImpl, this.vadModel.url, partial, {
+          maxBytes: this.vadModel.bytes,
+          onProgress: (p) => onProgress?.({ state: "downloading", progress: p }),
+        })
+        const size = await fileSize(partial)
+        const actual = await sha256FileStreamed(partial)
+        if (size !== this.vadModel.bytes || actual !== this.vadModel.sha256) {
+          await rm(partial, { force: true })
+          throw new Error(`VAD model download failed verification (sha256 ${actual.slice(0, 12)}..., ${size} bytes)`)
+        }
+        await rm(target, { force: true })
+        await rename(partial, target)
+      }
+      const ready: LocalVadInstallState = { state: "ready", modelPath: this.vadModelPath }
+      onProgress?.(ready)
+      return ready
+    } catch (error) {
+      const failed: LocalVadInstallState = { state: "error", error: error instanceof Error ? error.message : String(error) }
+      onProgress?.(failed)
+      return failed
+    }
   }
 
   get engineDir(): string {
@@ -222,6 +325,12 @@ async function fileSize(path: string): Promise<number> {
   } catch {
     return 0
   }
+}
+
+async function sha256FileStreamed(path: string): Promise<string> {
+  const hash = createHash("sha256")
+  for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer)
+  return hash.digest("hex")
 }
 
 async function sha1File(path: string): Promise<string> {
