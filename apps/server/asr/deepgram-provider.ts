@@ -1,6 +1,7 @@
 import { isPlainObject } from "../../../packages/shared/type-guards"
 import { WebSocket } from "ws"
-import type { AsrProvider, AudioFrame, TranscriptResult } from "../../../packages/contracts"
+import type { AsrContextHints, AsrProvider, AudioFrame, TranscriptResult } from "../../../packages/contracts"
+import { boundedKeyterms, estimateKeytermTokens, sameKeyterms } from "./deepgram-keyterms"
 import { generateUlid } from "../../../packages/shared/ulid"
 import type { Logger } from "../../../packages/shared/logger"
 import { biblicalVocabularyFor, plannedBookTerms } from "./biblical-vocabulary"
@@ -68,9 +69,43 @@ export type DeepgramProviderOptions = {
    * it the app stays deaf until the mic is cycled. Off by default (a failover wrapper handles the close).
    */
   readonly reconnectOnClose?: boolean
-  /** Injectable clock for the reconnect backoff. */
+  /** Injectable clock for the reconnect backoff and the keyterm Configure interval. */
   readonly now?: () => number
+  /** Quiet period before a changed keyterm list is sent mid-stream. Default 1.5 s. */
+  readonly configureDebounceMs?: number
+  /** Least time between two mid-stream Configure messages. Default 10 s. */
+  readonly configureMinIntervalMs?: number
+  /** Injectable one-shot timer for the Configure debounce (tests). */
+  readonly timers?: DeepgramTimers
 }
+
+export type DeepgramTimers = {
+  setTimeout(callback: () => void, ms: number): unknown
+  clearTimeout(handle: unknown): void
+}
+
+const DEFAULT_TIMERS: DeepgramTimers = {
+  setTimeout(callback, ms) {
+    const handle = setTimeout(callback, ms)
+    handle.unref?.()
+    return handle
+  },
+  clearTimeout(handle) {
+    clearTimeout(handle as ReturnType<typeof setTimeout>)
+  },
+}
+
+/**
+ * Mid-stream keyterm updates (architecture note keyterms-follow-sermon.md).
+ * The debounce absorbs a burst (a rundown load pushes plan and focus in the
+ * same tick); the minimum interval bounds the rate to 6 Configure messages a
+ * minute whatever the core does. Deepgram publishes no rate limit for
+ * Configure; these are this app's own conservative bounds.
+ */
+export const DEFAULT_CONFIGURE_DEBOUNCE_MS = 1_500
+export const DEFAULT_CONFIGURE_MIN_INTERVAL_MS = 10_000
+/** After this many ConfigureFailure replies on one connection, stop sending Configure until the next connect. */
+export const MAX_CONFIGURE_FAILURES_PER_CONNECTION = 3
 
 const RECONNECT_INITIAL_MS = 1_000
 const RECONNECT_MAX_MS = 30_000
@@ -125,10 +160,24 @@ export class DeepgramProvider implements AsrProvider {
   private reconnectAttempts = 0
   private nextReconnectAt = 0
   private reconnecting: Promise<void> | null = null
+  // Mid-stream keyterms (Configure). connectedKeyterms is the list the OPEN stream has (null: no stream).
+  private contextHints: AsrContextHints | null = null
+  private connectedKeyterms: readonly string[] | null = null
+  private previousKeyterms: readonly string[] | null = null
+  private configureTimer: unknown = null
+  private lastConfigureAt = Number.NEGATIVE_INFINITY
+  private configureFailures = 0
+  private configureDisabled = false
+  private readonly configureDebounceMs: number
+  private readonly configureMinIntervalMs: number
+  private readonly timers: DeepgramTimers
 
   constructor(options: DeepgramProviderOptions) {
     this.reconnectOnClose = options.reconnectOnClose ?? false
     this.now = options.now ?? Date.now
+    this.configureDebounceMs = Math.max(0, options.configureDebounceMs ?? DEFAULT_CONFIGURE_DEBOUNCE_MS)
+    this.configureMinIntervalMs = Math.max(0, options.configureMinIntervalMs ?? DEFAULT_CONFIGURE_MIN_INTERVAL_MS)
+    this.timers = options.timers ?? DEFAULT_TIMERS
     if (!options.apiKey.trim()) throw new Error("DeepgramProvider requires an apiKey")
     this.apiKey = options.apiKey
     this.model = options.model ?? DEFAULT_MODEL
@@ -170,18 +219,59 @@ export class DeepgramProvider implements AsrProvider {
    * ARCHITECTURE.md section 104: book ids from a loaded Service Rundown.
    * A rundown entry is an explicit, operator-confirmed signal, so unlike
    * the module-level biblicalVocabulary list, common book names are
-   * included here too. Deepgram fixes keyterms per connection — this takes
-   * effect on the NEXT start(), never as a live reconnect, so it never
-   * interrupts audio already streaming mid-service.
+   * included here too. This entry point takes effect on the NEXT start(),
+   * never as a live reconnect. Live updates arrive through setContextHints()
+   * (which, once called, is the source of the planned books).
    */
   setPlannedBooks(bookIds: readonly string[]): void {
     this.plannedBookIds = bookIds
   }
 
+  /**
+   * Provider-neutral hints from the core (architecture note
+   * keyterms-follow-sermon.md). Always stored, so the next connect's URL
+   * carries them. On an open Nova-3 stream a changed term list is also sent
+   * as a mid-stream Configure (debounced, rate-bounded, never retried).
+   * Nova-2 `keywords` has no documented mid-stream update: there the hints
+   * wait for the next connect, and that is logged.
+   */
+  setContextHints(hints: AsrContextHints): void {
+    this.contextHints = {
+      focusBooks: Array.isArray(hints?.focusBooks) ? hints.focusBooks.filter((id) => typeof id === "string") : [],
+      plannedBooks: Array.isArray(hints?.plannedBooks) ? hints.plannedBooks.filter((id) => typeof id === "string") : [],
+    }
+    this.scheduleConfigure()
+  }
+
+  private resolvedModel(): string {
+    return this.language === "multi" && !this.model.startsWith("nova-3") ? MULTI_MODEL : this.model
+  }
+
+  /**
+   * The whole list, MOST relevant first so the budget drops the least
+   * relevant: focus books, then the plan (capped at MAX_PLANNED_BOOK_TERMS
+   * as before), then the static biblical vocabulary. Sanitized and bounded
+   * by deepgram-keyterms.ts. The same list feeds the URL and Configure,
+   * because Configure REPLACES the stream's whole list.
+   */
+  currentKeyterms(): readonly string[] {
+    const focus = plannedBookTerms(this.contextHints?.focusBooks ?? [], this.language)
+    const focusSet = new Set(focus)
+    const planned = plannedBookTerms(this.contextHints ? this.contextHints.plannedBooks : this.plannedBookIds, this.language)
+      .filter((term) => !focusSet.has(term))
+      .slice(0, MAX_PLANNED_BOOK_TERMS)
+    const vocabulary = this.biblicalVocabulary ? biblicalVocabularyFor(this.language) : []
+    return boundedKeyterms([...focus, ...planned, ...vocabulary])
+  }
+
   /** The exact streaming URL start() opens. Contains no secret — the key travels in a header. */
   buildUrl(): string {
+    return this.buildUrlWith(this.currentKeyterms())
+  }
+
+  private buildUrlWith(keyterms: readonly string[]): string {
     const multi = this.language === "multi"
-    const model = multi && !this.model.startsWith("nova-3") ? MULTI_MODEL : this.model
+    const model = this.resolvedModel()
     const endpointingMs = multi && !this.endpointingExplicit ? MULTI_ENDPOINTING_MS : this.endpointingMs
     const query = new URLSearchParams({
       model,
@@ -195,17 +285,7 @@ export class DeepgramProvider implements AsrProvider {
     if (this.language) query.set("language", this.language)
     // nova-3 replaced weighted `keywords` with plain `keyterm` prompting.
     const nova3 = model.startsWith("nova-3")
-    const appendTerm = (term: string) => query.append(nova3 ? "keyterm" : "keywords", nova3 ? term : `${term}:2`)
-    if (this.biblicalVocabulary) {
-      for (const term of biblicalVocabularyFor(this.language)) appendTerm(term)
-    }
-    const planned = new Set(plannedBookTerms(this.plannedBookIds, this.language))
-    let count = 0
-    for (const term of planned) {
-      if (count >= MAX_PLANNED_BOOK_TERMS) break
-      appendTerm(term)
-      count++
-    }
+    for (const term of keyterms) query.append(nova3 ? "keyterm" : "keywords", nova3 ? term : `${term}:2`)
     return `${this.url}?${query.toString()}`
   }
 
@@ -214,7 +294,8 @@ export class DeepgramProvider implements AsrProvider {
     this.active = true
     this.sequence = 0
     this.correlationId = generateUlid()
-    const socket = new this.WebSocketImpl(this.buildUrl(), {
+    const keyterms = this.currentKeyterms()
+    const socket = new this.WebSocketImpl(this.buildUrlWith(keyterms), {
       headers: { Authorization: `Token ${this.apiKey}` },
     })
     this.socket = socket
@@ -223,6 +304,7 @@ export class DeepgramProvider implements AsrProvider {
     socket.on("close", () => {
       if (this.socket !== socket) return
       this.clearKeepAlive()
+      this.resetConfigureState()
       if (!this.active) return
       this.socket = null
       this.active = false
@@ -254,6 +336,113 @@ export class DeepgramProvider implements AsrProvider {
     }
     this.lastSendAt = Date.now()
     this.armKeepAlive(socket)
+    this.resetConfigureState()
+    this.connectedKeyterms = keyterms
+    // Hints that changed while connecting were not in the URL: send them now (same bounds as always).
+    this.scheduleConfigure()
+  }
+
+  // ---- Mid-stream keyterms (Configure) ------------------------------------
+
+  private resetConfigureState(): void {
+    if (this.configureTimer !== null) this.timers.clearTimeout(this.configureTimer)
+    this.configureTimer = null
+    this.connectedKeyterms = null
+    this.previousKeyterms = null
+    this.configureFailures = 0
+    this.configureDisabled = false
+  }
+
+  /**
+   * Arms at most ONE pending Configure. A change while one is pending does
+   * not re-arm it: the pending one reads the latest hints when it fires, so
+   * a stream of changes can never postpone the update indefinitely, nor send
+   * more than one message per configureMinIntervalMs.
+   */
+  private scheduleConfigure(): void {
+    if (this.connectedKeyterms === null || this.openSocket() === null) return // next start() puts them in the URL
+    if (this.configureTimer !== null || this.configureDisabled) return
+    if (sameKeyterms(this.currentKeyterms(), this.connectedKeyterms)) return
+    if (!this.resolvedModel().startsWith("nova-3")) {
+      this.logger?.debug({
+        component: "asr",
+        event: "deepgram.keyterms-deferred",
+        correlationId: this.correlationId,
+        metadata: { reason: "model-without-configure", model: this.resolvedModel() },
+      })
+      return
+    }
+    const wait = Math.max(this.configureDebounceMs, this.lastConfigureAt + this.configureMinIntervalMs - this.now())
+    this.configureTimer = this.timers.setTimeout(() => {
+      this.configureTimer = null
+      this.sendConfigure()
+    }, wait)
+  }
+
+  private sendConfigure(): void {
+    const socket = this.openSocket()
+    const connected = this.connectedKeyterms
+    if (socket === null || connected === null || this.configureDisabled) return
+    const next = this.currentKeyterms()
+    if (sameKeyterms(next, connected)) return
+    try {
+      socket.send(JSON.stringify({ type: "Configure", keyterms: next }))
+    } catch (err) {
+      // Not an ASR error (that would trigger a failover): the stream keeps its list, a later change retries once.
+      this.logger?.warn({
+        component: "asr",
+        event: "deepgram.keyterms-configure-send-failed",
+        correlationId: this.correlationId,
+        error: err instanceof Error ? err.message : String(err),
+      })
+      return
+    }
+    this.previousKeyterms = connected
+    this.connectedKeyterms = next
+    this.lastConfigureAt = this.now()
+    const before = new Set(connected)
+    const after = new Set(next)
+    this.logger?.info({
+      component: "asr",
+      event: "deepgram.keyterms-configured",
+      correlationId: this.correlationId,
+      metadata: {
+        count: next.length,
+        estimatedTokens: next.reduce((sum, term) => sum + estimateKeytermTokens(term), 0),
+        added: next.filter((term) => !before.has(term)).length,
+        removed: connected.filter((term) => !after.has(term)).length,
+      },
+    })
+  }
+
+  /**
+   * Deepgram answers an over-limit Configure with ConfigureFailure and keeps
+   * the previous list. Record that (the stream has the old list again), log
+   * it, never retry automatically, and stop sending Configure on this
+   * connection after MAX_CONFIGURE_FAILURES_PER_CONNECTION.
+   */
+  private handleConfigureFailure(message: Record<string, unknown>): void {
+    if (this.previousKeyterms !== null) this.connectedKeyterms = this.previousKeyterms
+    this.previousKeyterms = null
+    this.configureFailures += 1
+    const code = typeof message.code === "string" ? message.code.slice(0, 64) : undefined
+    this.logger?.warn({
+      component: "asr",
+      event: "deepgram.keyterms-configure-failed",
+      correlationId: this.correlationId,
+      metadata: { code, failures: this.configureFailures },
+    })
+    if (this.configureFailures >= MAX_CONFIGURE_FAILURES_PER_CONNECTION && !this.configureDisabled) {
+      this.configureDisabled = true
+      if (this.configureTimer !== null) this.timers.clearTimeout(this.configureTimer)
+      this.configureTimer = null
+      this.logger?.warn({
+        component: "asr",
+        event: "deepgram.keyterms-configure-disabled",
+        correlationId: this.correlationId,
+        metadata: { failures: this.configureFailures },
+      })
+    }
   }
 
   /** SF-19: one reconnect attempt at a time, spaced by exponential backoff; each failure is reported. */
@@ -307,6 +496,7 @@ export class DeepgramProvider implements AsrProvider {
     this.active = false
     this.lostUnexpectedly = false
     this.clearKeepAlive()
+    this.resetConfigureState()
     const socket = this.socket
     this.socket = null
     if (!socket) return
@@ -351,6 +541,10 @@ export class DeepgramProvider implements AsrProvider {
     // is not an object (null, a number) used to throw a TypeError here,
     // inside a socket listener, which is an uncaught exception.
     if (!isPlainObject(parsed)) return
+    if (parsed.type === "ConfigureFailure") {
+      this.handleConfigureFailure(parsed)
+      return
+    }
     const message = parsed as DeepgramMessage
     const alternatives = isPlainObject(message.channel) ? message.channel.alternatives : undefined
     const alternative = Array.isArray(alternatives) && isPlainObject(alternatives[0]) ? alternatives[0] : undefined
