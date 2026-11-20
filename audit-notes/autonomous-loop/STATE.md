@@ -41,10 +41,9 @@ ecc:security-reviewer agent, ecc:code-simplifier (only on recently changed code)
 - [x] F5 handshake limiter no longer locks out OBS; stage reconnect backoff — b22ecdf
 - [x] Offline Silero VAD (default off, checksum-pinned) — merged from worktree-agent-a32d7dc34823b4367
 
-## In flight (worktrees under .claude/worktrees/, branches `worktree-agent-*`)
-- keyterms follow the sermon (agent af57b5347fafe968c) — merge when its report arrives
-- Ready check button (agent a1ca6accdc990fc56) — merge when its report arrives
-Use `git worktree list` and `git log 287f7fc..<branch>` to see their commits; review diff, merge --no-ff, run tests.
+## In flight
+- none (agent worktrees under .claude/worktrees/ are merged; remove with `git worktree remove --force <path>` when no agent uses them)
+- NOTE: each new feature agent MUST be started one at a time with isolation=worktree; unmerged notes live in `architecture-notes/`.
 
 ## Backlog (ordered)
 Audit findings F1-F13 (from the 2026-11-19 backend audit):
@@ -76,4 +75,4 @@ Features approved by the owner (each needs an architecture note in `architecture
 - [ ] Operational check: build + `npm run dry-run`, serve web mode and click through /overlay /remote /stage /live in a browser
 
 ## Heartbeat
-last_session_update: 2026-11-20T00:11Z (main session; VAD + F5 merged, keyterms and ready-check agents in flight)
+last_session_update: 2026-11-20T00:16Z (main session; keyterms, ready-check, VAD, F5 merged; next: F1 psalm numbering)
