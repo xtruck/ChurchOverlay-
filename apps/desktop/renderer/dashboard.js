@@ -1088,8 +1088,44 @@
     localAsrEngineHintEl.textContent = t(key)
   }
 
+  // architecture-notes/offline-vad.md: the server decides whether VAD applies; this only mirrors it.
+  const localVadEnabledEl = document.getElementById("local-vad-enabled")
+  const localVadStatusEl = document.getElementById("local-vad-status")
+  function renderLocalVad(asr) {
+    if (!asr) return
+    localVadEnabledEl.checked = Boolean(asr.localVadEnabled)
+    const vad = asr.localVad || { state: "off" }
+    if (vad.state === "active") localVadStatusEl.textContent = t("localVad.active")
+    else if (vad.state === "unavailable") localVadStatusEl.textContent = t("localVad.unavailable." + vad.reason)
+    else localVadStatusEl.textContent = t("localVad.off")
+  }
+
+  localVadEnabledEl.addEventListener("change", () => {
+    const enabled = localVadEnabledEl.checked
+    localVadEnabledEl.disabled = true
+    localVadStatusEl.textContent = enabled ? t("localVad.downloading") : t("asrSettings.restarting")
+    window.churchOverlay
+      .setLocalVad(enabled)
+      .then((result) => {
+        localVadEnabledEl.disabled = false
+        if (result.install && result.install.state !== "ready") {
+          localVadEnabledEl.checked = false
+          localVadStatusEl.textContent = t("localVad.installFailed", { error: result.install.error || result.install.reason || "" })
+          return
+        }
+        renderAsrStatus(result.asr)
+        renderLocalAsr(null, result.asr)
+      })
+      .catch((err) => {
+        localVadEnabledEl.disabled = false
+        localVadEnabledEl.checked = !enabled
+        localVadStatusEl.textContent = t("localVad.installFailed", { error: err.message })
+      })
+  })
+
   function renderLocalAsr(install, asr) {
     localInstall = install || localInstall
+    renderLocalVad(asr)
     if (asr) {
       localAsrEnabledEl.checked = Boolean(asr.localEnabled)
       if (asr.localModel && asr.localModel !== localModel) {

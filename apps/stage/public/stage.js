@@ -145,6 +145,10 @@
     verseTextEl.style.animation = "";
   }
 
+  // Reconnect delay doubles up to 30 s and resets once connected, so a page that is
+  // being refused (rate limit, server down) does not hammer the server every 2 s (F5).
+  let reconnectDelayMs = 2000;
+
   function connectWs() {
     // Same guard overlay.js applies: with no token the server terminates the
     // socket as unauthenticated, so opening one would only produce an endless
@@ -156,13 +160,15 @@
     }
     const ws = new WebSocket(wsUrl, [token]);
     ws.onopen = () => {
+      reconnectDelayMs = 2000;
       if (wsDot) wsDot.className = "dot connected";
       if (wsText) wsText.textContent = t("connected");
     };
     ws.onclose = () => {
       if (wsDot) wsDot.className = "dot disconnected";
       if (wsText) wsText.textContent = t("disconnected");
-      setTimeout(connectWs, 2000);
+      setTimeout(connectWs, reconnectDelayMs);
+      reconnectDelayMs = Math.min(reconnectDelayMs * 2, 30000);
     };
     ws.onmessage = (event) => {
       try {

@@ -77,6 +77,8 @@ contextBridge.exposeInMainWorld("churchOverlay", {
   exportSession: () => ipcRenderer.invoke("export-session"),
   exportRehearsal: () => ipcRenderer.invoke("export-rehearsal"),
   exportDiagnostics: () => ipcRenderer.invoke("export-diagnostics"),
+  // Ready check (architecture-notes/ready-check.md): no arguments in, codes and counts out.
+  runReadyCheck: () => ipcRenderer.invoke("run-ready-check"),
   // B1: persistent log folder, and non-blocking notices from the main process
   // (uncaught errors, crash recovery, failed service start). The history is
   // what a freshly loaded dashboard reads; live notices arrive through the callback.
@@ -124,6 +126,7 @@ contextBridge.exposeInMainWorld("churchOverlay", {
   getLocalAsrStatus: (model?: string, engine?: string) => ipcRenderer.invoke("get-local-asr-status", model, engine),
   installLocalAsr: (model: string, engine?: string) => ipcRenderer.invoke("install-local-asr", model, engine),
   setLocalAsr: (enabled: boolean, model: string, engine?: string) => ipcRenderer.invoke("set-local-asr", { enabled, model, engine }),
+  setLocalVad: (enabled: boolean) => ipcRenderer.invoke("set-local-vad", enabled === true),
   onLocalAsrProgress: (callback: (state: unknown) => void) => {
     ipcRenderer.removeAllListeners("local-asr-progress")
     ipcRenderer.on("local-asr-progress", (_event, state) => callback(state))

@@ -91,3 +91,47 @@ test("offeredRole: operator checked first, viewer second, unknown tokens return 
   assert.equal(offeredRole(undefined, tokens, equals), null)
   assert.equal(offeredRole("", tokens, equals), null)
 })
+
+// ── F5: a legitimate OBS machine must never be locked out ─────────────────
+
+test("HandshakeRateLimiter: 20 token-bearing handshakes in a minute from one address are all accepted (OBS reloads)", () => {
+  const limiter = new HandshakeRateLimiter() // production defaults: 10/min unauthenticated
+  for (let i = 0; i < 20; i++) {
+    assert.deepEqual(limiter.attempt("203.0.113.20", T0 + i * 1000, true), { allowed: true })
+  }
+})
+
+test("HandshakeRateLimiter: a banned flooder on the same address does not lock out token-bearing handshakes", () => {
+  const limiter = new HandshakeRateLimiter({ maxAttemptsPerMinute: 1, windowMs: 60_000, refusalThreshold: 2, banMs: 30_000 })
+  assert.equal(limiter.attempt("203.0.113.21", T0).allowed, true)
+  assert.equal(limiter.attempt("203.0.113.21", T0 + 1).allowed, false)
+  assert.equal(limiter.attempt("203.0.113.21", T0 + 2).allowed, false)
+  assert.equal(limiter.isBanned("203.0.113.21", T0 + 3), true)
+  // The unauthenticated side is banned, the OBS page that carries its token is not.
+  assert.equal(limiter.attempt("203.0.113.21", T0 + 4, true).allowed, true)
+  assert.equal(limiter.attempt("203.0.113.21", T0 + 5, false).allowed, false)
+})
+
+test("HandshakeRateLimiter: retrying while banned never extends the ban", () => {
+  const limiter = new HandshakeRateLimiter({ maxAttemptsPerMinute: 1, windowMs: 60_000, refusalThreshold: 2, banMs: 30_000 })
+  assert.equal(limiter.attempt("203.0.113.22", T0).allowed, true)
+  assert.equal(limiter.attempt("203.0.113.22", T0 + 1).allowed, false)
+  assert.equal(limiter.attempt("203.0.113.22", T0 + 2).allowed, false) // ban until T0 + 30_002
+  // A page retrying every 2 s for the whole ban (the stage page used to).
+  for (let t = T0 + 2_000; t < T0 + 30_000; t += 2_000) {
+    assert.equal(limiter.attempt("203.0.113.22", t).allowed, false)
+  }
+  assert.equal(limiter.isBanned("203.0.113.22", T0 + 30_003), false, "the ban ends on schedule, it is not re-armed")
+  assert.equal(limiter.attempt("203.0.113.22", T0 + 61_000).allowed, true)
+})
+
+test("HandshakeRateLimiter: the authenticated ceiling still bounds a token holder and never bans", () => {
+  const limiter = new HandshakeRateLimiter({ maxAuthenticatedAttemptsPerMinute: 3, windowMs: 60_000 })
+  for (let i = 0; i < 3; i++) assert.equal(limiter.attempt("203.0.113.23", T0 + i, true).allowed, true)
+  const refused = limiter.attempt("203.0.113.23", T0 + 10, true)
+  assert.equal(refused.allowed, false)
+  assert.ok(refused.allowed === false && refused.retryAfterSeconds > 0)
+  assert.equal(limiter.isBanned("203.0.113.23", T0 + 11), false)
+  // The window slides open again.
+  assert.equal(limiter.attempt("203.0.113.23", T0 + 61_000, true).allowed, true)
+})

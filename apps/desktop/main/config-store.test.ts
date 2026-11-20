@@ -452,6 +452,17 @@ test("ConfigStore: local ASR engine, model and enabled flag round-trip", async (
   })
 })
 
+// architecture-notes/offline-vad.md: Silero VAD is opt-in, default OFF.
+test("ConfigStore: localAsrVad round-trips, and a file without it loads with it absent (= off)", async () => {
+  await withTempDir(async (dir) => {
+    const store = new ConfigStore(join(dir, "config.json"), new FakeSecretCodec())
+    await store.save({ ...SAMPLE_CONFIG, localAsrVad: true })
+    assert.equal((await store.load())?.localAsrVad, true)
+    await store.save(SAMPLE_CONFIG)
+    assert.equal((await store.load())?.localAsrVad, undefined)
+  })
+})
+
 test("ConfigStore: AI feature toggles round-trip, and an older file loads with none of them set (= off)", async () => {
   await withTempDir(async (dir) => {
     const path = join(dir, "config.json")
@@ -532,6 +543,7 @@ const TOLERANCE_CASES: ReadonlyArray<readonly [field: string, bad: unknown, read
   ["localAsrEngine", "mystery", (c) => c.localAsrEngine, undefined],
   ["localAsrModel", "huge", (c) => c.localAsrModel, undefined],
   ["localAsrEnabled", "yes", (c) => c.localAsrEnabled, undefined],
+  ["localAsrVad", "yes", (c) => c.localAsrVad, undefined],
   ["audioProfile", "turbo", (c) => c.audioProfile, undefined],
   ["asrStrategy", "quantum", (c) => c.asrStrategy, undefined],
   ["aiProvider", "openai", (c) => c.aiProvider, undefined],

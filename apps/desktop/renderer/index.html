@@ -411,6 +411,14 @@
               <div id="mic-capture-status" class="mic-diagnostics" data-state="idle" role="status" aria-live="assertive"></div>
               <div id="audio-transport-status" class="mic-diagnostics" data-state="idle" aria-live="off"></div>
               <div id="audio-transport-announcement" class="sr-only" role="status" aria-live="polite"></div>
+              <!-- Ready check (architecture-notes/ready-check.md): main process runs it, this only shows the result. -->
+              <div id="ready-check" class="ready-check">
+                <div class="latency-title" data-i18n="readyCheck.title">Ready check</div>
+                <button id="ready-check-btn" type="button" class="btn-secondary btn-block" data-i18n="readyCheck.run">Run ready check</button>
+                <div id="ready-check-summary" class="ready-check-summary" data-state="idle" role="status" aria-live="polite" data-i18n="readyCheck.idle">Not run yet. Run it before the service.</div>
+                <ul id="ready-check-list" class="ready-check-list"></ul>
+                <div class="ready-check-hint" data-i18n="readyCheck.exportHint">The last result is included in "Export diagnostics".</div>
+              </div>
             </section>
           </aside>
 
@@ -1035,6 +1043,12 @@
               <span data-i18n="localAsr.enable">Use as automatic backup</span>
               <input id="local-asr-enabled" type="checkbox" class="switch" disabled />
             </label>
+            <!-- architecture-notes/offline-vad.md: Silero VAD inside whisper.cpp, opt-in, default off. -->
+            <label class="switch-row switch-row-spaced" for="local-vad-enabled">
+              <span data-i18n="localVad.enable">Skip silence and music (voice detection)</span>
+              <input id="local-vad-enabled" type="checkbox" class="switch" />
+            </label>
+            <p id="local-vad-status" class="settings-hint settings-note" role="status"></p>
           </div>
 
           <!-- ARCHITECTURE.md production audit: the token-bearing OBS URL. -->
@@ -1263,6 +1277,7 @@
   <script src="./reference-format.js"></script>
   <script src="./dashboard.js"></script>
   <script src="./overlay-settings.js"></script>
+  <script src="./ready-check.js"></script>
   <script src="./bible-browser.js"></script>
 </body>
 </html>

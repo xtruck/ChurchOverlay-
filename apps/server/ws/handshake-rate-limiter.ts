@@ -32,6 +32,15 @@ export type HandshakeRateLimitOptions = {
   readonly banMs?: number
   /** Hard cap on tracked addresses; the oldest entry is evicted past it. Defaults to 4096. */
   readonly maxTrackedAddresses?: number
+  /**
+   * Handshakes per window that OFFER A REGISTERED TOKEN, per address. They
+   * are counted apart from unauthenticated ones, never trigger or suffer a
+   * ban, and have a much higher ceiling: one OBS machine legitimately opens
+   * the overlay, stage and live pages from one address and reloads them
+   * (F5). 0 means unlimited — those clients are still bounded by the
+   * connection cap. Defaults to 120.
+   */
+  readonly maxAuthenticatedAttemptsPerMinute?: number
 }
 
 export const DEFAULT_HANDSHAKE_RATE_LIMIT: Required<HandshakeRateLimitOptions> = {
@@ -40,6 +49,7 @@ export const DEFAULT_HANDSHAKE_RATE_LIMIT: Required<HandshakeRateLimitOptions> =
   refusalThreshold: 3,
   banMs: 60_000,
   maxTrackedAddresses: 4096,
+  maxAuthenticatedAttemptsPerMinute: 120,
 }
 
 export type HandshakeAttemptOutcome =
@@ -47,8 +57,10 @@ export type HandshakeAttemptOutcome =
   | { readonly allowed: false; readonly reason: string; readonly retryAfterSeconds: number }
 
 type AddressState = {
-  /** Timestamps of the attempts inside the current sliding window. */
+  /** Timestamps of the unauthenticated attempts inside the current sliding window. */
   attempts: number[]
+  /** Timestamps of the attempts that offered a registered token (own, higher ceiling). */
+  authAttempts: number[]
   /** Consecutive refused attempts inside the window (reset when an attempt is allowed). */
   refusals: number
   /** Ban deadline, 0 while not banned. */
@@ -71,18 +83,27 @@ export class HandshakeRateLimiter {
    * Records one handshake attempt for this client address and says whether
    * the server should proceed with the upgrade. A refused attempt returns
    * the whole-window wait so the HTTP layer can answer with Retry-After.
+   *
+   * `authenticated` is true when the handshake offers a registered token (the
+   * caller compares it in constant time). Those handshakes use their own,
+   * higher ceiling and are never banned, so a flooder sharing the address
+   * cannot lock a legitimate OBS machine out (F5).
    */
-  attempt(address: string | undefined, now: number = Date.now()): HandshakeAttemptOutcome {
+  attempt(address: string | undefined, now: number = Date.now(), authenticated: boolean = false): HandshakeAttemptOutcome {
     if (this.disabled) return { allowed: true }
     if (isLoopbackAddress(address)) return { allowed: true }
 
     const key = normalizeRemoteAddress(address)
     this.prune(now)
 
-    const state = this.states.get(key) ?? { attempts: [], refusals: 0, bannedUntil: 0 }
+    const state = this.states.get(key) ?? { attempts: [], authAttempts: [], refusals: 0, bannedUntil: 0 }
+
+    if (authenticated) return this.attemptAuthenticated(key, state, now)
 
     if (state.bannedUntil > now) {
-      this.recordRefusal(key, state, now)
+      // A refusal inside a ban never extends it: otherwise a page that keeps
+      // retrying every couple of seconds would stay banned forever (F5).
+      this.touch(key, state)
       return {
         allowed: false,
         reason: `handshake rate limit: address banned for flooding`,
@@ -109,6 +130,22 @@ export class HandshakeRateLimiter {
     state.attempts.push(now)
     state.refusals = 0
     state.bannedUntil = 0
+    this.touch(key, state)
+    return { allowed: true }
+  }
+
+  private attemptAuthenticated(key: string, state: AddressState, now: number): HandshakeAttemptOutcome {
+    const cap = this.options.maxAuthenticatedAttemptsPerMinute
+    state.authAttempts = state.authAttempts.filter((t) => now - t < this.options.windowMs)
+    if (cap > 0 && state.authAttempts.length >= cap) {
+      this.touch(key, state)
+      return {
+        allowed: false,
+        reason: `handshake rate limit exceeded (${cap} authenticated per ${Math.round(this.options.windowMs / 1000)}s)`,
+        retryAfterSeconds: this.retryAfter((state.authAttempts[0] ?? now) + this.options.windowMs, now),
+      }
+    }
+    state.authAttempts.push(now)
     this.touch(key, state)
     return { allowed: true }
   }
@@ -145,7 +182,11 @@ export class HandshakeRateLimiter {
 
   private prune(now: number): void {
     for (const [key, state] of this.states) {
-      const lastActivity = state.bannedUntil > 0 ? state.bannedUntil : (state.attempts[state.attempts.length - 1] ?? 0)
+      const lastActivity = Math.max(
+        state.bannedUntil,
+        state.attempts[state.attempts.length - 1] ?? 0,
+        state.authAttempts[state.authAttempts.length - 1] ?? 0
+      )
       if (lastActivity < now - this.options.windowMs) this.states.delete(key)
     }
   }

@@ -1,4 +1,4 @@
-import type { AsrProvider, AudioFrame, TranscriptResult } from "../../../packages/contracts"
+import type { AsrContextHints, AsrProvider, AudioFrame, TranscriptResult } from "../../../packages/contracts"
 import { generateUlid } from "../../../packages/shared/ulid"
 import type { Logger } from "../../../packages/shared/logger"
 import { isPlainObject } from "../../../packages/shared/type-guards"
@@ -237,6 +237,7 @@ export class GroqProvider implements AsrProvider {
 
   // TASK B: prompt for lexical bias
   private currentVerseRef: string | null = null
+  private contextHints: AsrContextHints | null = null
 
   constructor(options: GroqProviderOptions) {
     if (!options.apiKey) {
@@ -415,6 +416,27 @@ export class GroqProvider implements AsrProvider {
     this.currentVerseRef = ref
   }
 
+  /**
+   * Provider-neutral hints (architecture note keyterms-follow-sermon.md).
+   * Whisper only conditions on the LAST 224 prompt tokens and weighs later
+   * tokens more, so buildPrompt() moves the hinted books to the end of the
+   * book list (plan, then focus, the newest focus book last), right before
+   * the current reference. Same capture rule as setCurrentVerseRef: read at
+   * flush time, never alters a request already in flight. The prompt length
+   * is unchanged (books are moved, not added), so the budget still holds.
+   */
+  setContextHints(hints: AsrContextHints): void {
+    this.contextHints = {
+      focusBooks: Array.isArray(hints?.focusBooks) ? hints.focusBooks.filter((id) => typeof id === "string") : [],
+      plannedBooks: Array.isArray(hints?.plannedBooks) ? hints.plannedBooks.filter((id) => typeof id === "string") : [],
+    }
+  }
+
+  /** The exact prompt the next request would carry (diagnostics and tests; contains no secret). */
+  currentPrompt(): string {
+    return this.buildPrompt()
+  }
+
   /** TASK B: Build the prompt for Groq Whisper to bias vocabulary towards Bible terms.
    *
    * Groq documents the `prompt` parameter at a maximum of 224 tokens
@@ -431,21 +453,9 @@ export class GroqProvider implements AsrProvider {
     // Command keywords (French + English)
     parts.push("chapitre, verset, suivant, précédent, annuler, chapter, verse, next, previous, cancel")
 
-    // Most frequent Bible books (French names) — prioritize to stay within token limit
-    const frequentBooks = [
-      "genèse", "exode", "lévitique", "nombres", "deutéronome",
-      "josué", "juges", "ruth", "samuel", "rois", "chroniques",
-      "esdras", "néhémie", "esther", "job", "psaumes", "proverbes",
-      "ecclésiaste", "cantique", "isaïe", "jérémie", "lamentations",
-      "ézéchiel", "daniel", "osée", "joël", "amos", "abdias",
-      "jonas", "michée", "nahum", "habacuc", "sophonie", "aggée",
-      "zacharie", "malachie", "matthieu", "marc", "luc", "jean",
-      "actes", "romains", "corinthiens", "galates", "éphésiens",
-      "philippiens", "colossiens", "thessaloniciens", "timothée",
-      "tite", "philemon", "hébreux", "jacques", "pierre",
-      "jude", "apocalypse"
-    ]
-    parts.push(frequentBooks.join(", "))
+    // Every book (French names). Without context hints this is the canonical
+    // order; with hints the hinted books move to the END (see orderPromptBooks).
+    parts.push(orderPromptBooks(this.contextHints).join(", "))
 
     const base = parts.join(". ")
 
@@ -1007,6 +1017,50 @@ type GroqDecoded = {
   readonly language: string | undefined
   /** Mean avg_logprob over the reply's segments, before the quality filter; null when unscored. */
   readonly meanLogprob: number | null
+}
+
+/**
+ * The prompt's book list (French names, canonical order) and the canonical
+ * ids each name covers ("samuel" is 1 and 2 Samuel). Unchanged text from the
+ * former inline list: only its order can now change.
+ */
+const PROMPT_BOOKS: readonly { readonly name: string; readonly ids: readonly string[] }[] = [
+  ["genèse", "genesis"], ["exode", "exodus"], ["lévitique", "leviticus"], ["nombres", "numbers"], ["deutéronome", "deuteronomy"],
+  ["josué", "joshua"], ["juges", "judges"], ["ruth", "ruth"], ["samuel", "1 samuel", "2 samuel"], ["rois", "1 kings", "2 kings"],
+  ["chroniques", "1 chronicles", "2 chronicles"], ["esdras", "ezra"], ["néhémie", "nehemiah"], ["esther", "esther"], ["job", "job"],
+  ["psaumes", "psalm"], ["proverbes", "proverbs"], ["ecclésiaste", "ecclesiastes"], ["cantique", "song of solomon"], ["isaïe", "isaiah"],
+  ["jérémie", "jeremiah"], ["lamentations", "lamentations"], ["ézéchiel", "ezekiel"], ["daniel", "daniel"], ["osée", "hosea"],
+  ["joël", "joel"], ["amos", "amos"], ["abdias", "obadiah"], ["jonas", "jonah"], ["michée", "micah"], ["nahum", "nahum"],
+  ["habacuc", "habakkuk"], ["sophonie", "zephaniah"], ["aggée", "haggai"], ["zacharie", "zechariah"], ["malachie", "malachi"],
+  ["matthieu", "matthew"], ["marc", "mark"], ["luc", "luke"], ["jean", "john", "1 john", "2 john", "3 john"], ["actes", "acts"],
+  ["romains", "romans"], ["corinthiens", "1 corinthians", "2 corinthians"], ["galates", "galatians"], ["éphésiens", "ephesians"],
+  ["philippiens", "philippians"], ["colossiens", "colossians"], ["thessaloniciens", "1 thessalonians", "2 thessalonians"],
+  ["timothée", "1 timothy", "2 timothy"], ["tite", "titus"], ["philemon", "philemon"], ["hébreux", "hebrews"], ["jacques", "james"],
+  ["pierre", "1 peter", "2 peter"], ["jude", "jude"], ["apocalypse", "revelation"],
+].map(([name, ...ids]) => ({ name: name!, ids }))
+
+/**
+ * Whisper keeps only the LAST 224 prompt tokens and weighs later tokens
+ * more: the most relevant books go LAST. Order: books with no hint
+ * (canonical order), then planned books (in plan order), then focus books
+ * from least to most relevant, so the newest focus book is the final name
+ * before the current reference. Each name appears exactly once; ids the
+ * table does not know are ignored. Exported for tests.
+ */
+export function orderPromptBooks(hints: AsrContextHints | null): readonly string[] {
+  if (hints === null) return PROMPT_BOOKS.map((book) => book.name)
+  const ranked: string[] = [] // least relevant first
+  const place = (id: string) => {
+    const book = PROMPT_BOOKS.find((entry) => entry.ids.includes(id))
+    if (!book) return
+    const at = ranked.indexOf(book.name)
+    if (at !== -1) ranked.splice(at, 1)
+    ranked.push(book.name)
+  }
+  for (const id of hints.plannedBooks) place(id)
+  for (const id of [...hints.focusBooks].reverse()) place(id)
+  const hinted = new Set(ranked)
+  return [...PROMPT_BOOKS.map((book) => book.name).filter((name) => !hinted.has(name)), ...ranked]
 }
 
 // TASK B: heuristic Romance-language divergence markers for a French-

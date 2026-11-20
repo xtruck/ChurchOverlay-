@@ -80,6 +80,7 @@ import { createBibleBrowser } from "../verse/bible-browser-service"
 import { ChapterCache } from "../verse/chapter-cache"
 import type { BibleWordSearch } from "../verse/bible-word-search"
 import { extractAnnouncedChapter } from "../detector/announced-context"
+import { AsrContextHintsTracker } from "./asr-context-hints"
 import { joinSplitNumber, trailingNumberEquals, trailingVerseCouldGrow } from "../detector/trailing-number"
 import { detectValidatedReferences } from "./detect-and-validate"
 import { asVerseRangeDetector } from "../detector/verse-range-detector"
@@ -92,6 +93,7 @@ import { AudioFrameSequenceTracker } from "../audio/audio-frame-sequence"
 import { AdaptiveGain } from "../audio/adaptive-gain"
 import { MicHealthMonitor } from "../audio/mic-health"
 import { ASR_LIFECYCLE_TIMEOUT_MS, MIC_WATCHDOG_INTERVAL_MS, MicAudioWatchdog, withTimeout, type AppCoreTimers } from "../audio/mic-audio-watchdog"
+import type { ReadyCheckSnapshot } from "./ready-check"
 import type { QuoteMatcher } from "../detector/quote-matcher"
 import type { OverlayStyle, OverlayStyleSettings } from "../../../packages/contracts/overlay-style"
 import { normalizeOverlayStyleSettings, resolveOverlayStyle, seedOverlayStyle } from "../overlay/overlay-style"
@@ -415,6 +417,11 @@ export type AppCoreHandle = {
    * and the read-only overlay are unchanged.
    */
   getWsClientLatency(): readonly WsClientLatencySnapshot[]
+  /**
+   * Ready check (architecture-notes/ready-check.md): the live microphone facts the
+   * pre-service checklist needs, as plain numbers. Electron IPC only, not a WS event.
+   */
+  getMicReadiness(): ReadyCheckSnapshot["mic"]
   /**
    * ARCHITECTURE.md section 130: parses pasted sermon notes (plain text) into
    * validated references and adds their books to the ASR planned-book bias.
@@ -870,6 +877,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     if ("setCurrentVerseRef" in asr && typeof asr.setCurrentVerseRef === "function") {
       (asr as { setCurrentVerseRef: (ref: string | null) => void }).setCurrentVerseRef(refStr)
     }
+    noteFocusBook(verse.reference.book)
     const payload: VerseShowPayload = { ...verse, trigger }
     lastShownVerse = payload
     const timestamp = Date.now()
@@ -963,6 +971,9 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
    */
   let plannedBookIds: readonly string[] = []
   let rundownPlannedBookIds: readonly string[] = []
+  /** Provider-neutral ASR context (focus + planned books), pushed only when it changes. */
+  const asrContextHints = new AsrContextHintsTracker()
+  let contextHintsUnsupportedLogged = false
   /** Section 130: the last imported sermon notes (references only, never the text itself). */
   let sermonPrep: SermonPrepResult | null = null
 
@@ -1641,8 +1652,40 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     // Kept for volume inference (a planned "1 Corinthians" says what a bare "Corinthiens" means),
     // whether or not the active ASR provider can use the list itself.
     plannedBookIds = bookIds
+    if (asrContextHints.setPlannedBooks(bookIds)) pushContextHints()
     if (!("setPlannedBooks" in asr) || typeof asr.setPlannedBooks !== "function") return
     asr.setPlannedBooks(bookIds)
+  }
+
+  /** The operator is in this book now (displayed or announced): the ASR context follows the sermon. */
+  function noteFocusBook(bookId: string): void {
+    if (asrContextHints.noteFocusBook(bookId)) pushContextHints()
+  }
+
+  /**
+   * Hands the current AsrContextHints to the provider. A provider without
+   * setContextHints ignores them by design (contracts/asr.ts); that is said
+   * once in the log, never thrown, never an operator error.
+   */
+  function pushContextHints(): void {
+    if (typeof asr.setContextHints !== "function") {
+      if (!contextHintsUnsupportedLogged) {
+        contextHintsUnsupportedLogged = true
+        logger.info({ component: "app-core", event: "asr.context-hints-unsupported" })
+      }
+      return
+    }
+    const hints = asrContextHints.current()
+    try {
+      asr.setContextHints(hints)
+    } catch (err) {
+      // A bias hint must never break the caller (verse display, rundown load): report and carry on.
+      logger.warn({
+        component: "app-core",
+        event: "asr.context-hints-failed",
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
   }
 
   function prefetchRundownVerses(rundown: Rundown, correlationId?: string): void {
@@ -2746,6 +2789,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       const announced = extractAnnouncedChapter(transcript.text)
       if (announced) {
         announcedChapter = { reference: { book: announced.book, chapter: announced.chapter, verse: 1 }, at: Date.now() }
+        noteFocusBook(announced.book)
       }
     }
     for (const command of opts.onlyCommand ? [opts.onlyCommand] : navigationCommandDetector.detect(transcript.text)) {
@@ -2816,6 +2860,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         // ever OFFERED (the operator approves it), never put on the overlay by itself. The chapter
         // becomes the context a following bare "verse N" resolves against.
         announcedChapter = { reference: resolution.reference, at: Date.now() }
+        noteFocusBook(resolution.reference.book)
         suggestionArbiter.noteDetectedWaiting()
         broadcastPendingVerse({ ...verse, heard: heardSnippet(transcript.text) } as Verse, transcript.correlationId)
         continue
@@ -3315,6 +3360,19 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       // socket references), safe to cross the Electron IPC boundary to
       // the dashboard.
       return wsServer.getClientLatency()
+    },
+    getMicReadiness() {
+      const metrics = silenceGate.getMetrics()
+      const calibrating = silenceGate.isCalibrating()
+      return {
+        running: micRunning,
+        calibrating,
+        msSinceLastFrame: micRunning ? micAudioWatchdog.silentForMs(clockNow()) : null,
+        state: micRunning ? micHealth.snapshot(calibrating).state : null,
+        framesReceived: metrics.framesReceived,
+        framesForwarded: metrics.framesForwarded,
+        loudClosedMs: silenceGate.getLoudClosedMs(),
+      }
     },
     importSermonPrep(text: unknown) {
       const outcome = parseSermonPrep(text, index)
