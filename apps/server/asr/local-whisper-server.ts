@@ -3,6 +3,7 @@ import { createServer } from "node:net"
 import { constants as osConstants, cpus, setPriority } from "node:os"
 import { dirname } from "node:path"
 import type { Logger } from "../../../packages/shared/logger"
+import { buildWhisperCppServerArgs } from "./whisper-vad"
 
 /**
  * Owns the local whisper.cpp `whisper-server` child process: picks a free
@@ -17,6 +18,12 @@ export type WhisperServerOptions = {
   readonly modelPath: string
   /** Overrides the whisper.cpp command line (the faster-whisper sidecar takes different flags). */
   readonly buildArgs?: (port: number, threads: number) => string[]
+  /**
+   * Verified Silero VAD model for whisper.cpp (architecture-notes/offline-vad.md).
+   * Only set when VAD is enabled, the model passed its SHA-256 and the binary
+   * reported the flags. Ignored when buildArgs is given (the sidecar).
+   */
+  readonly vadModelPath?: string | null
   readonly logger?: Logger
   readonly threads?: number
   /** Injected in tests. */
@@ -193,17 +200,9 @@ export class WhisperServerProcess {
   private async launch(): Promise<void> {
     const port = await freePort()
     const threads = this.options.threads ?? localEngineThreads(cpus().length)
-    const args = this.options.buildArgs ? this.options.buildArgs(port, threads) : [
-      "-m", this.options.modelPath,
-      "--host", "127.0.0.1",
-      "--port", String(port),
-      "-t", String(threads),
-      "-l", "auto",
-      "-nt",
-      // Silence and noise are the classic Whisper hallucination trigger;
-      // suppressing non-speech tokens removes most "Merci d'avoir regardé".
-      "-sns",
-    ]
+    const args = this.options.buildArgs
+      ? this.options.buildArgs(port, threads)
+      : buildWhisperCppServerArgs({ modelPath: this.options.modelPath, port, threads, vadModelPath: this.options.vadModelPath ?? null })
     const child = this.spawnImpl(this.options.serverPath, args, {
       cwd: dirname(this.options.serverPath),
       stdio: ["ignore", "ignore", "pipe"],
@@ -244,7 +243,7 @@ export class WhisperServerProcess {
     })
     await this.waitUntilReady(child, () => stderrTail)
     this.restartAttempts = 0
-    this.options.logger?.info({ component: "asr", event: "local-whisper.ready", metadata: { port, threads } })
+    this.options.logger?.info({ component: "asr", event: "local-whisper.ready", metadata: { port, threads, vad: Boolean(this.options.vadModelPath) && !this.options.buildArgs } })
   }
 
   /**

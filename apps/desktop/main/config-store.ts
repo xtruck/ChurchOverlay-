@@ -123,6 +123,12 @@ export type AppConfig = {
   readonly localAsrModel?: "base" | "small"
   readonly localAsrEngine?: "whisper.cpp" | "faster-whisper"
   /**
+   * Silero VAD inside the whisper.cpp engine (architecture-notes/offline-vad.md).
+   * Absent → off. Only takes effect when the verified VAD model is present and
+   * the engine binary reports the flags; otherwise the status says why.
+   */
+  readonly localAsrVad?: boolean
+  /**
    * ARCHITECTURE.md section 107 — always present after decode() (defaults
    * to "ls1910", the sole French translation before this existed, same
    * required-with-a-default shape as verseLayout above), even though it's
@@ -214,6 +220,7 @@ const KNOWN_STORED_FIELDS: ReadonlySet<string> = new Set([
   "localAsrEnabled",
   "localAsrModel",
   "localAsrEngine",
+  "localAsrVad",
   "frenchTranslation",
   "overlayTemplate",
   "overlayStyle",
@@ -450,6 +457,7 @@ export class ConfigStore {
       ...(config.localAsrEnabled === undefined ? {} : { localAsrEnabled: config.localAsrEnabled }),
       ...(config.localAsrModel === undefined ? {} : { localAsrModel: config.localAsrModel }),
       ...(config.localAsrEngine === undefined ? {} : { localAsrEngine: config.localAsrEngine }),
+      ...(config.localAsrVad === undefined ? {} : { localAsrVad: config.localAsrVad }),
       ...(config.frenchTranslation === undefined ? {} : { frenchTranslation: config.frenchTranslation }),
       ...(config.overlayTemplate === undefined ? {} : { overlayTemplate: config.overlayTemplate }),
       ...(config.overlayStyle === undefined ? {} : { overlayStyle: normalizeOverlayStyleSettings(config.overlayStyle) }),
@@ -534,6 +542,7 @@ export class ConfigStore {
       localAsrEnabled,
       localAsrModel,
       localAsrEngine,
+      localAsrVad,
       frenchTranslation,
       overlayTemplate,
       overlayStyle,
@@ -608,6 +617,7 @@ export class ConfigStore {
     const localEnabled = bool("localAsrEnabled", localAsrEnabled)
     const localModel = oneOf("localAsrModel", localAsrModel, ["base", "small"] as const)
     const localEngine = oneOf("localAsrEngine", localAsrEngine, ["whisper.cpp", "faster-whisper"] as const)
+    const localVad = bool("localAsrVad", localAsrVad)
     const warningAck = bool("allowPhoneRemoteWarningAck", stored.allowPhoneRemoteWarningAck)
     const operatorGeneratedAt = text("operatorTokenGeneratedAt", stored.operatorTokenGeneratedAt)
     const viewerGeneratedAt = text("viewerTokenGeneratedAt", stored.viewerTokenGeneratedAt)
@@ -648,6 +658,7 @@ export class ConfigStore {
       ...(localEnabled === undefined ? {} : { localAsrEnabled: localEnabled }),
       ...(localModel === undefined ? {} : { localAsrModel: localModel }),
       ...(localEngine === undefined ? {} : { localAsrEngine: localEngine }),
+      ...(localVad === undefined ? {} : { localAsrVad: localVad }),
       frenchTranslation: oneOf("frenchTranslation", frenchTranslation, FRENCH_TRANSLATIONS) ?? "ls1910",
       overlayTemplate: oneOf("overlayTemplate", overlayTemplate, OVERLAY_TEMPLATES) ?? "classic",
       ...(overlayStyle === undefined ? {} : { overlayStyle: normalizeOverlayStyleSettings(overlayStyle) }),

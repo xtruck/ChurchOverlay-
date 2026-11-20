@@ -1035,6 +1035,12 @@
               <span data-i18n="localAsr.enable">Use as automatic backup</span>
               <input id="local-asr-enabled" type="checkbox" class="switch" disabled />
             </label>
+            <!-- architecture-notes/offline-vad.md: Silero VAD inside whisper.cpp, opt-in, default off. -->
+            <label class="switch-row switch-row-spaced" for="local-vad-enabled">
+              <span data-i18n="localVad.enable">Skip silence and music (voice detection)</span>
+              <input id="local-vad-enabled" type="checkbox" class="switch" />
+            </label>
+            <p id="local-vad-status" class="settings-hint settings-note" role="status"></p>
           </div>
 
           <!-- ARCHITECTURE.md production audit: the token-bearing OBS URL. -->
