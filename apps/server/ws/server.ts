@@ -424,7 +424,11 @@ export class ChurchOverlayWsServer {
     callback: (res: boolean, code?: number, message?: string, headers?: OutgoingHttpHeaders) => void
   ): void {
     const remote = req.socket?.remoteAddress
-    const outcome = this.handshakeLimiter.attempt(remote)
+    // Resolved before the limiter: a handshake that offers a registered token
+    // is counted in its own bucket and is never banned (F5). The comparison is
+    // the same constant-time one used everywhere else.
+    const role = offeredRole(req.headers["sec-websocket-protocol"], this.tokens, tokenEquals)
+    const outcome = this.handshakeLimiter.attempt(remote, Date.now(), role !== null)
     if (!outcome.allowed) {
       // The address is reported for the operator's diagnosis; the offered
       // tokens never are (they are attacker-controlled values).
@@ -433,7 +437,6 @@ export class ChurchOverlayWsServer {
       return
     }
 
-    const role = offeredRole(req.headers["sec-websocket-protocol"], this.tokens, tokenEquals)
     if (role === "viewer") {
       const ceiling = this.maxConnections - this.reservedOperatorSlots
       if (this.openClientCount() >= ceiling) {
