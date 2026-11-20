@@ -92,6 +92,7 @@ import { AudioFrameSequenceTracker } from "../audio/audio-frame-sequence"
 import { AdaptiveGain } from "../audio/adaptive-gain"
 import { MicHealthMonitor } from "../audio/mic-health"
 import { ASR_LIFECYCLE_TIMEOUT_MS, MIC_WATCHDOG_INTERVAL_MS, MicAudioWatchdog, withTimeout, type AppCoreTimers } from "../audio/mic-audio-watchdog"
+import type { ReadyCheckSnapshot } from "./ready-check"
 import type { QuoteMatcher } from "../detector/quote-matcher"
 import type { OverlayStyle, OverlayStyleSettings } from "../../../packages/contracts/overlay-style"
 import { normalizeOverlayStyleSettings, resolveOverlayStyle, seedOverlayStyle } from "../overlay/overlay-style"
@@ -415,6 +416,11 @@ export type AppCoreHandle = {
    * and the read-only overlay are unchanged.
    */
   getWsClientLatency(): readonly WsClientLatencySnapshot[]
+  /**
+   * Ready check (architecture-notes/ready-check.md): the live microphone facts the
+   * pre-service checklist needs, as plain numbers. Electron IPC only, not a WS event.
+   */
+  getMicReadiness(): ReadyCheckSnapshot["mic"]
   /**
    * ARCHITECTURE.md section 130: parses pasted sermon notes (plain text) into
    * validated references and adds their books to the ASR planned-book bias.
@@ -3315,6 +3321,19 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       // socket references), safe to cross the Electron IPC boundary to
       // the dashboard.
       return wsServer.getClientLatency()
+    },
+    getMicReadiness() {
+      const metrics = silenceGate.getMetrics()
+      const calibrating = silenceGate.isCalibrating()
+      return {
+        running: micRunning,
+        calibrating,
+        msSinceLastFrame: micRunning ? micAudioWatchdog.silentForMs(clockNow()) : null,
+        state: micRunning ? micHealth.snapshot(calibrating).state : null,
+        framesReceived: metrics.framesReceived,
+        framesForwarded: metrics.framesForwarded,
+        loudClosedMs: silenceGate.getLoudClosedMs(),
+      }
     },
     importSermonPrep(text: unknown) {
       const outcome = parseSermonPrep(text, index)

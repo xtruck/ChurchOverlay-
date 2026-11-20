@@ -2560,6 +2560,41 @@ test("AppCore: getDiagnostics returns safe operational state without secrets", a
   }
 })
 
+test("AppCore: getMicReadiness reports a stopped mic, then frames arriving and the gate forwarding", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    silenceGate: new SilenceGate({ calibrationDurationMs: 10 }),
+  })
+  try {
+    const idle = app.getMicReadiness()
+    assert.equal(idle.running, false)
+    assert.equal(idle.msSinceLastFrame, null)
+    assert.equal(idle.state, null)
+
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    await startMicAndCalibrate(operatorSocket, asr)
+    operatorSocket.send(encodeAudioFrame({ samples: Int16Array.from(new Array(160).fill(10000)), sampleRate: 16000, sequence: 1 }))
+    await waitFor(() => asr.sentFrames.length === 1)
+    const live = app.getMicReadiness()
+    assert.equal(live.running, true)
+    assert.equal(live.calibrating, false)
+    assert.ok(live.msSinceLastFrame !== null && live.msSinceLastFrame < 4000)
+    assert.ok(live.framesReceived >= 2)
+    assert.ok(live.framesForwarded >= 1)
+    assert.equal(typeof live.loudClosedMs, "number")
+    operatorSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
 // ARCHITECTURE.md section 65.1: elliptical/continuation references.
 test("AppCore: successful ASR failover is informational and manual return restores ok", async () => {
  const asr = new FakeFailoverAsrProvider()
