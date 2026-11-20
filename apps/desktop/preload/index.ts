@@ -77,6 +77,8 @@ contextBridge.exposeInMainWorld("churchOverlay", {
   exportSession: () => ipcRenderer.invoke("export-session"),
   exportRehearsal: () => ipcRenderer.invoke("export-rehearsal"),
   exportDiagnostics: () => ipcRenderer.invoke("export-diagnostics"),
+  // Ready check (architecture-notes/ready-check.md): no arguments in, codes and counts out.
+  runReadyCheck: () => ipcRenderer.invoke("run-ready-check"),
   // B1: persistent log folder, and non-blocking notices from the main process
   // (uncaught errors, crash recovery, failed service start). The history is
   // what a freshly loaded dashboard reads; live notices arrive through the callback.

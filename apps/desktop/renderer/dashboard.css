@@ -987,6 +987,46 @@ header.topbar {
 .verse-pending-alternatives:empty { display: none; }
 .verse-pending-alternatives .btn-secondary { width: 100%; }
 
+/* Ready check (architecture-notes/ready-check.md): icon + word per line, colour is only a third cue. */
+.ready-check { margin-top: var(--space-3); }
+.ready-check-summary {
+  margin: var(--space-2) 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-control);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-size: var(--fs-13);
+  line-height: 1.4;
+}
+.ready-check-summary[data-state="ok"] { border-color: var(--success); }
+.ready-check-summary[data-state="warn"], .ready-check-summary[data-state="unknown"] { border-color: var(--warning); }
+.ready-check-summary[data-state="fail"] { border-color: var(--danger); }
+.ready-check-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.ready-check-line { display: flex; gap: var(--space-2); align-items: flex-start; font-size: var(--fs-13); line-height: 1.4; }
+.ready-check-icon {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  color: var(--text-faint);
+}
+.ready-check-line[data-status="ok"] .ready-check-icon { color: var(--success); border-color: var(--success); }
+.ready-check-line[data-status="warn"] .ready-check-icon, .ready-check-line[data-status="unknown"] .ready-check-icon { color: var(--warning); border-color: var(--warning); }
+.ready-check-line[data-status="fail"] .ready-check-icon { color: var(--danger); border-color: var(--danger); }
+.ready-check-body { min-width: 0; flex: 1; }
+.ready-check-head { display: flex; justify-content: space-between; gap: var(--space-2); }
+.ready-check-name { font-weight: 600; }
+.ready-check-status { color: var(--text-faint); white-space: nowrap; }
+.ready-check-detail { overflow-wrap: anywhere; }
+.ready-check-fix, .ready-check-hint { color: var(--text-faint); overflow-wrap: anywhere; }
+.ready-check-hint { margin-top: var(--space-2); font-size: var(--fs-13); }
+
 /* Microphone / ASR health */
 .mic-head { margin-bottom: var(--space-3); }
 .mic-visual { display: flex; align-items: flex-end; gap: 3px; height: 24px; width: 48px; }

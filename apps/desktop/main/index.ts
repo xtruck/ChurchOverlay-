@@ -3,8 +3,10 @@ import { validateCustomBibleApiUrl } from "./custom-bible-url"
 import { randomBytes } from "node:crypto"
 import { cpus, networkInterfaces } from "node:os"
 import { join } from "node:path"
-import { mkdir, stat, writeFile } from "node:fs/promises"
+import { access, constants as fsConstants, mkdir, stat, writeFile } from "node:fs/promises"
 import { startAppCore, type AppCoreHandle } from "../../server/core/app-core"
+import { runReadyCheck, type ReadyCheckProbes, type ReadyCheckReport } from "../../server/core/ready-check"
+import { GroqTextClient } from "../../server/ai/groq-text-client"
 import type { SessionEntry } from "../../server/core/session-recorder"
 import { buildServiceHealthReport } from "../../server/core/service-health"
 import { StaticServer } from "../../server/http/static-server"
@@ -152,6 +154,10 @@ function markLocalEngineAbandoned(info: { attempts: number }): void {
   localEngineAbandoned = true
   logger.error({ component: "main", event: "local-whisper.backup-lost", metadata: { attempts: info.attempts } })
 }
+// Head of the ASR failover chain at the last service start (read by the Ready check).
+let currentAsrPrimary: AsrProviderId = "groq"
+// The last Ready check result, carried into the diagnostics export (architecture-notes/ready-check.md).
+let lastReadyCheck: ReadyCheckReport | null = null
 let localAsrInstaller: LocalAsrInstaller | null = null
 let fasterWhisperInstaller: FasterWhisperInstaller | null = null
 
@@ -552,6 +558,7 @@ async function startServicesNow(config: AppConfig): Promise<StartedServices> {
     })
   }
   const chain = asrChain(plan, localAsr !== null, offlineFirst)
+  currentAsrPrimary = (chain[0] as AsrProviderId | undefined) ?? "groq"
   // SF-19: nothing can take over after Deepgram when it is the last link: let it reopen its own socket.
   deepgramAsr?.setReconnectOnClose(chain[chain.length - 1] === "deepgram")
   const providers: Record<AsrProviderId, GroqProvider | DeepgramProvider | LocalWhisperProvider | null> = {
@@ -2141,6 +2148,99 @@ ipcMain.handle("export-rehearsal", async () => {
   return { canceled: false as const, count: entries.length, targetDir }
 })
 
+/** Fixed known verse for the Ready check lookups (John 3:16 / Jean 3:16). Never displayed. */
+const READY_CHECK_VERSE = { book: "john", chapter: 3, verse: 16 } as const
+
+/**
+ * Ready check (architecture-notes/ready-check.md): the operator's one-button pre-service
+ * checklist. Main gathers the snapshot from state it already owns and injects small bounded
+ * probes; the pure ReadyCheck module decides green / amber / red. Takes no input from the
+ * renderer and returns codes and counts only (no key, token, path or provider text).
+ */
+let readyCheckInFlight: Promise<ReadyCheckReport> | null = null
+ipcMain.handle("run-ready-check", () => {
+  if (!appCoreHandle || !localizedVerseSource || !activeConfig) throw new Error("services are not started yet")
+  // A second click while one runs shares the same run: never two parallel sets of requests.
+  if (!readyCheckInFlight) {
+    readyCheckInFlight = buildAndRunReadyCheck(appCoreHandle, localizedVerseSource, activeConfig).finally(() => {
+      readyCheckInFlight = null
+    })
+  }
+  return readyCheckInFlight
+})
+
+async function buildAndRunReadyCheck(core: AppCoreHandle, verses: LocalizedVerseSource, config: AppConfig): Promise<ReadyCheckReport> {
+  const clients = core.getWsClientLatency()
+  const asrStatus = currentAsrStatus()
+  // The helpers that run on the selected AI completer (sermon notes use their own Groq generator).
+  const aiEnabled = Object.values(currentAiFeatures).some(Boolean)
+  const completer = currentAiCompleter
+  const groqKey = config.groqApiKey
+  const probes: ReadyCheckProbes = {
+    // Only Groq has a safe probe: the existing, completion-free model listing (GroqTextClient.checkAvailability),
+    // authenticated with the same key the transcription uses. No audio is sent. Deepgram and the local engine
+    // have no such probe, so the module reports "cannot verify" for them.
+    ...(currentAsrPrimary === "groq" && groqKey
+      ? {
+          asrRoundTrip: async () => {
+            const result = await new GroqTextClient({ apiKey: groqKey }).checkAvailability()
+            return result === "auth" ? ("auth" as const) : result === "unknown" ? ("unknown" as const) : ("reachable" as const)
+          },
+        }
+      : {}),
+    ...(completer ? { aiAvailability: () => completer.checkAvailability() } : {}),
+    verseLookup: async () => {
+      const verse = await verses.getVerse({ ...READY_CHECK_VERSE })
+      return { found: verse !== null && verse.text.trim().length > 0, offline: verse?.source === "offline-bundled" }
+    },
+    frenchFallbackLookup: async () => {
+      if (currentFrenchTranslation !== "ls1910") return "not-applicable" as const
+      try {
+        const verse = await new OfflineVerseSource(await getOfflineBibleData()).getVerse({ ...READY_CHECK_VERSE })
+        return verse && verse.text.trim() ? ("ok" as const) : ("missing" as const)
+      } catch (err) {
+        logger.warn({ component: "main", event: "ready-check.offline-data-failed", error: err instanceof Error ? err.message : String(err) })
+        return "missing" as const
+      }
+    },
+    offlineModelPresent: async () =>
+      (await getLocalEngineStatus(config.localAsrEngine ?? "whisper.cpp", config.localAsrModel ?? "base")).state === "ready",
+    logsWritable: async () => {
+      const writable = await access(LOG_DIR, fsConstants.W_OK).then(
+        () => true,
+        () => false
+      )
+      return { writable, writeFailures: logSink?.file.stats().writeFailures ?? 0 }
+    },
+  }
+  const report = await runReadyCheck(
+    {
+      mic: core.getMicReadiness(),
+      asr: { health: core.getDiagnostics().asrHealth, primary: currentAsrPrimary },
+      ai: { enabled: aiEnabled, ready: asrStatus.aiReady },
+      frenchTranslation: currentFrenchTranslation,
+      offlineAsrEnabled: asrStatus.localEnabled,
+      clients: {
+        operators: clients.filter((client) => client.role === "operator").length,
+        viewers: clients.filter((client) => client.role === "viewer").length,
+        // The dashboard's own Live preview, plus the NDI window when it runs. Approximate: the Overlay
+        // view's design preview also counts as a viewer while it is open (see the architecture note).
+        internalViewers: 1 + (ndiWindow ? 1 : 0),
+      },
+      remoteEnabled: currentAllowPhoneRemote,
+    },
+    probes
+  )
+  lastReadyCheck = report
+  logger.info({
+    component: "main",
+    event: "ready-check.completed",
+    durationMs: report.durationMs,
+    metadata: { overall: report.overall, lines: report.lines.map((entry) => `${entry.id}:${entry.status}`) },
+  })
+  return report
+}
+
 ipcMain.handle("export-diagnostics", async () => {
   if (!dashboardWindow) throw new Error("dashboard window is not available")
   // Exportable even when the services never started: that is exactly when the log is needed.
@@ -2158,7 +2258,8 @@ ipcMain.handle("export-diagnostics", async () => {
     recentLines: recentLines.length,
   }
   const diagnostics = appCoreHandle ? appCoreHandle.getDiagnostics() : { servicesStarted: false }
-  await writeFile(path, JSON.stringify({ ...diagnostics, desktopLog }, null, 2), "utf8")
+  // The last Ready check travels with the export (codes and counts only, never secrets).
+  await writeFile(path, JSON.stringify({ ...diagnostics, desktopLog, readyCheck: lastReadyCheck }, null, 2), "utf8")
   // The in-memory ring (already secret-redacted) travels with the export.
   await writeFile(join(targetDir, "churchoverlay-recent-log.jsonl"), recentLines.join("\n") + "\n", "utf8").catch((err) => {
     logger.warn({ component: "main", event: "diagnostics.recent-log-failed", error: String(err) })
